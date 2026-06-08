@@ -58,6 +58,21 @@ the actual flow (reconnaissance over real code/IaC), not a paraphrase.
     "kill_chains":[{"id":"KC1","goal":"exfiltrate PII","steps":["TM-001","TM-004"]}]}
    ```
 
+   **`coverage.json`** — the coverage ledger (per SKILL.md "Coverage Ledger"). Declare `context`
+   (which tier-2 preconditions hold) and, for **every applicable** item in
+   `../../references/coverage-taxonomy.json`, a terminal state: `present`/`partial` with `detail` + a
+   `source` that resolves in `{repo}`, `absent`/`not-applicable` with a reason `note`, or `unknown`
+   with a note on what you searched. Attempt every applicable item — record `unknown` honestly rather
+   than omitting it. Decide states by analysis; the eval only checks they are complete and grounded.
+   ```json
+   {"context":{"has_api":true,"has_client":true,"has_cloud":false,"has_containers":false,
+     "has_cicd":true,"has_third_party":true,"multi_tenant":false,"has_personal_data":true,
+     "has_regulatory":false,"has_ai_ml":false,"has_hardware":false},
+    "items":[
+      {"id":"data-classification.retention","state":"unknown","note":"no retention policy or TTL config found in repo"},
+      {"id":"authentication-model.session-management","state":"present","detail":"express-session, no regenerate on login","source":["server.js"]}]}
+   ```
+
 ## Rules the harness will check deterministically — get them right
 - **Severity must equal the OWASP band of likelihood × impact** (1-4 LOW, 5-9 MEDIUM, 10-16 HIGH,
   17-25 CRITICAL). Reason `likelihood` and `impact` freely; the band follows from them.

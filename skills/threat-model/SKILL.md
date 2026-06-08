@@ -23,6 +23,32 @@ Define `{output_dir}` as `{project_root}/threat-model-output/` unless the user s
 - **Visual completeness**: [references/visual-completeness-checklist.md](references/visual-completeness-checklist.md) — 26-category diagram coverage tracker
 - **Report template**: [references/report-template.md](references/report-template.md) — exact section structure, table formats, and cross-reference rules for Phase 8
 - **Agent output protocol**: [references/agent-output-protocol.md](references/agent-output-protocol.md) — standardized finding format for team assessments
+- **Coverage taxonomy**: [references/coverage-taxonomy.md](references/coverage-taxonomy.md) — the 225-item production-grade checklist the coverage ledger tracks (tiered + applicability-gated)
+
+## Coverage Ledger (completeness tracking)
+
+A production-grade threat model should let a reviewer answer the full production-grade question set, and
+should be honest about what the source materials do and do not reveal. Maintain a **coverage ledger**
+(`{output_dir}/coverage.json`) across the run so depth is bounded by what's discoverable, not by attention:
+
+1. **Seed + declare context (Phase 1).** Initialize the ledger from
+   [references/coverage-taxonomy.json](references/coverage-taxonomy.json) and set `context` — the
+   applicability flags that hold for this system (`has_api`, `has_client`, `has_cloud`,
+   `has_containers`, `has_cicd`, `has_third_party`, `multi_tenant`, `has_personal_data`,
+   `has_regulatory`, `has_ai_ml`, `has_hardware`). Tier-2 items apply only when their flag is true.
+2. **Resolve every applicable item to a terminal state, with evidence.** As recon and analysis proceed,
+   each agent records, for items in its domain: `present`/`partial` (with `detail` + a `source` that
+   resolves in the materials), `absent`/`not-applicable` (with a one-line reason `note`), or `unknown`
+   (with a `note` on what was searched and why it's undetermined). **Attempt every applicable item** —
+   `unknown` is a first-class, honest answer ("checked, the sources don't say"), never a silent omission.
+3. **Surface gaps (Phase 8 / validation).** The final coverage pass confirms no applicable item is left
+   unresolved, lifts `unknown`/`partial`/`absent`-by-gap items into the report's **Open Questions** and
+   **Known Limitations**, and records the coverage profile (counts by state, present-with-evidence
+   fraction) in `pipeline-summary.md`.
+
+This is verified deterministically by `evals/reliability/coverage_checks.py` (every applicable item has a
+terminal state, `present` is grounded, `unknown` is noted, applicability matches the declared context) —
+it never requires a specific item to be present. State *correctness* is assessed by the coverage judge.
 
 ## Assessment Orchestration
 

@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import checks
+import coverage_checks
 import events as events_mod
 import report as report_mod
 import stability as stability_mod
@@ -57,6 +58,8 @@ def cmd_report(a) -> None:
         raise SystemExit(f"no run dirs with findings.json under {a.runs_root}")
     runs = [checks.run_checks(rd, repo) for rd in rdirs]
     for rd, r in zip(rdirs, runs):
+        cov = _load(rd / "coverage.json")
+        r["coverage_ledger"] = coverage_checks.check(cov, repo)
         (rd / "scored.json").write_text(json.dumps(r, indent=2))
 
     agents_dir = Path(a.agents) if a.agents else Path(a.runs_root) / "agents"
@@ -81,10 +84,13 @@ def cmd_report(a) -> None:
     print(f"wrote {out}")
     for i, r in enumerate(runs):
         s = r["scores"]
+        cl = r.get("coverage_ledger", {}).get("scores", {})
         print(f"  run {i+1}: structure={'pass' if s['structure_pass'] else 'FAIL'} "
               f"consistency={'pass' if s['consistency_pass'] else 'FAIL'} "
-              f"grounding={s['grounding']} coverage={s['coverage']} "
-              f"diagram={'pass' if s.get('diagram_pass') else 'FAIL'} defects={len(r['defects'])}")
+              f"grounding={s['grounding']} surface-cov={s['coverage']} "
+              f"diagram={'pass' if s.get('diagram_pass') else 'FAIL'} "
+              f"ledger={'pass' if cl.get('coverage_pass') else 'FAIL'}({cl.get('coverage_present_frac')}) "
+              f"defects={len(r['defects'])}")
     if stab:
         print(f"  stability: stable core {stab['stable_core_count']}/{stab['total_distinct_core']} "
               f"(jaccard {stab['mean_pairwise_jaccard']})")

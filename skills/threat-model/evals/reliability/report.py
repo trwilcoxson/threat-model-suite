@@ -142,6 +142,32 @@ def _verdict(runs, recall, stability) -> str:
     return f'<div class="banner {cls}"><b>Reliability issues on this target:</b> {", ".join(bits)}. See sections below.</div>'
 
 
+def _coverage(runs: list[dict]) -> str:
+    if not any(r.get("coverage_ledger") for r in runs):
+        return '<p class="mut">no coverage ledger recorded</p>'
+    rows = ""
+    for i, r in enumerate(runs):
+        cl = r.get("coverage_ledger", {})
+        st, sc = cl.get("stats", {}), cl.get("scores", {})
+        bs = st.get("by_state", {})
+        breakdown = " · ".join(f"{k}={bs[k]}" for k in ("present", "partial", "absent", "not-applicable", "unknown") if bs.get(k))
+        rows += (f"<tr><td>run {i+1}</td><td>{_yn(sc.get('coverage_pass'))}</td>"
+                 f"<td class='num'>{st.get('applicable','—')}</td>"
+                 f"<td class='num'>{_pct(sc.get('coverage_present_frac'))}</td>"
+                 f"<td>{breakdown}</td><td class='num'>{len(cl.get('defects', []))}</td></tr>")
+    defs = [(i + 1, d) for i, r in enumerate(runs) for d in r.get("coverage_ledger", {}).get("defects", [])]
+    dtl = ""
+    if defs:
+        dtl = "<table><thead><tr><th>Run</th><th>Code</th><th>Detail</th></tr></thead><tbody>" + "".join(
+            f"<tr><td>{i}</td><td><code>{_e(d['code'])}</code></td><td>{_e(d['detail'])}</td></tr>" for i, d in defs[:40]) + "</tbody></table>"
+    return ("<p>Did the run attempt every applicable production-grade item and record its state honestly? "
+            "Structure-only: every applicable item reaches a terminal state, <code>present</code> is grounded, "
+            "<code>unknown</code> is noted. <code>unknown</code> is never a failure (sources vary); a blank item is.</p>"
+            "<table><thead><tr><th>Run</th><th>Ledger</th><th>Applicable</th><th>Present+evidence</th>"
+            "<th>By state</th><th>Defects</th></tr></thead>"
+            f"<tbody>{rows}</tbody></table>{dtl}")
+
+
 def render(target: dict, runs: list[dict], agents: dict, stability: dict | None, generated: str) -> str:
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>reliability — {_e(target['id'])}</title><style>{CSS}</style></head><body>
@@ -155,6 +181,8 @@ def render(target: dict, runs: list[dict], agents: dict, stability: dict | None,
 {_diagram(runs)}
 <h3>Defects</h3>
 {_defects(runs)}
+<h2>Coverage ledger (completeness)</h2>
+{_coverage(runs)}
 <h2>Reasoning quality (judged, sampled)</h2>
 {_quality(agents.get('quality'))}
 <h2>Adversarial recall (reference-free completeness)</h2>

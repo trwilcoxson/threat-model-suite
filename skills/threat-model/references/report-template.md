@@ -298,6 +298,13 @@ Omit this section entirely. Add note in Section XIII: "Privacy impact assessment
 - **Assessment Limitations**: Time constraints, access limitations, tooling limitations
 - **Confidence Disclaimers**: Areas where findings have lower confidence
 - **Missing Assessments**: Note any team agents that did not run (privacy, GRC, code review)
+- **Coverage Profile**: From the coverage ledger (`coverage.json`) — the count of applicable
+  production-grade items by state (present / partial / absent / not-applicable / unknown) and the
+  present-with-evidence fraction. Shows how complete the model is given what the sources supported.
+- **Open Questions**: Every `unknown` item from the coverage ledger, with its note (what was searched,
+  why undetermined) — these are the things to resolve in the next review, not silent gaps.
+- **Known Limitations**: Every `partial` item and every `absent`-by-gap item (a control that should
+  exist but does not), drawn from the ledger.
 
 ---
 

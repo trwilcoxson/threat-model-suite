@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/trwilcoxson/threat-model-suite/coverage.schema.json",
+  "title": "Coverage ledger — the skill's per-item completeness state",
+  "description": "Emitted by the threat-model run. The skill attempts every applicable taxonomy item and records a terminal state with evidence (present/partial) or a note (absent/not-applicable/unknown). The eval verifies structure only: every applicable item reached a terminal state, present is grounded, unknown is noted — it never requires a specific item to be present.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["context", "items"],
+  "properties": {
+    "context": {
+      "type": "object",
+      "description": "applicability flags the skill declared (which tier-2 sections apply). Drives gating so the eval reasons about declared facts, not inference.",
+      "additionalProperties": false,
+      "properties": {
+        "has_api": { "type": "boolean" },
+        "has_client": { "type": "boolean" },
+        "has_cloud": { "type": "boolean" },
+        "has_containers": { "type": "boolean" },
+        "has_cicd": { "type": "boolean" },
+        "has_third_party": { "type": "boolean" },
+        "multi_tenant": { "type": "boolean" },
+        "has_personal_data": { "type": "boolean" },
+        "has_regulatory": { "type": "boolean" },
+        "has_ai_ml": { "type": "boolean" },
+        "has_hardware": { "type": "boolean" }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "state"],
+        "properties": {
+          "id": { "type": "string", "description": "taxonomy item id (matches coverage-taxonomy.json)" },
+          "state": { "enum": ["present", "partial", "absent", "not-applicable", "unknown"] },
+          "detail": { "type": "string", "description": "what was found (present/partial)" },
+          "source": { "type": "array", "items": { "type": "string" }, "description": "repo path/glob/string that resolves in the target — required for present/partial" },
+          "note": { "type": "string", "description": "reason (absent/not-applicable) or what-was-searched (unknown)" }
+        }
+      }
+    }
+  }
+}

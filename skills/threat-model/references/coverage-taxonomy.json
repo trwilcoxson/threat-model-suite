@@ -1,0 +1,1804 @@
+{
+  "items": [
+    {
+      "id": "document-metadata.identity-version",
+      "section_no": 1,
+      "section": "Threat model document metadata",
+      "label": "What is the threat model's identifier, title, version, and last-revision date, and is it under version control?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "document-metadata.ownership",
+      "section_no": 1,
+      "section": "Threat model document metadata",
+      "label": "Who owns this threat model and which authors/contributors produced it?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "document-metadata.review-cadence",
+      "section_no": 1,
+      "section": "Threat model document metadata",
+      "label": "When was the model last reviewed/approved by whom, and what triggers or schedule drives the next review?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "document-metadata.scope-status",
+      "section_no": 1,
+      "section": "Threat model document metadata",
+      "label": "What system/release is in scope, what is explicitly out of scope, and what is the document status (draft/reviewed/approved)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "system-context.assumptions-constraints",
+      "section_no": 2,
+      "section": "System context",
+      "label": "What key assumptions, constraints, and pre-existing security controls frame the system's context?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "system-context.deployment-environment",
+      "section_no": 2,
+      "section": "System context",
+      "label": "Where and how is the system deployed (environments, hosting model, network exposure)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "system-context.external-dependencies",
+      "section_no": 2,
+      "section": "System context",
+      "label": "What external systems, services, and dependencies does the system interact with at the context level?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "system-context.purpose",
+      "section_no": 2,
+      "section": "System context",
+      "label": "What does the system do, what business/mission purpose does it serve, and who are its users?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "assets.inventory",
+      "section_no": 3,
+      "section": "Assets to protect",
+      "label": "What are the system's protectable assets (data, credentials, keys, intellectual property, infrastructure, reputation)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "assets.ownership",
+      "section_no": 3,
+      "section": "Assets to protect",
+      "label": "Who owns or is accountable for each asset?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "assets.security-objectives",
+      "section_no": 3,
+      "section": "Assets to protect",
+      "label": "Which CIA (confidentiality/integrity/availability) and other security objectives apply to each asset?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "assets.value-impact",
+      "section_no": 3,
+      "section": "Assets to protect",
+      "label": "What is the business value and the impact of compromise for each asset?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-classification.handling-requirements",
+      "section_no": 4,
+      "section": "Data classification",
+      "label": "What handling, encryption, and access requirements apply to each classification level (at rest and in transit)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-classification.levels",
+      "section_no": 4,
+      "section": "Data classification",
+      "label": "What classification levels (e.g. public/internal/confidential/restricted) exist and how is each data type assigned a level?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-classification.retention",
+      "section_no": 4,
+      "section": "Data classification",
+      "label": "What are the retention and disposal/deletion requirements per classification level?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-classification.sensitive-data-types",
+      "section_no": 4,
+      "section": "Data classification",
+      "label": "Which specific sensitive data types (PII, PHI, financial, secrets) are present and how are they tagged?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "actors.inventory",
+      "section_no": 5,
+      "section": "Actors and principals",
+      "label": "Who/what are the actors and principals (human users, admins, services, external parties, attackers) interacting with the system?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "actors.roles-privileges",
+      "section_no": 5,
+      "section": "Actors and principals",
+      "label": "What roles and privilege levels does each actor hold, and what is the highest privilege available?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "actors.threat-agents",
+      "section_no": 5,
+      "section": "Actors and principals",
+      "label": "Which adversarial threat agents are modeled and what capabilities/motivations are attributed to them?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "actors.trust-level",
+      "section_no": 5,
+      "section": "Actors and principals",
+      "label": "What trust level is assigned to each actor (trusted, semi-trusted, untrusted/anonymous)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "trust-boundaries.controls",
+      "section_no": 6,
+      "section": "Trust boundaries",
+      "label": "What controls (authentication, validation, authorization) enforce each trust boundary crossing?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "trust-boundaries.crossings",
+      "section_no": 6,
+      "section": "Trust boundaries",
+      "label": "Which data flows and components cross each trust boundary, and what is being trusted at the crossing?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "trust-boundaries.identification",
+      "section_no": 6,
+      "section": "Trust boundaries",
+      "label": "Where are the trust boundaries in the system (between zones of differing trust, privilege, or ownership)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "trust-boundaries.privilege-changes",
+      "section_no": 6,
+      "section": "Trust boundaries",
+      "label": "Where do privilege-level or security-context changes occur across boundaries?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "architecture-diagrams.completeness",
+      "section_no": 7,
+      "section": "Architecture diagrams",
+      "label": "Do the diagrams depict all components, data stores, flows, and external entities in scope?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "architecture-diagrams.levels-of-detail",
+      "section_no": 7,
+      "section": "Architecture diagrams",
+      "label": "Are appropriate levels of decomposition (context vs detailed/DFD levels) provided?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "architecture-diagrams.presence-currency",
+      "section_no": 7,
+      "section": "Architecture diagrams",
+      "label": "Does a current architecture/data-flow diagram exist that matches the deployed system?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "diagram-annotations.legend-traceability",
+      "section_no": 8,
+      "section": "Diagram annotations",
+      "label": "Do diagrams include a legend and consistent labels that trace to the component/flow inventory?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "diagram-annotations.protocols-data",
+      "section_no": 8,
+      "section": "Diagram annotations",
+      "label": "Are flows annotated with protocols, ports, data classification, and authentication on each connection?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "diagram-annotations.trust-boundaries",
+      "section_no": 8,
+      "section": "Diagram annotations",
+      "label": "Are trust boundaries explicitly drawn/annotated on the diagrams?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "component-inventory.dependencies",
+      "section_no": 9,
+      "section": "Component inventory",
+      "label": "What internal/external dependencies does each component have?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "component-inventory.enumeration",
+      "section_no": 9,
+      "section": "Component inventory",
+      "label": "Is every component (services, processes, libraries, infrastructure elements) enumerated with a unique identifier?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "component-inventory.responsibility-tech",
+      "section_no": 9,
+      "section": "Component inventory",
+      "label": "For each component, what is its responsibility, technology/runtime, and owner?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "component-inventory.trust-classification",
+      "section_no": 9,
+      "section": "Component inventory",
+      "label": "What trust zone, exposure, and criticality is assigned to each component?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-stores.access-control",
+      "section_no": 10,
+      "section": "Data stores",
+      "label": "Who/what can read or write each data store and how is that access controlled?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-stores.backup-integrity",
+      "section_no": 10,
+      "section": "Data stores",
+      "label": "How are backups, retention, and data integrity handled for each store?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-stores.classification-encryption",
+      "section_no": 10,
+      "section": "Data stores",
+      "label": "What data classification does each store hold and how is it protected at rest (encryption, key management)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-stores.inventory",
+      "section_no": 10,
+      "section": "Data stores",
+      "label": "What data stores exist (databases, caches, queues, file/object storage, secrets stores) and what does each hold?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-flows.authn-authz",
+      "section_no": 11,
+      "section": "Data flows",
+      "label": "How is each flow authenticated and authorized between endpoints?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-flows.classification-direction",
+      "section_no": 11,
+      "section": "Data flows",
+      "label": "What data classification and directionality applies to each flow, and which trust boundaries does it cross?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-flows.enumeration",
+      "section_no": 11,
+      "section": "Data flows",
+      "label": "Is each data flow enumerated with source, destination, and the data it carries?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "data-flows.protocol-transport",
+      "section_no": 11,
+      "section": "Data flows",
+      "label": "What protocol and transport protection (e.g. TLS) secures each flow in transit?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "entry-points.enumeration",
+      "section_no": 12,
+      "section": "Entry points",
+      "label": "What are all entry points where data/requests enter the system (UIs, APIs, endpoints, ports, file uploads, message consumers)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "entry-points.exposure-trust",
+      "section_no": 12,
+      "section": "Entry points",
+      "label": "What is the exposure (internal vs internet-facing) and trust level of each entry point?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "entry-points.input-validation",
+      "section_no": 12,
+      "section": "Entry points",
+      "label": "What authentication and input validation/sanitization gates each entry point?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "exit-points.data-exposure",
+      "section_no": 13,
+      "section": "Exit points",
+      "label": "What data classification leaves at each exit point and how is over-exposure/leakage prevented (output encoding, redaction)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "exit-points.destination-trust",
+      "section_no": 13,
+      "section": "Exit points",
+      "label": "What destination and trust level does each exit point send to, and how is the transfer protected?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "exit-points.enumeration",
+      "section_no": 13,
+      "section": "Exit points",
+      "label": "What are all exit points where data leaves the system (responses, outbound calls, logs, exports, notifications)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authentication-model.credential-management",
+      "section_no": 14,
+      "section": "Authentication model",
+      "label": "How are credentials stored, rotated, recovered, and protected (hashing, secret storage, reset flows)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authentication-model.identity-provider",
+      "section_no": 14,
+      "section": "Authentication model",
+      "label": "What identity provider(s) and federation/trust relationships underpin authentication, and how is provider trust established?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authentication-model.mechanisms",
+      "section_no": 14,
+      "section": "Authentication model",
+      "label": "What authentication mechanisms are used for each actor type (passwords, MFA, SSO/federation, certificates, API keys, service identities)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authentication-model.session-management",
+      "section_no": 14,
+      "section": "Authentication model",
+      "label": "How are sessions/tokens issued, validated, scoped, expired, and revoked?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authorization-model.delegation-impersonation",
+      "section_no": 15,
+      "section": "Authorization model",
+      "label": "How are delegation, impersonation, and on-behalf-of access governed, scoped, and audited?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authorization-model.enforcement-points",
+      "section_no": 15,
+      "section": "Authorization model",
+      "label": "Where are authorization checks enforced (gateway, service, data layer) and is enforcement consistent across UI, API, and background jobs?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authorization-model.model-type",
+      "section_no": 15,
+      "section": "Authorization model",
+      "label": "What authorization model is used (RBAC, ABAC, ReBAC, ACLs) and where are policy decisions made (centralized PDP vs. scattered in code)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authorization-model.object-level-authz",
+      "section_no": 15,
+      "section": "Authorization model",
+      "label": "How is object-level (per-resource) authorization enforced to prevent IDOR, and is it applied on every access path?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authorization-model.policy-lifecycle",
+      "section_no": 15,
+      "section": "Authorization model",
+      "label": "How are authorization policies and role/permission assignments reviewed, tested, and changed over time (policy lifecycle and recertification)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "authorization-model.privilege-escalation",
+      "section_no": 15,
+      "section": "Authorization model",
+      "label": "What controls prevent horizontal and vertical privilege escalation, including default-deny and least-privilege role definitions?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "identity-access-management.authentication-methods",
+      "section_no": 16,
+      "section": "Identity and access management",
+      "label": "What authentication methods exist for users and services (passwords, MFA, passwordless, SSO/federation) and what is the assurance level?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "identity-access-management.credential-recovery",
+      "section_no": 16,
+      "section": "Identity and access management",
+      "label": "How do account recovery, password reset, and credential rotation work without becoming an authentication bypass?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "identity-access-management.federation-trust",
+      "section_no": 16,
+      "section": "Identity and access management",
+      "label": "What identity providers and federation/trust relationships exist (SAML/OIDC), and how is IdP trust, token validation, and account linking secured?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "identity-access-management.identity-lifecycle",
+      "section_no": 16,
+      "section": "Identity and access management",
+      "label": "How are identities provisioned, deprovisioned, and joiner/mover/leaver transitions handled for users and service/machine identities?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "identity-access-management.privileged-access",
+      "section_no": 16,
+      "section": "Identity and access management",
+      "label": "How is privileged/administrative access controlled (MFA enforcement, just-in-time elevation, break-glass accounts)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "identity-access-management.session-management",
+      "section_no": 16,
+      "section": "Identity and access management",
+      "label": "How are sessions and tokens issued, scoped, refreshed, expired, and revoked, and how is session fixation/hijacking mitigated?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "network-architecture.edge-exposure",
+      "section_no": 17,
+      "section": "Network architecture",
+      "label": "What is exposed at the network edge (load balancers, gateways, WAF, DDoS protection) and what is the externally reachable attack surface?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "network-architecture.ingress-egress",
+      "section_no": 17,
+      "section": "Network architecture",
+      "label": "How are ingress and egress controlled (firewalls, security groups, allowlists) and is outbound traffic restricted to prevent exfiltration?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "network-architecture.internal-traffic-protection",
+      "section_no": 17,
+      "section": "Network architecture",
+      "label": "How is internal/east-west traffic authenticated and encrypted (mTLS, service mesh, zero-trust) rather than implicitly trusted?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "network-architecture.remote-access",
+      "section_no": 17,
+      "section": "Network architecture",
+      "label": "How is administrative and remote network access provided (VPN, bastion/jump hosts, private endpoints) and protected?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "network-architecture.segmentation",
+      "section_no": 17,
+      "section": "Network architecture",
+      "label": "How is the network segmented into zones/tiers, and what trust boundaries separate public, internal, and sensitive segments?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "cryptography.algorithm-selection",
+      "section_no": 18,
+      "section": "Cryptography",
+      "label": "Are approved, standard algorithms and primitives used (no home-grown crypto, no deprecated algorithms) with proper randomness sources?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "cryptography.data-at-rest",
+      "section_no": 18,
+      "section": "Cryptography",
+      "label": "How is data encrypted at rest (databases, storage, backups) and what algorithms and key strengths are used?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "cryptography.data-in-transit",
+      "section_no": 18,
+      "section": "Cryptography",
+      "label": "How is data protected in transit (TLS versions, cipher suites, certificate validation, mTLS) across all channels?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "cryptography.integrity-signing",
+      "section_no": 18,
+      "section": "Cryptography",
+      "label": "How are integrity, authenticity, and non-repudiation provided (signing, MACs, hashing of credentials) where required?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "cryptography.key-management",
+      "section_no": 18,
+      "section": "Cryptography",
+      "label": "How are cryptographic keys generated, stored (KMS/HSM), rotated, and destroyed, and who can access them?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "secrets-management.access-control",
+      "section_no": 19,
+      "section": "Secrets management",
+      "label": "How is access to secrets authorized, scoped to least privilege, and audited (who/what can read each secret)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "secrets-management.distribution-injection",
+      "section_no": 19,
+      "section": "Secrets management",
+      "label": "How are secrets distributed to and injected into workloads at runtime without exposure in logs, images, or process listings?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "secrets-management.rotation-revocation",
+      "section_no": 19,
+      "section": "Secrets management",
+      "label": "How are secrets rotated and revoked, including on compromise, and are short-lived/dynamic credentials used where possible?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "secrets-management.storage",
+      "section_no": 19,
+      "section": "Secrets management",
+      "label": "Where and how are secrets stored (vault/secret manager vs. code, config, env vars) and are any secrets hardcoded or in version control?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "application-security-controls.business-logic-abuse",
+      "section_no": 20,
+      "section": "Application security controls",
+      "label": "What controls protect business logic and workflows from abuse (rate limiting, anti-automation, state/transaction integrity)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "application-security-controls.error-handling-logging",
+      "section_no": 20,
+      "section": "Application security controls",
+      "label": "How do error handling and application logging avoid leaking sensitive data while capturing security-relevant events?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "application-security-controls.file-handling",
+      "section_no": 20,
+      "section": "Application security controls",
+      "label": "How are file uploads/downloads and SSRF-prone operations validated, sandboxed, and constrained?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "application-security-controls.input-validation",
+      "section_no": 20,
+      "section": "Application security controls",
+      "label": "How is untrusted input validated and sanitized, and how are injection classes (SQL, command, template, deserialization) prevented?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "application-security-controls.output-encoding",
+      "section_no": 20,
+      "section": "Application security controls",
+      "label": "How is output encoding/escaping applied to prevent XSS and content-type confusion across rendering contexts?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "application-security-controls.security-headers",
+      "section_no": 20,
+      "section": "Application security controls",
+      "label": "What security headers and browser protections are set (CSP, HSTS, frame options, cookie flags) and CSRF defenses applied?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "api-security.authentication",
+      "section_no": 21,
+      "section": "API security",
+      "label": "How are API clients authenticated (keys, OAuth2/OIDC, mTLS) and how are tokens scoped and validated per request?",
+      "tier": 2,
+      "precondition": "has_api"
+    },
+    {
+      "id": "api-security.inventory-versioning",
+      "section_no": 21,
+      "section": "API security",
+      "label": "Is there a complete API inventory covering versioning, deprecated/shadow/undocumented endpoints, and documentation accuracy?",
+      "tier": 2,
+      "precondition": "has_api"
+    },
+    {
+      "id": "api-security.object-level-authz",
+      "section_no": 21,
+      "section": "API security",
+      "label": "How is broken object-level authorization (BOLA/IDOR) and object-property-level authorization prevented at API endpoints?",
+      "tier": 2,
+      "precondition": "has_api"
+    },
+    {
+      "id": "api-security.rate-limiting-quotas",
+      "section_no": 21,
+      "section": "API security",
+      "label": "How are rate limiting, throttling, quotas, and resource-consumption limits enforced to prevent abuse and DoS?",
+      "tier": 2,
+      "precondition": "has_api"
+    },
+    {
+      "id": "api-security.schema-input-validation",
+      "section_no": 21,
+      "section": "API security",
+      "label": "How are API request/response schemas validated and mass-assignment, excessive data exposure, and parameter tampering prevented?",
+      "tier": 2,
+      "precondition": "has_api"
+    },
+    {
+      "id": "client-side-security.dependency-supply-chain",
+      "section_no": 22,
+      "section": "Client-side security",
+      "label": "How are client-side dependencies, third-party scripts, and SDKs controlled (SRI, CSP, vetted libraries) against supply-chain tampering?",
+      "tier": 2,
+      "precondition": "has_client"
+    },
+    {
+      "id": "client-side-security.local-data-storage",
+      "section_no": 22,
+      "section": "Client-side security",
+      "label": "How is sensitive data stored and protected on the client (local/secure storage, cache, tokens) and cleared appropriately?",
+      "tier": 2,
+      "precondition": "has_client"
+    },
+    {
+      "id": "client-side-security.platform-hardening",
+      "section_no": 22,
+      "section": "Client-side security",
+      "label": "What platform hardening is applied for the client type (mobile: jailbreak/root detection, cert pinning; web: anti-clickjacking, DOM XSS defenses)?",
+      "tier": 2,
+      "precondition": "has_client"
+    },
+    {
+      "id": "client-side-security.untrusted-environment",
+      "section_no": 22,
+      "section": "Client-side security",
+      "label": "How does the design account for the client being an untrusted environment, ensuring no security decisions rely solely on the client?",
+      "tier": 2,
+      "precondition": "has_client"
+    },
+    {
+      "id": "cloud-infrastructure-security.account-tenancy-isolation",
+      "section_no": 23,
+      "section": "Cloud and infrastructure security",
+      "label": "How are accounts/projects/VPCs structured to isolate environments and blast radius, including network and identity boundaries?",
+      "tier": 2,
+      "precondition": "has_cloud"
+    },
+    {
+      "id": "cloud-infrastructure-security.configuration-baseline",
+      "section_no": 23,
+      "section": "Cloud and infrastructure security",
+      "label": "How are secure configuration baselines, drift detection, and IaC security scanning enforced across accounts/subscriptions?",
+      "tier": 2,
+      "precondition": "has_cloud"
+    },
+    {
+      "id": "cloud-infrastructure-security.iam-config",
+      "section_no": 23,
+      "section": "Cloud and infrastructure security",
+      "label": "How are cloud IAM roles, policies, and trust relationships scoped to least privilege, and how is privilege escalation/over-permissioning prevented?",
+      "tier": 2,
+      "precondition": "has_cloud"
+    },
+    {
+      "id": "cloud-infrastructure-security.logging-monitoring",
+      "section_no": 23,
+      "section": "Cloud and infrastructure security",
+      "label": "How is cloud control-plane and data-plane activity logged, monitored, and protected from tampering (audit logs, threat detection)?",
+      "tier": 2,
+      "precondition": "has_cloud"
+    },
+    {
+      "id": "cloud-infrastructure-security.resource-exposure",
+      "section_no": 23,
+      "section": "Cloud and infrastructure security",
+      "label": "How are cloud resources protected from public exposure (storage buckets, databases, management interfaces, metadata service)?",
+      "tier": 2,
+      "precondition": "has_cloud"
+    },
+    {
+      "id": "container-kubernetes-security.cluster-rbac-api",
+      "section_no": 24,
+      "section": "Container and Kubernetes security",
+      "label": "How is the Kubernetes API server secured (RBAC, authentication, admission control) and least privilege enforced for service accounts?",
+      "tier": 2,
+      "precondition": "has_containers"
+    },
+    {
+      "id": "container-kubernetes-security.image-supply-chain",
+      "section_no": 24,
+      "section": "Container and Kubernetes security",
+      "label": "How are container images sourced, scanned, signed, and verified, and how is base-image/registry trust maintained?",
+      "tier": 2,
+      "precondition": "has_containers"
+    },
+    {
+      "id": "container-kubernetes-security.runtime-hardening",
+      "section_no": 24,
+      "section": "Container and Kubernetes security",
+      "label": "How are containers hardened at runtime (non-root, read-only FS, dropped capabilities, seccomp/AppArmor, no privileged mode)?",
+      "tier": 2,
+      "precondition": "has_containers"
+    },
+    {
+      "id": "container-kubernetes-security.secrets-config",
+      "section_no": 24,
+      "section": "Container and Kubernetes security",
+      "label": "How are secrets and configuration handled in the orchestrator (encrypted etcd, external secret stores, no secrets in manifests)?",
+      "tier": 2,
+      "precondition": "has_containers"
+    },
+    {
+      "id": "container-kubernetes-security.workload-isolation",
+      "section_no": 24,
+      "section": "Container and Kubernetes security",
+      "label": "How are workloads isolated (network policies, namespaces, pod security standards) to limit lateral movement and node escape?",
+      "tier": 2,
+      "precondition": "has_containers"
+    },
+    {
+      "id": "cicd-supply-chain-security.artifact-registry-integrity",
+      "section_no": 25,
+      "section": "CI/CD and supply-chain security",
+      "label": "How are artifact repositories/registries secured and is artifact integrity verified between build, storage, and deploy stages?",
+      "tier": 2,
+      "precondition": "has_cicd"
+    },
+    {
+      "id": "cicd-supply-chain-security.build-integrity",
+      "section_no": 25,
+      "section": "CI/CD and supply-chain security",
+      "label": "How is build integrity and provenance ensured (isolated/ephemeral builders, reproducibility, SLSA-style attestation, artifact signing)?",
+      "tier": 2,
+      "precondition": "has_cicd"
+    },
+    {
+      "id": "cicd-supply-chain-security.dependency-management",
+      "section_no": 25,
+      "section": "CI/CD and supply-chain security",
+      "label": "How are software dependencies vetted, pinned, and scanned (SCA, lockfiles, SBOM) against known vulns and malicious/typosquatted packages?",
+      "tier": 2,
+      "precondition": "has_cicd"
+    },
+    {
+      "id": "cicd-supply-chain-security.deployment-controls",
+      "section_no": 25,
+      "section": "CI/CD and supply-chain security",
+      "label": "What controls gate deployment to production (approvals, branch protection, code review, signed commits/artifacts verification)?",
+      "tier": 2,
+      "precondition": "has_cicd"
+    },
+    {
+      "id": "cicd-supply-chain-security.pipeline-access",
+      "section_no": 25,
+      "section": "CI/CD and supply-chain security",
+      "label": "How is access to CI/CD systems, pipeline definitions, and runners controlled, and how are pipeline credentials scoped and protected?",
+      "tier": 2,
+      "precondition": "has_cicd"
+    },
+    {
+      "id": "third-party-vendor-risk.assessment-due-diligence",
+      "section_no": 26,
+      "section": "Third-party and vendor risk",
+      "label": "How are vendors security-assessed before and during use (due diligence, certifications, contractual security/privacy obligations)?",
+      "tier": 2,
+      "precondition": "has_third_party"
+    },
+    {
+      "id": "third-party-vendor-risk.integration-access-scope",
+      "section_no": 26,
+      "section": "Third-party and vendor risk",
+      "label": "How is vendor integration access scoped and isolated (least privilege, dedicated credentials, network restrictions) to limit blast radius?",
+      "tier": 2,
+      "precondition": "has_third_party"
+    },
+    {
+      "id": "third-party-vendor-risk.inventory-data-sharing",
+      "section_no": 26,
+      "section": "Third-party and vendor risk",
+      "label": "What third parties/vendors are in use, what data and access does each receive, and is there a current inventory of these relationships?",
+      "tier": 2,
+      "precondition": "has_third_party"
+    },
+    {
+      "id": "third-party-vendor-risk.ongoing-monitoring-offboarding",
+      "section_no": 26,
+      "section": "Third-party and vendor risk",
+      "label": "How are vendor incidents, breaches, and SLA/security posture monitored over time, and how is secure offboarding/access revocation handled?",
+      "tier": 2,
+      "precondition": "has_third_party"
+    },
+    {
+      "id": "multi-tenancy.data-segregation",
+      "section_no": 27,
+      "section": "Multi-tenancy",
+      "label": "How is tenant data segregated and how is every data access scoped by tenant to prevent cross-tenant leakage?",
+      "tier": 2,
+      "precondition": "multi_tenant"
+    },
+    {
+      "id": "multi-tenancy.isolation-model",
+      "section_no": 27,
+      "section": "Multi-tenancy",
+      "label": "What is the tenant isolation model (silo, pool, bridge) across compute, storage, and network, and where are shared resources?",
+      "tier": 2,
+      "precondition": "multi_tenant"
+    },
+    {
+      "id": "multi-tenancy.noisy-neighbor-resource-limits",
+      "section_no": 27,
+      "section": "Multi-tenancy",
+      "label": "How are per-tenant resource limits and quotas enforced to prevent noisy-neighbor and cross-tenant denial-of-service?",
+      "tier": 2,
+      "precondition": "multi_tenant"
+    },
+    {
+      "id": "multi-tenancy.tenant-context-enforcement",
+      "section_no": 27,
+      "section": "Multi-tenancy",
+      "label": "How is tenant context derived and enforced on every request, and how is tenant-ID spoofing or confused-deputy access prevented?",
+      "tier": 2,
+      "precondition": "multi_tenant"
+    },
+    {
+      "id": "admin-support-operator-access.admin-interface-surface",
+      "section_no": 28,
+      "section": "Admin, support, and operator access",
+      "label": "How are admin/support interfaces and tooling exposed and hardened (network restriction, separate auth, no public exposure) and their attack surface managed?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "admin-support-operator-access.auditing-accountability",
+      "section_no": 28,
+      "section": "Admin, support, and operator access",
+      "label": "How are all admin/support/operator actions logged with individual accountability, and are logs tamper-resistant and reviewed?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "admin-support-operator-access.privileged-access-control",
+      "section_no": 28,
+      "section": "Admin, support, and operator access",
+      "label": "How is privileged administrative/operator access granted, scoped to least privilege, and protected (strong MFA, just-in-time elevation)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "admin-support-operator-access.separation-of-duties",
+      "section_no": 28,
+      "section": "Admin, support, and operator access",
+      "label": "How are separation of duties and break-glass procedures enforced so no single operator can act unchecked on critical operations?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "admin-support-operator-access.support-customer-data-access",
+      "section_no": 28,
+      "section": "Admin, support, and operator access",
+      "label": "How can support staff access customer data/accounts (impersonation, debug tools), and what consent, scoping, and time-bounding controls apply?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "logging-monitoring.centralization-retention",
+      "section_no": 29,
+      "section": "Logging, monitoring, and detection",
+      "label": "Are logs centralized/aggregated, time-synchronized, and retained for a defined period sufficient for detection and investigation?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "logging-monitoring.detection-alerting",
+      "section_no": 29,
+      "section": "Logging, monitoring, and detection",
+      "label": "What detection rules/alerts exist for suspicious activity, and how are alerts triaged and escalated?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "logging-monitoring.incident-response-linkage",
+      "section_no": 29,
+      "section": "Logging, monitoring, and detection",
+      "label": "How does monitoring feed incident response (runbooks, on-call, metrics for detection coverage/MTTD)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "logging-monitoring.log-integrity-protection",
+      "section_no": 29,
+      "section": "Logging, monitoring, and detection",
+      "label": "How are logs protected from tampering and unauthorized access (append-only/WORM, access controls, integrity verification)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "logging-monitoring.security-event-coverage",
+      "section_no": 29,
+      "section": "Logging, monitoring, and detection",
+      "label": "Which security-relevant events (authn, authz failures, privilege changes, config changes, data access) are logged, and is coverage complete across components?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "logging-monitoring.sensitive-data-in-logs",
+      "section_no": 29,
+      "section": "Logging, monitoring, and detection",
+      "label": "Are secrets, credentials, and sensitive/PII data prevented from being written to logs (redaction/masking)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "auditability-nonrepudiation.actor-attribution",
+      "section_no": 30,
+      "section": "Auditability and non-repudiation",
+      "label": "How is each action reliably attributed to an authenticated identity, including delegated/service/impersonated actions?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "auditability-nonrepudiation.audit-access-review",
+      "section_no": 30,
+      "section": "Auditability and non-repudiation",
+      "label": "Who can read or modify audit records, and is access to the audit trail itself audited and reviewed?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "auditability-nonrepudiation.audit-trail-coverage",
+      "section_no": 30,
+      "section": "Auditability and non-repudiation",
+      "label": "What actions produce an audit trail capturing who did what, when, from where, and to which resource?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "auditability-nonrepudiation.non-repudiation-guarantees",
+      "section_no": 30,
+      "section": "Auditability and non-repudiation",
+      "label": "For high-value or legally significant actions, what non-repudiation guarantees exist (signed receipts, cryptographic proof of origin)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "auditability-nonrepudiation.tamper-evidence",
+      "section_no": 30,
+      "section": "Auditability and non-repudiation",
+      "label": "What mechanisms make audit records tamper-evident or tamper-proof (signing, hash chaining, immutable storage)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "availability-resilience.backup-recovery-objectives",
+      "section_no": 31,
+      "section": "Availability and resilience",
+      "label": "What are the backup, restore, RTO/RPO objectives, and how are recovery procedures tested?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "availability-resilience.graceful-degradation",
+      "section_no": 31,
+      "section": "Availability and resilience",
+      "label": "How does the system degrade gracefully (circuit breakers, timeouts, fail-safe defaults) when dependencies fail?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "availability-resilience.rate-limiting-load-shedding",
+      "section_no": 31,
+      "section": "Availability and resilience",
+      "label": "What rate limiting, quotas, throttling, and load-shedding protect the system under overload or abuse?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "availability-resilience.redundancy-failover",
+      "section_no": 31,
+      "section": "Availability and resilience",
+      "label": "What redundancy and failover exist across components/zones/regions, and what are the failure domains and single points of failure?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "availability-resilience.threats-to-availability",
+      "section_no": 31,
+      "section": "Availability and resilience",
+      "label": "What threats to availability are in scope (DoS/DDoS, resource exhaustion, dependency failure, data corruption) and how are they mitigated?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "privacy.anonymization-sharing",
+      "section_no": 32,
+      "section": "Privacy",
+      "label": "How is personal data anonymized/pseudonymized, and what controls govern third-party sharing and cross-border transfer?",
+      "tier": 2,
+      "precondition": "has_personal_data"
+    },
+    {
+      "id": "privacy.data-inventory-classification",
+      "section_no": 32,
+      "section": "Privacy",
+      "label": "What personal data is collected, where does it flow/reside, and how is it classified by sensitivity?",
+      "tier": 2,
+      "precondition": "has_personal_data"
+    },
+    {
+      "id": "privacy.data-subject-rights",
+      "section_no": 32,
+      "section": "Privacy",
+      "label": "How are data subject rights (access, correction, portability, objection) supported and identity-verified?",
+      "tier": 2,
+      "precondition": "has_personal_data"
+    },
+    {
+      "id": "privacy.purpose-minimization-consent",
+      "section_no": 32,
+      "section": "Privacy",
+      "label": "Is data collection limited to a stated purpose with a lawful basis/consent, and is data minimization enforced?",
+      "tier": 2,
+      "precondition": "has_personal_data"
+    },
+    {
+      "id": "privacy.retention-deletion",
+      "section_no": 32,
+      "section": "Privacy",
+      "label": "What are the retention limits, and how are deletion and right-to-erasure requests fulfilled across all stores and backups?",
+      "tier": 2,
+      "precondition": "has_personal_data"
+    },
+    {
+      "id": "compliance-governance.applicable-frameworks",
+      "section_no": 33,
+      "section": "Compliance and governance",
+      "label": "Which regulatory, legal, and contractual frameworks (e.g. GDPR, HIPAA, PCI-DSS, SOC 2) apply to the system, and what is in scope?",
+      "tier": 2,
+      "precondition": "has_regulatory"
+    },
+    {
+      "id": "compliance-governance.control-mapping",
+      "section_no": 33,
+      "section": "Compliance and governance",
+      "label": "How are required controls mapped to system features, and how is compliance evidenced and audited?",
+      "tier": 2,
+      "precondition": "has_regulatory"
+    },
+    {
+      "id": "compliance-governance.policy-ownership",
+      "section_no": 33,
+      "section": "Compliance and governance",
+      "label": "Who owns security/privacy policy, risk acceptance, and exception approval, and how is governance enforced?",
+      "tier": 2,
+      "precondition": "has_regulatory"
+    },
+    {
+      "id": "compliance-governance.regulatory-reporting",
+      "section_no": 33,
+      "section": "Compliance and governance",
+      "label": "What breach-notification and regulatory-reporting obligations apply, and what triggers/timelines/processes meet them?",
+      "tier": 2,
+      "precondition": "has_regulatory"
+    },
+    {
+      "id": "threat-enumeration.completeness-review",
+      "section_no": 34,
+      "section": "Threat enumeration",
+      "label": "How is enumeration completeness checked, and how is it kept current as the system and threat landscape change?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "threat-enumeration.methodology",
+      "section_no": 34,
+      "section": "Threat enumeration",
+      "label": "What methodology (STRIDE, attack trees, kill chain, etc.) is used to systematically enumerate threats per component and trust boundary?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "threat-enumeration.per-boundary-threats",
+      "section_no": 34,
+      "section": "Threat enumeration",
+      "label": "For each trust boundary and data flow, what specific threats (spoofing, tampering, disclosure, DoS, EoP) have been identified?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "threat-enumeration.threat-actors",
+      "section_no": 34,
+      "section": "Threat enumeration",
+      "label": "Which threat actors (external attacker, malicious insider, compromised dependency, etc.) and their capabilities/motivations are considered?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "threat-enumeration.threat-metadata",
+      "section_no": 34,
+      "section": "Threat enumeration",
+      "label": "Is each enumerated threat recorded with affected asset, attack vector, impact, and status (mitigated/accepted/open)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "abuse-misuse-cases.abuse-case-catalog",
+      "section_no": 35,
+      "section": "Abuse cases and misuse cases",
+      "label": "What abuse/misuse cases describe how an attacker subverts intended functionality or business logic?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "abuse-misuse-cases.abuse-to-control-mapping",
+      "section_no": 35,
+      "section": "Abuse cases and misuse cases",
+      "label": "Is each abuse/misuse case linked to detective and preventive controls and acceptance criteria for handling it?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "abuse-misuse-cases.business-logic-abuse",
+      "section_no": 35,
+      "section": "Abuse cases and misuse cases",
+      "label": "How could legitimate features be abused at scale (fraud, scraping, account takeover, spam, resource abuse) and what limits this?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "abuse-misuse-cases.misuse-by-authorized-users",
+      "section_no": 35,
+      "section": "Abuse cases and misuse cases",
+      "label": "How could authorized users or insiders misuse their legitimate access, and what controls detect/prevent it?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "security-controls.control-effectiveness-ownership",
+      "section_no": 36,
+      "section": "Security controls",
+      "label": "Who owns each control, how is its effectiveness measured/tested, and how are gaps tracked to remediation?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "security-controls.control-inventory",
+      "section_no": 36,
+      "section": "Security controls",
+      "label": "What security controls exist, classified as preventive, detective, and corrective, and where do they sit in the architecture?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "security-controls.defense-in-depth",
+      "section_no": 36,
+      "section": "Security controls",
+      "label": "Are controls layered (defense in depth) with no critical reliance on a single control, and are fail-safe defaults used?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "security-controls.threat-to-control-traceability",
+      "section_no": 36,
+      "section": "Security controls",
+      "label": "Does each control trace to one or more threats it mitigates, and does each threat have at least one control or explicit acceptance?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "risk-assessment.likelihood-impact-rating",
+      "section_no": 37,
+      "section": "Risk assessment",
+      "label": "Is each threat rated for likelihood and impact with documented rationale, and inherent vs residual risk distinguished?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "risk-assessment.prioritization-treatment",
+      "section_no": 37,
+      "section": "Risk assessment",
+      "label": "How are risks prioritized and treated (mitigate, transfer, avoid, accept), and how is remediation tracked?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "risk-assessment.risk-acceptance-ownership",
+      "section_no": 37,
+      "section": "Risk assessment",
+      "label": "Who has authority to accept residual risk, and are accepted risks documented with justification and review dates?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "risk-assessment.scoring-methodology",
+      "section_no": 37,
+      "section": "Risk assessment",
+      "label": "What methodology scores risk (e.g. likelihood x impact, CVSS, DREAD) and how are levels defined consistently?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "attack-paths.choke-points-controls",
+      "section_no": 38,
+      "section": "Attack paths",
+      "label": "Where are the choke points/controls that break each attack path, and which paths remain unbroken?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "attack-paths.crown-jewel-exposure",
+      "section_no": 38,
+      "section": "Attack paths",
+      "label": "What is the shortest/most-likely path to the system's crown-jewel assets, and how is that exposure reduced?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "attack-paths.end-to-end-chains",
+      "section_no": 38,
+      "section": "Attack paths",
+      "label": "What end-to-end attack paths chain individual threats from entry point to high-value asset or impact?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "attack-paths.lateral-movement-escalation",
+      "section_no": 38,
+      "section": "Attack paths",
+      "label": "How could an attacker move laterally or escalate privilege across trust boundaries once an initial foothold is gained?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "security-invariants.enforcement-mechanism",
+      "section_no": 39,
+      "section": "Security invariants",
+      "label": "How is each invariant enforced and where (code, schema, infra, policy), rather than relying on convention?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "security-invariants.stated-invariants",
+      "section_no": 39,
+      "section": "Security invariants",
+      "label": "What security invariants must always hold (e.g. tenant isolation, no plaintext secrets at rest, authz on every access)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "security-invariants.verification-tests",
+      "section_no": 39,
+      "section": "Security invariants",
+      "label": "How is each invariant continuously verified (tests, assertions, monitoring) and what happens on violation?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "assumptions-dependencies.assumption-failure-impact",
+      "section_no": 40,
+      "section": "Assumptions and dependencies",
+      "label": "What is the security impact if a key assumption or dependency fails or is compromised, and how is that detected?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "assumptions-dependencies.external-dependencies",
+      "section_no": 40,
+      "section": "Assumptions and dependencies",
+      "label": "What external dependencies (services, libraries, infra, identity providers) is security inherited from, and what is their trust level?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "assumptions-dependencies.trust-assumptions",
+      "section_no": 40,
+      "section": "Assumptions and dependencies",
+      "label": "What security assumptions does the model rely on (trusted networks, trusted callers, platform guarantees) and are they valid?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "known-limitations-gaps.remediation-roadmap",
+      "section_no": 41,
+      "section": "Known limitations and gaps",
+      "label": "For each known gap, what is the planned remediation, owner, target date, or documented acceptance?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "known-limitations-gaps.scope-exclusions",
+      "section_no": 41,
+      "section": "Known limitations and gaps",
+      "label": "What is explicitly out of scope for this threat model, and why, so reviewers know the boundaries of coverage?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "known-limitations-gaps.unmitigated-threats",
+      "section_no": 41,
+      "section": "Known limitations and gaps",
+      "label": "What known threats or weaknesses are currently unmitigated or only partially mitigated?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "validation-evidence.control-verification-artifacts",
+      "section_no": 42,
+      "section": "Validation and evidence",
+      "label": "What artifacts demonstrate that key controls and invariants actually work as claimed (results, logs, attestations)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "validation-evidence.open-followup-tracking",
+      "section_no": 42,
+      "section": "Validation and evidence",
+      "label": "How are validation findings, open items, and follow-up actions tracked to closure?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "validation-evidence.review-coverage",
+      "section_no": 42,
+      "section": "Validation and evidence",
+      "label": "Who reviewed/validated the threat model, when, and how is it kept current with system changes?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "validation-evidence.testing-evidence",
+      "section_no": 42,
+      "section": "Validation and evidence",
+      "label": "What testing evidence (pentest, SAST/DAST, fuzzing, red team) backs the claimed mitigations and their effectiveness?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "mitigation-plan.compensating-controls",
+      "section_no": 43,
+      "section": "Mitigation plan",
+      "label": "Where a primary control cannot be implemented, what compensating controls are in place and are they documented?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "mitigation-plan.control-mapping",
+      "section_no": 43,
+      "section": "Mitigation plan",
+      "label": "Is each identified threat mapped to one or more specific mitigating controls (preventive, detective, or corrective)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "mitigation-plan.control-status",
+      "section_no": 43,
+      "section": "Mitigation plan",
+      "label": "What is the implementation status of each control (planned, in-progress, implemented, verified)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "mitigation-plan.ownership-and-deadline",
+      "section_no": 43,
+      "section": "Mitigation plan",
+      "label": "Who owns each mitigation and what is its target remediation date or priority?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "mitigation-plan.residual-risk",
+      "section_no": 43,
+      "section": "Mitigation plan",
+      "label": "What is the residual risk after the mitigation is applied, and has it been explicitly accepted, transferred, or deferred?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "mitigation-plan.verification-method",
+      "section_no": 43,
+      "section": "Mitigation plan",
+      "label": "How is each mitigation verified to be effective (test, scan, review, monitoring) rather than merely assumed?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "incident-response.breach-notification",
+      "section_no": 44,
+      "section": "Incident response readiness",
+      "label": "Are breach-notification obligations and communication procedures (legal, customer, regulator) identified for this system?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "incident-response.containment-and-recovery",
+      "section_no": 44,
+      "section": "Incident response readiness",
+      "label": "What containment, eradication, and recovery capabilities exist (isolation, key/credential rotation, restore from backup)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "incident-response.detection-and-alerting",
+      "section_no": 44,
+      "section": "Incident response readiness",
+      "label": "What detection and alerting exists to surface a security incident affecting this system, and who receives the alerts?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "incident-response.forensic-readiness",
+      "section_no": 44,
+      "section": "Incident response readiness",
+      "label": "Are logs, audit trails, and evidence retained with sufficient fidelity and duration to support investigation and forensics?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "incident-response.roles-and-escalation",
+      "section_no": 44,
+      "section": "Incident response readiness",
+      "label": "Are incident roles, on-call ownership, and escalation paths defined for this system?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "incident-response.runbooks-and-playbooks",
+      "section_no": 44,
+      "section": "Incident response readiness",
+      "label": "Are there documented runbooks/playbooks for the most likely incident scenarios for this system?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "operational-security.access-and-privileged-ops",
+      "section_no": 45,
+      "section": "Operational security",
+      "label": "How is operational/administrative access granted, scoped (least privilege), reviewed, and audited?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "operational-security.backup-and-recovery",
+      "section_no": 45,
+      "section": "Operational security",
+      "label": "Are backups taken, encrypted, access-controlled, and periodically restore-tested to a known RPO/RTO?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "operational-security.change-management",
+      "section_no": 45,
+      "section": "Operational security",
+      "label": "What change-management and configuration-drift controls govern production changes (review, approval, rollback)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "operational-security.logging-and-monitoring",
+      "section_no": 45,
+      "section": "Operational security",
+      "label": "What security-relevant events are logged, where are logs centralized, and how is log integrity protected?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "operational-security.patch-management",
+      "section_no": 45,
+      "section": "Operational security",
+      "label": "How are OS, runtime, and dependency patches tracked and applied, and what is the SLA for critical vulnerabilities?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "operational-security.secrets-rotation",
+      "section_no": 45,
+      "section": "Operational security",
+      "label": "How are operational secrets and keys stored, rotated, and revoked over the system's lifecycle?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "ai-ml.adversarial-robustness",
+      "section_no": 46,
+      "section": "AI/ML-specific items",
+      "label": "How is the model assessed for adversarial examples, evasion, model extraction, and abuse (excessive cost/agency)?",
+      "tier": 2,
+      "precondition": "has_ai_ml"
+    },
+    {
+      "id": "ai-ml.data-leakage-and-privacy",
+      "section_no": 46,
+      "section": "AI/ML-specific items",
+      "label": "What controls prevent leakage of sensitive/training data via model responses, embeddings, or memorization?",
+      "tier": 2,
+      "precondition": "has_ai_ml"
+    },
+    {
+      "id": "ai-ml.model-supply-chain",
+      "section_no": 46,
+      "section": "AI/ML-specific items",
+      "label": "What is the provenance and integrity of pretrained models, weights, and ML dependencies (model supply chain)?",
+      "tier": 2,
+      "precondition": "has_ai_ml"
+    },
+    {
+      "id": "ai-ml.output-handling-and-guardrails",
+      "section_no": 46,
+      "section": "AI/ML-specific items",
+      "label": "How are model outputs validated, filtered, and constrained before being trusted, displayed, or used to trigger actions?",
+      "tier": 2,
+      "precondition": "has_ai_ml"
+    },
+    {
+      "id": "ai-ml.prompt-injection",
+      "section_no": 46,
+      "section": "AI/ML-specific items",
+      "label": "How is the system protected against prompt injection and untrusted content reaching the model as instructions?",
+      "tier": 2,
+      "precondition": "has_ai_ml"
+    },
+    {
+      "id": "ai-ml.training-data-integrity",
+      "section_no": 46,
+      "section": "AI/ML-specific items",
+      "label": "What is the provenance, integrity, and poisoning exposure of training/fine-tuning data?",
+      "tier": 2,
+      "precondition": "has_ai_ml"
+    },
+    {
+      "id": "physical-hardware.device-tampering",
+      "section_no": 47,
+      "section": "Physical and hardware context",
+      "label": "What tamper-resistance/tamper-evidence and theft/loss protections exist for hardware components?",
+      "tier": 2,
+      "precondition": "has_hardware"
+    },
+    {
+      "id": "physical-hardware.environmental-and-supply-chain",
+      "section_no": 47,
+      "section": "Physical and hardware context",
+      "label": "What environmental and hardware-supply-chain risks (counterfeit parts, untrusted manufacturing, disposal/decommission) are considered?",
+      "tier": 2,
+      "precondition": "has_hardware"
+    },
+    {
+      "id": "physical-hardware.peripheral-and-side-channel",
+      "section_no": 47,
+      "section": "Physical and hardware context",
+      "label": "What is the exposure to peripheral/debug interfaces (JTAG, USB), removable media, and side-channel attacks?",
+      "tier": 2,
+      "precondition": "has_hardware"
+    },
+    {
+      "id": "physical-hardware.physical-access",
+      "section_no": 47,
+      "section": "Physical and hardware context",
+      "label": "What physical access controls protect devices, facilities, and ports, and what is the threat from physical access?",
+      "tier": 2,
+      "precondition": "has_hardware"
+    },
+    {
+      "id": "physical-hardware.secure-boot-and-firmware",
+      "section_no": 47,
+      "section": "Physical and hardware context",
+      "label": "Are secure boot, firmware integrity, and trusted hardware roots of trust (TPM/HSM/secure element) in place?",
+      "tier": 2,
+      "precondition": "has_hardware"
+    },
+    {
+      "id": "diagram-legend.annotations-and-protocols",
+      "section_no": 48,
+      "section": "Diagram legend and notation",
+      "label": "Are flow annotations (protocol, direction, authentication, encryption) and their meanings defined in the legend?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "diagram-legend.consistency-and-keying",
+      "section_no": 48,
+      "section": "Diagram legend and notation",
+      "label": "Are diagram elements consistently labeled/keyed so they map unambiguously to the component, flow, and threat inventories?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "diagram-legend.element-shapes",
+      "section_no": 48,
+      "section": "Diagram legend and notation",
+      "label": "Does the diagram define the notation/shapes for the core element types (process, data store, external entity, data flow)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "diagram-legend.trust-boundary-notation",
+      "section_no": 48,
+      "section": "Diagram legend and notation",
+      "label": "Is the notation for trust boundaries (and how crossings are marked) explicitly defined in the legend?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-component.identity-and-type",
+      "section_no": 49,
+      "section": "Minimum metadata per component",
+      "label": "Does each component have a unique identifier, name, and type (process, data store, external entity)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-component.owner-and-tech",
+      "section_no": 49,
+      "section": "Minimum metadata per component",
+      "label": "Does each component record its owner and its technology/runtime stack?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-component.trust-level-and-data",
+      "section_no": 49,
+      "section": "Minimum metadata per component",
+      "label": "Does each component record its trust level/privilege and the data classification it handles?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-dataflow.authn-and-encryption",
+      "section_no": 50,
+      "section": "Minimum metadata per data flow",
+      "label": "Does each data flow record its authentication mechanism and encryption (in-transit) status?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-dataflow.endpoints-and-direction",
+      "section_no": 50,
+      "section": "Minimum metadata per data flow",
+      "label": "Does each data flow record its source, destination, and direction?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-dataflow.protocol-and-data",
+      "section_no": 50,
+      "section": "Minimum metadata per data flow",
+      "label": "Does each data flow record the protocol used and the classification/sensitivity of data carried?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-trust-boundary.controls",
+      "section_no": 51,
+      "section": "Minimum metadata per trust boundary",
+      "label": "Does each trust boundary record the controls enforced at the crossing (authentication, authorization, validation, filtering)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-trust-boundary.crossings",
+      "section_no": 51,
+      "section": "Minimum metadata per trust boundary",
+      "label": "Does each trust boundary enumerate the flows/components that cross it?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-trust-boundary.identity-and-scope",
+      "section_no": 51,
+      "section": "Minimum metadata per trust boundary",
+      "label": "Does each trust boundary have an identifier and a clear description of the privilege/trust transition it represents?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-threat.category-and-rating",
+      "section_no": 52,
+      "section": "Minimum metadata per threat",
+      "label": "Does each threat record its category (e.g. STRIDE) and a risk rating (likelihood/impact)?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-threat.identity-and-description",
+      "section_no": 52,
+      "section": "Minimum metadata per threat",
+      "label": "Does each threat have a unique identifier, description, and the affected component/flow/boundary?",
+      "tier": 1,
+      "precondition": null
+    },
+    {
+      "id": "metadata-threat.mitigation-and-status",
+      "section_no": 52,
+      "section": "Minimum metadata per threat",
+      "label": "Does each threat link to its mitigation(s) and record a status (open, mitigated, accepted)?",
+      "tier": 1,
+      "precondition": null
+    }
+  ]
+}
