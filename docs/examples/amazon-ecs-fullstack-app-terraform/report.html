@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Security Assessment Report — Amazon ECS Fullstack App (Terraform Demo)</title>
+<style>
+:root {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-tertiary: #21262d;
+  --bg-card: #1c2128;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --border-color: #30363d;
+  --accent-blue: #58a6ff;
+  --accent-purple: #bc8cff;
+  --severity-critical: #f85149;
+  --severity-high: #db6d28;
+  --severity-medium: #d29922;
+  --severity-low: #3fb950;
+  --severity-info: #58a6ff;
+  --link-color: #58a6ff;
+  --font-sans: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  --sidebar-width: 280px;
+}
+*, *::before, *::after { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  font-size: 15px;
+}
+a { color: var(--link-color); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Sidebar */
+.sidebar {
+  position: fixed;
+  top: 0; left: 0;
+  width: var(--sidebar-width);
+  height: 100vh;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border-color);
+  overflow-y: auto;
+  z-index: 100;
+  padding: 20px 0;
+}
+.sidebar-header {
+  padding: 0 16px 16px;
+  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 12px;
+}
+.sidebar-header h2 {
+  font-size: 14px;
+  color: var(--text-primary);
+  margin: 0 0 4px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.sidebar-header p {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin: 0;
+}
+.sidebar nav a {
+  display: block;
+  padding: 6px 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  border-left: 2px solid transparent;
+  transition: all 0.15s;
+}
+.sidebar nav a:hover {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  text-decoration: none;
+  border-left-color: var(--accent-blue);
+}
+.sidebar nav a.active {
+  color: var(--accent-blue);
+  border-left-color: var(--accent-blue);
+  background: rgba(88,166,255,0.08);
+}
+.sidebar nav .nav-section {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 12px 16px 4px;
+  letter-spacing: 0.8px;
+  font-weight: 600;
+}
+
+/* Main content */
+.main {
+  margin-left: var(--sidebar-width);
+  max-width: 1100px;
+  padding: 40px 48px 80px;
+}
+
+/* Headings */
+h1 {
+  font-size: 32px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 16px;
+}
+h2 {
+  font-size: 24px;
+  font-weight: 600;
+  margin: 48px 0 16px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+h3 {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 32px 0 12px;
+  color: var(--text-primary);
+}
+h4 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; }
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+}
+th, td {
+  padding: 10px 14px;
+  text-align: left;
+  border: 1px solid var(--border-color);
+}
+th {
+  background: var(--bg-tertiary);
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+td { background: var(--bg-secondary); color: var(--text-secondary); }
+tr:hover td { background: var(--bg-tertiary); }
+
+/* Severity badges */
+.badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.badge-critical { background: var(--severity-critical); color: #fff; }
+.badge-high { background: var(--severity-high); color: #fff; }
+.badge-medium { background: var(--severity-medium); color: #000; }
+.badge-low { background: var(--severity-low); color: #000; }
+
+/* Posture badge */
+.posture-badge {
+  display: inline-block;
+  padding: 8px 24px;
+  border-radius: 6px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  background: linear-gradient(135deg, var(--severity-high), var(--severity-critical));
+  color: #fff;
+  margin: 8px 0 16px;
+}
+
+/* Finding cards */
+.finding-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 24px;
+  margin: 20px 0;
+  border-left: 4px solid var(--border-color);
+}
+.finding-card.critical { border-left-color: var(--severity-critical); }
+.finding-card.high { border-left-color: var(--severity-high); }
+.finding-card.medium { border-left-color: var(--severity-medium); }
+.finding-card.low { border-left-color: var(--severity-low); }
+.finding-card h3 { margin-top: 0; }
+.finding-card table { margin: 12px 0; }
+.finding-card table th { font-size: 12px; }
+
+/* Diagram containers */
+.diagram-container {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin: 20px 0;
+  overflow: hidden;
+}
+.diagram-toolbar {
+  position: absolute;
+  top: 8px; right: 8px;
+  display: flex;
+  gap: 6px;
+  opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 10;
+}
+.diagram-container:hover .diagram-toolbar { opacity: 1; }
+.diagram-toolbar button {
+  background: rgba(0,0,0,0.7);
+  color: #fff;
+  border: none;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-family: var(--font-sans);
+}
+.diagram-toolbar button:hover { background: rgba(0,0,0,0.9); }
+.diagram-scroll {
+  overflow: auto;
+  max-height: 800px;
+  cursor: grab;
+}
+.diagram-scroll:active { cursor: grabbing; }
+.diagram-scroll img {
+  display: block;
+  max-width: none;
+  transform-origin: top left;
+  transition: transform 0.2s;
+}
+
+/* Callout boxes */
+.callout {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 16px 20px;
+  margin: 16px 0;
+}
+.callout-title {
+  font-weight: 600;
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+.callout ul { margin: 4px 0; padding-left: 20px; }
+.callout li { margin: 4px 0; }
+
+/* Quick win highlight */
+.quick-win {
+  border-left: 3px solid var(--severity-low);
+  padding-left: 12px;
+}
+
+/* Collapsible sections */
+details {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  margin: 8px 0;
+}
+details summary {
+  padding: 12px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  user-select: none;
+}
+details summary:hover { background: var(--bg-tertiary); }
+details[open] summary { border-bottom: 1px solid var(--border-color); }
+details .content { padding: 16px; }
+
+/* Metrics grid */
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+}
+.metric-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  text-align: center;
+}
+.metric-value {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.metric-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-top: 4px;
+}
+
+/* Severity distribution bar */
+.severity-bar {
+  display: flex;
+  height: 12px;
+  border-radius: 6px;
+  overflow: hidden;
+  margin: 12px 0;
+}
+.severity-bar .seg-critical { background: var(--severity-critical); }
+.severity-bar .seg-high { background: var(--severity-high); }
+.severity-bar .seg-medium { background: var(--severity-medium); }
+.severity-bar .seg-low { background: var(--severity-low); }
+
+/* Search */
+.search-bar {
+  margin: 20px 0;
+  display: flex;
+  gap: 8px;
+}
+.search-bar input {
+  flex: 1;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: var(--font-sans);
+}
+.search-bar input:focus {
+  outline: none;
+  border-color: var(--accent-blue);
+  box-shadow: 0 0 0 3px rgba(88,166,255,0.15);
+}
+.search-bar select {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 10px 14px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: var(--font-sans);
+}
+
+/* Fullscreen overlay */
+.fullscreen-overlay {
+  display: none;
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(0,0,0,0.92);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+.fullscreen-overlay.active { display: flex; }
+.fullscreen-overlay img {
+  max-width: 95vw;
+  max-height: 95vh;
+  object-fit: contain;
+}
+.fullscreen-close {
+  position: fixed;
+  top: 16px; right: 16px;
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  z-index: 1001;
+}
+
+/* Wave timeline */
+.wave-timeline {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin: 20px 0;
+}
+.wave-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 16px;
+  border-top: 3px solid;
+}
+.wave-card:nth-child(1) { border-top-color: var(--severity-low); }
+.wave-card:nth-child(2) { border-top-color: var(--severity-critical); }
+.wave-card:nth-child(3) { border-top-color: var(--severity-medium); }
+.wave-card:nth-child(4) { border-top-color: var(--severity-info); }
+.wave-card h4 { margin-top: 0; font-size: 13px; }
+.wave-card ul { font-size: 13px; padding-left: 16px; margin: 8px 0; }
+.wave-card li { margin: 4px 0; }
+
+/* Print styles */
+@media print {
+  .sidebar { display: none; }
+  .main { margin-left: 0; max-width: 100%; padding: 20px; }
+  .diagram-toolbar { display: none; }
+  body { background: #fff; color: #000; }
+  table th { background: #eee; }
+  table td { background: #fff; }
+  .finding-card { background: #fafafa; }
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .sidebar { display: none; }
+  .main { margin-left: 0; padding: 20px; }
+  .wave-timeline { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- Sidebar Navigation -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <h2>Security Assessment</h2>
+    <p>Amazon ECS Fullstack App</p>
+    <p style="font-size:11px;color:var(--text-muted)">2026-02-18</p>
+  </div>
+  <nav>
+    <div class="nav-section">Report</div>
+    <a href="#executive-summary">I. Executive Summary</a>
+    <a href="#system-overview">II. System Overview</a>
+    <a href="#architecture-diagram">III. Architecture Diagram</a>
+    <a href="#risk-overlay">IV. Risk Overlay Diagram</a>
+    <a href="#asset-inventory">V. Asset Inventory</a>
+    <a href="#threat-actors">VI. Threat Actor Profiles</a>
+    <a href="#findings">VII. Findings</a>
+    <a href="#remediation">VIII. Remediation Roadmap</a>
+    <a href="#networking">IX. Networking & Infrastructure</a>
+    <a href="#compliance">X. Compliance Mapping</a>
+    <a href="#privacy">XI. Privacy Assessment</a>
+    <a href="#positive">XII. Positive Observations</a>
+    <a href="#assumptions">XIII. Assumptions & Limitations</a>
+    <a href="#appendices">XIV. Appendices</a>
+  </nav>
+</div>
+
+<!-- Fullscreen overlay for diagrams -->
+<div class="fullscreen-overlay" id="fullscreenOverlay">
+  <button class="fullscreen-close" id="fullscreenClose">Close (Esc)</button>
+  <img id="fullscreenImg" src="" alt="Fullscreen diagram">
+</div>
+
+<!-- Main Content -->
+<div class="main">
+
+<h1>Consolidated Security Assessment Report</h1>
+<p style="color:var(--text-secondary)">Amazon ECS Fullstack App (Terraform Demo) &mdash; 2026-02-18<br>
+Methodology: STRIDE-LM + PASTA + OWASP Risk Rating | CVSS v3.1 | LINDDUN | SOC 2 / ISO 27001 / NIST CSF / PCI-DSS</p>
+
+<!-- ============================================================ -->
+<h2 id="executive-summary">I. Executive Summary</h2>
+
+<div class="posture-badge">CONCERNING</div>
+
+<p>This AWS ECS demo/reference architecture contains significant security gaps that make it unsuitable for production use without substantial hardening. While expected for a demonstration project, organizations forking this repository as a production starting point face serious risk. The assessment identified <strong>26 unique findings</strong> across four specialist domains, with two CRITICAL-severity issues enabling full AWS account compromise via the CI/CD pipeline.</p>
+
+<table>
+  <thead><tr><th>Severity</th><th>Count</th><th>Scoring System</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge badge-critical">CRITICAL</span></td><td>2</td><td>OWASP Risk Rating</td></tr>
+    <tr><td><span class="badge badge-high">HIGH</span></td><td>10</td><td>OWASP Risk Rating</td></tr>
+    <tr><td><span class="badge badge-medium">MEDIUM</span></td><td>11</td><td>OWASP Risk Rating</td></tr>
+    <tr><td><span class="badge badge-low">LOW</span></td><td>3</td><td>OWASP Risk Rating</td></tr>
+    <tr><td><strong>Total</strong></td><td><strong>26</strong></td><td></td></tr>
+  </tbody>
+</table>
+
+<div class="severity-bar">
+  <div class="seg-critical" style="width:7.7%"></div>
+  <div class="seg-high" style="width:38.5%"></div>
+  <div class="seg-medium" style="width:42.3%"></div>
+  <div class="seg-low" style="width:11.5%"></div>
+</div>
+
+<h3>Top 3 Risks</h3>
+<div class="finding-card critical">
+  <strong>1. Repository-Sourced Buildspec with Broad IAM (TM-004, CRITICAL, Score 25)</strong>
+  <p>Any developer with GitHub push access can execute arbitrary commands with near-admin AWS permissions. This is a 4-step chain from git push to full AWS account compromise with zero gates at any step.</p>
+</div>
+<div class="finding-card critical">
+  <strong>2. IAM PassRole on Wildcard Resource (TM-003, CRITICAL, Score 20)</strong>
+  <p>Both the DevOps role and ECS task role can pass any IAM role in the account, enabling privilege escalation from any code execution context to full account admin.</p>
+</div>
+<div class="finding-card high">
+  <strong>3. No TLS on Public-Facing ALBs (TM-001, HIGH, Score 15)</strong>
+  <p>All user traffic traverses the internet in plaintext. This enables traffic interception and response modification, including JavaScript injection into the SPA.</p>
+</div>
+
+<div class="metrics-grid">
+  <div class="metric-card"><div class="metric-value">26</div><div class="metric-label">Components Assessed</div></div>
+  <div class="metric-card"><div class="metric-value">25+</div><div class="metric-label">Data Flows Mapped</div></div>
+  <div class="metric-card"><div class="metric-value">8</div><div class="metric-label">Trust Boundaries</div></div>
+  <div class="metric-card"><div class="metric-value">5</div><div class="metric-label">Threat Actors Modeled</div></div>
+  <div class="metric-card"><div class="metric-value">26</div><div class="metric-label">Unique Findings</div></div>
+</div>
+
+<div class="callout">
+  <div class="callout-title">Quick Wins (achievable in 1-2 days)</div>
+  <ul>
+    <li>Set ECR <code>image_tag_mutability = "IMMUTABLE"</code> (TM-006)</li>
+    <li>Add <code>aws_s3_bucket_public_access_block</code> to both buckets (TM-009)</li>
+    <li>Enable DynamoDB PITR (TM-010)</li>
+    <li>Replace <code>npm install</code> with <code>npm ci</code> in Dockerfiles (TM-025)</li>
+    <li>Create AWS billing alarm at $50 threshold (TM-024)</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="system-overview">II. System Overview</h2>
+
+<p><strong>System Purpose:</strong> AWS ECS Fargate-based fullstack web application serving a product catalog, deployed via Terraform. Designed as a demo/reference architecture demonstrating ECS + DevOps patterns. Not designed for production use, but commonly forked as a starting point.</p>
+
+<p><strong>Scope:</strong> Full system including 14 Terraform modules, Node.js/Express backend, Vue.js frontend, AWS CI/CD pipeline (CodePipeline, CodeBuild, CodeDeploy), networking (VPC, ALBs, Security Groups), IAM roles, and data stores (DynamoDB, S3, ECR). Out of scope: AWS account-level settings, GitHub organization settings, runtime vulnerability scanning, penetration testing.</p>
+
+<table>
+  <thead><tr><th>Layer</th><th>Technology</th><th>Version</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Frontend</td><td>Vue.js + Bootstrap-Vue</td><td>2.6.11</td><td>SPA served by Nginx</td></tr>
+    <tr><td>Backend</td><td>Node.js + Express</td><td>4.16.4</td><td>API server with Swagger docs</td></tr>
+    <tr><td>Container Runtime</td><td>AWS Fargate</td><td>LATEST</td><td>awsvpc network mode</td></tr>
+    <tr><td>Data Store</td><td>DynamoDB</td><td>PAY_PER_REQUEST</td><td>Product catalog</td></tr>
+    <tr><td>Object Storage</td><td>S3</td><td>N/A</td><td>Assets + Pipeline artifacts</td></tr>
+    <tr><td>CI/CD</td><td>CodePipeline + CodeBuild + CodeDeploy</td><td>V1 actions</td><td>Blue/Green deployment</td></tr>
+    <tr><td>IaC</td><td>Terraform</td><td>&ge; 0.13</td><td>AWS provider ~&gt; 3.38</td></tr>
+    <tr><td>AWS SDK</td><td>aws-sdk v2</td><td>2.876.0</td><td>Outdated; v3 recommended</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Deployment Model:</strong> Single AWS region, single VPC (10.120.0.0/16), public + private subnets across 2 AZs. Fargate launch type with Blue/Green deployment via CodeDeploy.</p>
+
+<!-- ============================================================ -->
+<h2 id="architecture-diagram">III. Architecture Diagram</h2>
+
+<div class="diagram-container" id="structDiagramContainer">
+  <div class="diagram-toolbar">
+    <button onclick="zoomDiagram('structDiagram', 1.5)">Zoom In</button>
+    <button onclick="zoomDiagram('structDiagram', 0.67)">Zoom Out</button>
+    <button onclick="resetZoom('structDiagram')">Reset</button>
+    <button onclick="openFullscreen('structural-diagram.png')">Fullscreen</button>
+    <button onclick="downloadImg('structural-diagram.png', 'structural-diagram.png')">Download</button>
+  </div>
+  <div class="diagram-scroll">
+    <img id="structDiagram" src="structural-diagram.png" alt="Structural Architecture Diagram" style="width:100%">
+  </div>
+</div>
+<p style="font-size:13px;color:var(--text-secondary);text-align:center"><em>Figure 1: L1 Structural Architecture Diagram &mdash; Amazon ECS Fullstack App</em></p>
+
+<h3>Component Metadata</h3>
+<table>
+  <thead><tr><th>Component</th><th>Type</th><th>Tech Stack</th><th>Port/Protocol</th><th>Subnet/Zone</th><th>Auth Method</th><th>Encryption</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Client ALB</td><td>Load Balancer</td><td>AWS ALB</td><td>80/HTTP</td><td>Public Subnets</td><td>None</td><td>None (HTTP only)</td><td>HTTPS scaffold exists but disabled</td></tr>
+    <tr><td>Server ALB</td><td>Load Balancer</td><td>AWS ALB</td><td>80/HTTP</td><td>Public Subnets</td><td>None</td><td>None (HTTP only)</td><td>HTTPS scaffold exists but disabled</td></tr>
+    <tr><td>Client ECS</td><td>Compute</td><td>Fargate + Nginx</td><td>80/HTTP</td><td>Private Client Subnets</td><td>None</td><td>None</td><td>Vue.js SPA</td></tr>
+    <tr><td>Server ECS</td><td>Compute</td><td>Fargate + Node.js/Express</td><td>3001/HTTP</td><td>Private Server Subnets</td><td>None</td><td>None</td><td>CORS: all origins</td></tr>
+    <tr><td>DynamoDB</td><td>Data Store</td><td>AWS DynamoDB</td><td>443/HTTPS</td><td>AWS Managed</td><td>IAM (ECS Task Role)</td><td>AWS-owned key</td><td>Product catalog</td></tr>
+    <tr><td>S3 Assets</td><td>Data Store</td><td>AWS S3</td><td>443/HTTPS</td><td>AWS Managed</td><td>IAM</td><td>Default SSE-S3</td><td>No public_access_block</td></tr>
+    <tr><td>S3 Pipeline</td><td>Data Store</td><td>AWS S3</td><td>443/HTTPS</td><td>AWS Managed</td><td>IAM</td><td>Default SSE-S3</td><td>force_destroy=true</td></tr>
+    <tr><td>ECR</td><td>Registry</td><td>AWS ECR</td><td>443/HTTPS</td><td>AWS Managed</td><td>IAM</td><td>Default encryption</td><td>MUTABLE tags</td></tr>
+    <tr><td>CloudWatch</td><td>Monitoring</td><td>AWS CloudWatch</td><td>443/HTTPS</td><td>AWS Managed</td><td>IAM</td><td>Default encryption</td><td>30-day retention</td></tr>
+    <tr><td>CodePipeline</td><td>CI/CD</td><td>AWS CodePipeline V1</td><td>443/HTTPS</td><td>AWS Managed</td><td>IAM (DevOps Role)</td><td>AWS API encryption</td><td>No approval gates</td></tr>
+    <tr><td>CodeBuild</td><td>CI/CD</td><td>AWS CodeBuild</td><td>443/HTTPS</td><td>AWS Managed</td><td>IAM (DevOps Role)</td><td>AWS API encryption</td><td>Privileged Docker mode</td></tr>
+    <tr><td>CodeDeploy</td><td>CI/CD</td><td>AWS CodeDeploy</td><td>443/HTTPS</td><td>AWS Managed</td><td>IAM (CodeDeploy Role)</td><td>AWS API encryption</td><td>Blue/Green + auto-rollback</td></tr>
+    <tr><td>SNS</td><td>Notification</td><td>AWS SNS</td><td>443/HTTPS</td><td>AWS Managed</td><td>IAM</td><td>No encryption</td><td>No subscribers</td></tr>
+  </tbody>
+</table>
+
+<h3>Trust Boundaries</h3>
+<table>
+  <thead><tr><th>Boundary</th><th>Trust Level</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>Internet / Public Network</td><td>Untrusted</td><td>All traffic from end users and external attackers. No filtering before ALBs except AWS Shield Standard.</td></tr>
+    <tr><td>VPC Perimeter (10.120.0.0/16)</td><td>Low-Medium</td><td>Network boundary for all application components. IGW and NAT GW are crossing points.</td></tr>
+    <tr><td>Public Subnets</td><td>Low</td><td>ALBs are internet-facing on HTTP:80. SG allows 0.0.0.0/0:80 ingress.</td></tr>
+    <tr><td>Private Client Subnets</td><td>Medium</td><td>Client ECS tasks. SG ingress restricted to Client ALB SG only.</td></tr>
+    <tr><td>Private Server Subnets</td><td>Medium</td><td>Server ECS tasks. SG ingress restricted to Server ALB SG only.</td></tr>
+    <tr><td>AWS Managed Services</td><td>High</td><td>DynamoDB, S3, ECR, CloudWatch, SNS. IAM-based access control.</td></tr>
+    <tr><td>CI/CD Pipeline</td><td>Elevated</td><td>CodePipeline, CodeBuild, CodeDeploy. DevOps IAM role with broad permissions.</td></tr>
+    <tr><td>External Services</td><td>Vendor Trust</td><td>GitHub, npm Registry, Public ECR. OAuth token and HTTPS connections.</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="risk-overlay">IV. Risk Overlay Diagram</h2>
+
+<div class="diagram-container" id="riskDiagramContainer">
+  <div class="diagram-toolbar">
+    <button onclick="zoomDiagram('riskDiagram', 1.5)">Zoom In</button>
+    <button onclick="zoomDiagram('riskDiagram', 0.67)">Zoom Out</button>
+    <button onclick="resetZoom('riskDiagram')">Reset</button>
+    <button onclick="openFullscreen('risk-overlay-diagram.png')">Fullscreen</button>
+    <button onclick="downloadImg('risk-overlay-diagram.png', 'risk-overlay-diagram.png')">Download</button>
+  </div>
+  <div class="diagram-scroll">
+    <img id="riskDiagram" src="risk-overlay-diagram.png" alt="Risk Overlay Diagram" style="width:100%">
+  </div>
+</div>
+<p style="font-size:13px;color:var(--text-secondary);text-align:center"><em>Figure 2: L4 Risk Overlay Diagram &mdash; Kill chains and severity coloring applied</em></p>
+
+<h3>Component Risk Mapping</h3>
+<table>
+  <thead><tr><th>Component</th><th>Risk Level</th><th>Finding IDs</th><th>STRIDE-LM Categories</th><th>Top CWE</th></tr></thead>
+  <tbody>
+    <tr><td>CodeBuild</td><td><span class="badge badge-critical">CRITICAL</span></td><td>TM-004, TM-013, TM-025</td><td>S, T, E, LM</td><td>CWE-269</td></tr>
+    <tr><td>DevOpsRole</td><td><span class="badge badge-critical">CRITICAL</span></td><td>TM-003, TM-004</td><td>E, LM</td><td>CWE-269</td></tr>
+    <tr><td>ECSTaskRole</td><td><span class="badge badge-critical">CRITICAL</span></td><td>TM-003</td><td>E, LM</td><td>CWE-269</td></tr>
+    <tr><td>GitHub</td><td><span class="badge badge-high">HIGH</span></td><td>TM-023</td><td>T, R</td><td>CWE-862</td></tr>
+    <tr><td>CodePipeline</td><td><span class="badge badge-high">HIGH</span></td><td>TM-014</td><td>T, E</td><td>CWE-862</td></tr>
+    <tr><td>Client ALB</td><td><span class="badge badge-high">HIGH</span></td><td>TM-001, TM-007</td><td>I, D</td><td>CWE-311</td></tr>
+    <tr><td>Server ALB</td><td><span class="badge badge-high">HIGH</span></td><td>TM-001, TM-002, TM-007</td><td>S, I, D</td><td>CWE-311, CWE-306</td></tr>
+    <tr><td>Server ECS</td><td><span class="badge badge-high">HIGH</span></td><td>TM-002, TM-008, TM-012, TM-015, TM-016, TM-017, TM-022</td><td>S, T, I, E, LM</td><td>CWE-306, CWE-209, CWE-269</td></tr>
+    <tr><td>Client ECS</td><td><span class="badge badge-high">HIGH</span></td><td>TM-017, TM-022</td><td>I, E, LM</td><td>CWE-269</td></tr>
+    <tr><td>ECR</td><td><span class="badge badge-high">HIGH</span></td><td>TM-006</td><td>T</td><td>&mdash;</td></tr>
+    <tr><td>GitHubToken</td><td><span class="badge badge-high">HIGH</span></td><td>TM-005</td><td>I</td><td>CWE-312</td></tr>
+    <tr><td>TFState</td><td><span class="badge badge-high">HIGH</span></td><td>TM-005</td><td>I</td><td>CWE-312</td></tr>
+    <tr><td>DynamoDB</td><td><span class="badge badge-high">HIGH</span></td><td>TM-010, TM-024</td><td>D</td><td>CWE-770</td></tr>
+    <tr><td>SG_ECS</td><td><span class="badge badge-high">HIGH</span></td><td>TM-022</td><td>I, LM</td><td>CWE-269</td></tr>
+    <tr><td>S3 Assets</td><td><span class="badge badge-medium">MEDIUM</span></td><td>TM-009</td><td>T, I</td><td>CWE-732</td></tr>
+    <tr><td>S3 Pipeline</td><td><span class="badge badge-medium">MEDIUM</span></td><td>TM-009</td><td>T, I</td><td>CWE-732</td></tr>
+    <tr><td>CloudWatch</td><td><span class="badge badge-medium">MEDIUM</span></td><td>TM-021, TM-026</td><td>R</td><td>CWE-390</td></tr>
+    <tr><td>npm Registry</td><td><span class="badge badge-medium">MEDIUM</span></td><td>TM-025</td><td>T</td><td>CWE-269</td></tr>
+    <tr><td>Public ECR</td><td><span class="badge badge-medium">MEDIUM</span></td><td>TM-015</td><td>T</td><td>&mdash;</td></tr>
+    <tr><td>SNS</td><td><span class="badge badge-low">LOW</span></td><td>TM-020</td><td>R</td><td>CWE-311</td></tr>
+  </tbody>
+</table>
+
+<h3>Critical Data Flow Highlights</h3>
+<table>
+  <thead><tr><th>Data Flow</th><th>Risk</th><th>Issue</th></tr></thead>
+  <tbody>
+    <tr><td>User &rarr; Client/Server ALB</td><td><span class="badge badge-high">HIGH</span></td><td>All traffic HTTP plaintext; no TLS encryption</td></tr>
+    <tr><td>GitHub &rarr; CodePipeline &rarr; CodeBuild</td><td><span class="badge badge-critical">CRITICAL</span></td><td>Kill Chain 1: Push malicious buildspec, auto-triggered, broad IAM</td></tr>
+    <tr><td>npm Registry &rarr; CodeBuild &rarr; ECR &rarr; ECS</td><td><span class="badge badge-high">HIGH</span></td><td>Kill Chain 2: Supply chain compromise to production</td></tr>
+    <tr><td>GitHubToken &rarr; CodePipeline</td><td><span class="badge badge-high">HIGH</span></td><td>OAuth token in plaintext state; single point of credential compromise</td></tr>
+    <tr><td>ECS Tasks &rarr; 0.0.0.0/0 (egress)</td><td><span class="badge badge-high">HIGH</span></td><td>Unrestricted egress enables C2 and data exfiltration</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="asset-inventory">V. Asset Inventory</h2>
+
+<h3>Data Assets</h3>
+<table>
+  <thead><tr><th>Asset</th><th>Classification</th><th>Storage Location</th><th>Encryption at Rest</th><th>Encryption in Transit</th><th>Access Controls</th><th>Retention</th></tr></thead>
+  <tbody>
+    <tr><td>Product catalog (id, title, path)</td><td>PUBLIC</td><td>DynamoDB</td><td>AWS-owned key</td><td>HTTPS (SDK)</td><td>IAM (ECS Task Role)</td><td>Indefinite</td></tr>
+    <tr><td>Product images</td><td>PUBLIC</td><td>S3 Assets</td><td>Default SSE-S3</td><td>HTTP (via URL)</td><td>ACL private</td><td>Indefinite</td></tr>
+    <tr><td>CI/CD artifacts</td><td>INTERNAL</td><td>S3 Pipeline</td><td>Default SSE-S3</td><td>HTTPS (AWS API)</td><td>IAM (DevOps Role)</td><td>Indefinite (force_destroy)</td></tr>
+    <tr><td>Docker images</td><td>INTERNAL</td><td>ECR</td><td>Default encryption</td><td>HTTPS (AWS API)</td><td>IAM</td><td>Indefinite</td></tr>
+    <tr><td>Application logs</td><td>INTERNAL</td><td>CloudWatch</td><td>Default encryption</td><td>HTTPS (AWS API)</td><td>IAM</td><td>30 days</td></tr>
+    <tr><td>GitHub OAuth token</td><td>RESTRICTED</td><td>TF state (local), CodePipeline config</td><td>Plaintext</td><td>CLI / AWS API</td><td>File system / IAM</td><td>Indefinite</td></tr>
+    <tr><td>Terraform state</td><td>RESTRICTED</td><td>Local filesystem</td><td>None</td><td>N/A (local)</td><td>File system</td><td>Indefinite</td></tr>
+    <tr><td>Swagger API docs</td><td>PUBLIC</td><td>/api/docs endpoint</td><td>N/A</td><td>HTTP (plaintext)</td><td>None</td><td>Runtime</td></tr>
+  </tbody>
+</table>
+
+<h3>Data Flow Summary</h3>
+<table>
+  <thead><tr><th>Source</th><th>Destination</th><th>Protocol</th><th>Data Type</th><th>Sensitivity</th><th>Finding Refs</th></tr></thead>
+  <tbody>
+    <tr><td>End User</td><td>Client ALB</td><td>HTTP</td><td>SPA requests</td><td>PUBLIC</td><td>TM-001</td></tr>
+    <tr><td>End User</td><td>Server ALB</td><td>HTTP</td><td>API requests</td><td>PUBLIC</td><td>TM-001, TM-002</td></tr>
+    <tr><td>Server ECS</td><td>DynamoDB</td><td>HTTPS</td><td>SDK queries</td><td>INTERNAL</td><td>&mdash;</td></tr>
+    <tr><td>Server ECS</td><td>S3 Assets</td><td>HTTPS</td><td>Object URLs</td><td>PUBLIC</td><td>&mdash;</td></tr>
+    <tr><td>GitHub</td><td>CodePipeline</td><td>HTTPS</td><td>Source code</td><td>INTERNAL</td><td>TM-004, TM-023</td></tr>
+    <tr><td>CodeBuild</td><td>ECR</td><td>HTTPS</td><td>Docker images</td><td>INTERNAL</td><td>TM-006</td></tr>
+    <tr><td>ECS Tasks</td><td>0.0.0.0/0</td><td>ALL</td><td>Unrestricted egress</td><td>INTERNAL</td><td>TM-022</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="threat-actors">VI. Threat Actor Profiles</h2>
+
+<div class="finding-card">
+<h3>TA-1: Opportunistic Attacker / Script Kiddie</h3>
+<table>
+  <tbody>
+    <tr><td><strong>Type</strong></td><td>External</td></tr>
+    <tr><td><strong>Motivation</strong></td><td>Curiosity, notoriety, easy financial gain</td></tr>
+    <tr><td><strong>Capability</strong></td><td>2/5</td></tr>
+    <tr><td><strong>Access Level</strong></td><td>Unauthenticated external (internet)</td></tr>
+    <tr><td><strong>Linked Findings</strong></td><td>TM-001, TM-002, TM-007, TM-008, TM-012, TM-015, TM-016</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="finding-card">
+<h3>TA-2: Malicious Insider / Compromised Developer</h3>
+<table>
+  <tbody>
+    <tr><td><strong>Type</strong></td><td>Internal</td></tr>
+    <tr><td><strong>Motivation</strong></td><td>Revenge, financial gain, or compromised account</td></tr>
+    <tr><td><strong>Capability</strong></td><td>3/5</td></tr>
+    <tr><td><strong>Access Level</strong></td><td>GitHub repository write access, potential AWS console access</td></tr>
+    <tr><td><strong>Linked Findings</strong></td><td>TM-003, TM-004, TM-005, TM-013, TM-014, TM-023</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="finding-card">
+<h3>TA-3: Supply Chain Attacker</h3>
+<table>
+  <tbody>
+    <tr><td><strong>Type</strong></td><td>External (indirect)</td></tr>
+    <tr><td><strong>Motivation</strong></td><td>Financial gain, espionage</td></tr>
+    <tr><td><strong>Capability</strong></td><td>4/5</td></tr>
+    <tr><td><strong>Access Level</strong></td><td>Indirect via npm packages or Docker base images</td></tr>
+    <tr><td><strong>Linked Findings</strong></td><td>TM-006, TM-015, TM-017, TM-025</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="finding-card">
+<h3>TA-4: Network-Position Attacker (MitM)</h3>
+<table>
+  <tbody>
+    <tr><td><strong>Type</strong></td><td>External</td></tr>
+    <tr><td><strong>Motivation</strong></td><td>Data interception, session hijacking</td></tr>
+    <tr><td><strong>Capability</strong></td><td>3/5</td></tr>
+    <tr><td><strong>Access Level</strong></td><td>Network position between user and ALB</td></tr>
+    <tr><td><strong>Linked Findings</strong></td><td>TM-001</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="finding-card">
+<h3>TA-5: Negligent Insider</h3>
+<table>
+  <tbody>
+    <tr><td><strong>Type</strong></td><td>Internal</td></tr>
+    <tr><td><strong>Motivation</strong></td><td>Unintentional</td></tr>
+    <tr><td><strong>Capability</strong></td><td>1/5 (inadvertent)</td></tr>
+    <tr><td><strong>Access Level</strong></td><td>Developer or DevOps access</td></tr>
+    <tr><td><strong>Linked Findings</strong></td><td>TM-005, TM-009</td></tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="findings">VII. Findings</h2>
+
+<div class="search-bar">
+  <input type="text" id="findingSearch" placeholder="Search findings by ID, title, or component..." oninput="filterFindings()">
+  <select id="severityFilter" onchange="filterFindings()">
+    <option value="">All Severities</option>
+    <option value="critical">CRITICAL</option>
+    <option value="high">HIGH</option>
+    <option value="medium">MEDIUM</option>
+    <option value="low">LOW</option>
+  </select>
+</div>
+
+<div id="findingsContainer">
+
+<!-- CRITICAL Findings -->
+<div class="finding-card critical" data-severity="critical" data-search="tm-004 repository buildspec broad iam codebuild codepipeline devopsrole github">
+<h3><span class="badge badge-critical">CRITICAL</span> TM-004: Repository-Sourced Buildspec with Broad IAM Permissions</h3>
+<table>
+  <tbody>
+    <tr><td><strong>ID</strong></td><td>TM-004</td></tr>
+    <tr><td><strong>Affected Component(s)</strong></td><td>CodeBuild, CodePipeline, DevOpsRole, GitHub</td></tr>
+    <tr><td><strong>STRIDE-LM</strong></td><td>T, E, LM</td></tr>
+    <tr><td><strong>MITRE ATT&CK</strong></td><td>T1195 (Supply Chain Compromise)</td></tr>
+    <tr><td><strong>CWE</strong></td><td>CWE-269</td></tr>
+    <tr><td><strong>CIA Impact</strong></td><td>C: H &middot; I: H &middot; A: H</td></tr>
+    <tr><td><strong>PASTA L&times;I</strong></td><td>5 &times; 5 = 25 (CRITICAL)</td></tr>
+    <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+    <tr><td><strong>Remediation</strong></td><td>R-012, R-013, R-014</td></tr>
+    <tr><td><strong>Sources</strong></td><td>Threat Model (TM-004), Code Review (CR-002 CVSS 9.8), Compliance (GRC-009)</td></tr>
+  </tbody>
+</table>
+<details><summary>Attack Scenario</summary><div class="content">
+<ol>
+  <li>Developer pushes modified buildspec to main branch (no branch protection)</li>
+  <li>CodePipeline polls GitHub, detects change, triggers CodeBuild</li>
+  <li>Buildspec commands execute in privileged Docker container with DevOps IAM role</li>
+  <li>Attacker exfiltrates AWS credentials with PassRole * capability</li>
+  <li>Full AWS account compromise achieved</li>
+</ol>
+</div></details>
+<p><strong>Remediation:</strong> Store buildspec inline in Terraform or in a restricted repo (R-012). Enable GitHub branch protection (R-013). Add manual approval in pipeline (R-014).</p>
+</div>
+
+<div class="finding-card critical" data-severity="critical" data-search="tm-003 iam passrole wildcard privilege escalation devopsrole ecstaskrole">
+<h3><span class="badge badge-critical">CRITICAL</span> TM-003: Overly Broad IAM PassRole Permissions (*)</h3>
+<table>
+  <tbody>
+    <tr><td><strong>ID</strong></td><td>TM-003</td></tr>
+    <tr><td><strong>Affected Component(s)</strong></td><td>DevOpsRole, ECSTaskRole, CodeBuild, ServerECS</td></tr>
+    <tr><td><strong>STRIDE-LM</strong></td><td>E, LM</td></tr>
+    <tr><td><strong>MITRE ATT&CK</strong></td><td>T1078 (Valid Accounts)</td></tr>
+    <tr><td><strong>CWE</strong></td><td>CWE-269</td></tr>
+    <tr><td><strong>CIA Impact</strong></td><td>C: H &middot; I: H &middot; A: H</td></tr>
+    <tr><td><strong>PASTA L&times;I</strong></td><td>4 &times; 5 = 20 (CRITICAL)</td></tr>
+    <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+    <tr><td><strong>Remediation</strong></td><td>R-011</td></tr>
+    <tr><td><strong>Sources</strong></td><td>Threat Model (TM-003), Code Review (CR-001 CVSS 9.9), Compliance (GRC-004)</td></tr>
+  </tbody>
+</table>
+<details><summary>Attack Scenario</summary><div class="content">
+<ol>
+  <li>Achieve code execution in CodeBuild or Server ECS</li>
+  <li>Enumerate IAM roles via <code>aws iam list-roles</code></li>
+  <li>Use <code>iam:PassRole</code> to create ECS task with high-privilege role</li>
+  <li>Run task; retrieve credentials from task metadata endpoint</li>
+  <li>Full account takeover</li>
+</ol>
+</div></details>
+<p><strong>Remediation:</strong> Scope PassRole to specific role ARNs. Remove PassRole from ECS task role entirely (R-011).</p>
+</div>
+
+<!-- HIGH Findings -->
+<div class="finding-card high" data-severity="high" data-search="tm-023 branch protection repository github codepipeline">
+<h3><span class="badge badge-high">HIGH</span> TM-023: No Branch Protection on Repository</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-023</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>GitHub, CodePipeline</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>T, R</td></tr>
+  <tr><td><strong>MITRE ATT&CK / CWE</strong></td><td>T1195 / CWE-862</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>4 &times; 4 = 16 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>MEDIUM</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-013</td></tr>
+</tbody></table>
+<p><strong>Remediation:</strong> Enable GitHub branch protection on main with required reviews, status checks, and force-push prevention.</p>
+</div>
+
+<div class="finding-card high" data-severity="high" data-search="tm-013 codebuild privileged docker mode">
+<h3><span class="badge badge-high">HIGH</span> TM-013: CodeBuild Privileged Docker Mode</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-013</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>CodeBuild</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>E, LM</td></tr>
+  <tr><td><strong>MITRE ATT&CK / CWE</strong></td><td>T1068 / CWE-269</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>4 &times; 4 = 16 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-012 (secure buildspec mitigates privileged mode risk)</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card high" data-severity="high" data-search="tm-014 pipeline approval scanning codepipeline codebuild codedeploy">
+<h3><span class="badge badge-high">HIGH</span> TM-014: No Pipeline Approval Gates or Security Scanning</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-014</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>CodePipeline, CodeBuild, CodeDeploy</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>T, R</td></tr>
+  <tr><td><strong>MITRE ATT&CK / CWE</strong></td><td>T1195 / CWE-862</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>4 &times; 4 = 16 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-014, R-024</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card high" data-severity="high" data-search="tm-001 tls https alb load balancer clientalb serveralb">
+<h3><span class="badge badge-high">HIGH</span> TM-001: No TLS/HTTPS on Public-Facing ALBs</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-001</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>ClientALB, ServerALB</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>I, T</td></tr>
+  <tr><td><strong>CWE</strong></td><td>CWE-311</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>5 &times; 3 = 15 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-015</td></tr>
+  <tr><td><strong>Sources</strong></td><td>Threat Model (TM-001), Code Review (CR-004 CVSS 7.5), Compliance (GRC-001), Privacy (PA-001)</td></tr>
+</tbody></table>
+<p><strong>Note:</strong> Compliance and Privacy assessments rate this CRITICAL due to automatic audit failure and GDPR Art. 32 requirements. Security assessment rates HIGH given current public-only data context.</p>
+</div>
+
+<div class="finding-card high" data-severity="high" data-search="tm-002 authentication authorization serveralb serverecs clientalb clientecs">
+<h3><span class="badge badge-high">HIGH</span> TM-002: Complete Absence of Authentication and Authorization</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-002</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>ServerALB, ServerECS, ClientALB, ClientECS</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>S, E</td></tr>
+  <tr><td><strong>MITRE ATT&CK / CWE</strong></td><td>T1190 / CWE-306</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>5 &times; 3 = 15 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-028</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card high" data-severity="high" data-search="tm-005 github token terraform state tfstate githubtoken codepipeline">
+<h3><span class="badge badge-high">HIGH</span> TM-005: GitHub OAuth Token in Terraform State</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-005</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>TFState, GitHubToken, CodePipeline</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>I, S</td></tr>
+  <tr><td><strong>MITRE ATT&CK / CWE</strong></td><td>T1552 / CWE-312</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 5 = 15 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-016, R-017</td></tr>
+  <tr><td><strong>Sources</strong></td><td>Threat Model (TM-005), Code Review (CR-003 CVSS 9.1), Compliance (GRC-003), Privacy (PA-009)</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card high" data-severity="high" data-search="tm-006 mutable ecr image tags latest ecr codebuild serverecs clientecs">
+<h3><span class="badge badge-high">HIGH</span> TM-006: Mutable ECR Image Tags + Latest Pattern</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-006</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>ECR, CodeBuild, ServerECS, ClientECS</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>T</td></tr>
+  <tr><td><strong>MITRE ATT&CK / CWE</strong></td><td>T1195</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 5 = 15 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>HIGH (escalated from MEDIUM via cross-agent validation)</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-001, R-030</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card high" data-severity="high" data-search="tm-007 waf rate limiting clientalb serveralb">
+<h3><span class="badge badge-high">HIGH</span> TM-007: No WAF or Rate Limiting</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-007</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>ClientALB, ServerALB</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>D</td></tr>
+  <tr><td><strong>MITRE ATT&CK / CWE</strong></td><td>T1498 / CWE-770</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>4 &times; 3 = 12 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-018</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card high" data-severity="high" data-search="tm-022 unrestricted egress ecs tasks serverecs clientecs sg_ecs">
+<h3><span class="badge badge-high">HIGH</span> TM-022: Unrestricted Egress from ECS Tasks</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-022</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>ServerECS, ClientECS, SG_ECS</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>I, LM</td></tr>
+  <tr><td><strong>MITRE ATT&CK / CWE</strong></td><td>T1048 / CWE-269</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 4 = 12 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-019</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card high" data-severity="high" data-search="tm-024 billing alarm cost detection dynamodb serverecs">
+<h3><span class="badge badge-high">HIGH</span> TM-024: No Billing Alarm / Cost Detection</h3>
+<table><tbody>
+  <tr><td><strong>ID</strong></td><td>TM-024</td></tr>
+  <tr><td><strong>Affected Component(s)</strong></td><td>DynamoDB, ServerECS</td></tr>
+  <tr><td><strong>STRIDE-LM</strong></td><td>D</td></tr>
+  <tr><td><strong>MITRE ATT&CK / CWE</strong></td><td>T1498 / CWE-770</td></tr>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>4 &times; 3 = 12 (HIGH)</td></tr>
+  <tr><td><strong>Confidence</strong></td><td>HIGH</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-005</td></tr>
+</tbody></table>
+</div>
+
+<!-- MEDIUM Findings -->
+<div class="finding-card medium" data-severity="medium" data-search="tm-009 s3 buckets security controls s3assets s3pipeline">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-009: S3 Buckets Missing Security Controls</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 3 = 9 (MEDIUM) | Confidence: HIGH (escalated)</td></tr>
+  <tr><td><strong>Affected</strong></td><td>S3Assets, S3Pipeline | CWE-732 | T1530</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-002, R-031, R-032</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-011 vpc flow logs network monitoring">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-011: No VPC Flow Logs</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 3 = 9 (MEDIUM) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>VPC | CWE-390 | T1562</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-020</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-015 outdated dependencies serverecs clientecs codebuild">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-015: Outdated and Vulnerable Dependencies</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 3 = 9 (MEDIUM) | Confidence: HIGH (escalated)</td></tr>
+  <tr><td><strong>Affected</strong></td><td>ServerECS, ClientECS, CodeBuild | T1195</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-025</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-017 ecs container hardening serverecs clientecs">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-017: ECS Container Hardening Deficiencies</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 3 = 9 (MEDIUM) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>ServerECS, ClientECS | CWE-269 | T1068</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-022</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-012 error handler information leakage serverecs">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-012: Error Handler Information Leakage + Bug</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>4 &times; 2 = 8 (MEDIUM) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>ServerECS | CWE-209 | T1190</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-009</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-025 npm install ci codebuild serverecs clientecs">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-025: npm install vs npm ci</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>2 &times; 4 = 8 (MEDIUM) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>CodeBuild, ServerECS, ClientECS | T1195</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-004</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-008 unrestricted cors serverecs">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-008: Unrestricted CORS Configuration</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 2 = 6 (MEDIUM) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>ServerECS | CWE-732 | T1190</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-010</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-018 single nat gateway spof vpc serverecs clientecs">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-018: Single NAT Gateway (SPOF)</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>2 &times; 3 = 6 (MEDIUM) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>VPC, ServerECS, ClientECS | CWE-400 | T1498</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-007, R-027</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-021 container insights monitoring cloudwatch serverecs clientecs">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-021: No Container Insights / Monitoring</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 2 = 6 (MEDIUM) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>CloudWatch, ServerECS, ClientECS | CWE-390 | T1562</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-021</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-026 cloudtrail data events dynamodb s3assets s3pipeline">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-026: No CloudTrail Data Events</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 2 = 6 (MEDIUM) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>DynamoDB, S3Assets, S3Pipeline | CWE-390 | T1562</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-023</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card medium" data-severity="medium" data-search="tm-016 swagger docs publicly exposed serverecs serveralb">
+<h3><span class="badge badge-medium">MEDIUM</span> TM-016: Swagger Docs Publicly Exposed</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>5 &times; 1 = 5 (MEDIUM) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>ServerECS, ServerALB | CWE-200 | T1595</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-026</td></tr>
+</tbody></table>
+</div>
+
+<!-- LOW Findings -->
+<div class="finding-card low" data-severity="low" data-search="tm-010 dynamodb pitr cmk encryption">
+<h3><span class="badge badge-low">LOW</span> TM-010: DynamoDB Missing PITR + CMK</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>2 &times; 2 = 4 (LOW) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>DynamoDB | CWE-311 | T1485</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-003</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card low" data-severity="low" data-search="tm-019 vpc endpoints serverecs clientecs">
+<h3><span class="badge badge-low">LOW</span> TM-019: No VPC Endpoints</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>2 &times; 2 = 4 (LOW) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>ServerECS, ClientECS | CWE-311</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-007, R-029</td></tr>
+</tbody></table>
+</div>
+
+<div class="finding-card low" data-severity="low" data-search="tm-020 sns no subscribers encryption">
+<h3><span class="badge badge-low">LOW</span> TM-020: SNS No Subscribers / Encryption</h3>
+<table><tbody>
+  <tr><td><strong>PASTA L&times;I</strong></td><td>3 &times; 1 = 3 (LOW) | Confidence: HIGH</td></tr>
+  <tr><td><strong>Affected</strong></td><td>SNS | CWE-311 | T1562</td></tr>
+  <tr><td><strong>Remediation</strong></td><td>R-008, R-033</td></tr>
+</tbody></table>
+</div>
+
+</div><!-- end findingsContainer -->
+
+<p><strong>Total: 26 findings (2 critical, 10 high, 11 medium, 3 low)</strong></p>
+
+<!-- ============================================================ -->
+<h2 id="remediation">VIII. Remediation Roadmap</h2>
+
+<div class="wave-timeline">
+  <div class="wave-card">
+    <h4>Wave 1: Quick Wins</h4>
+    <p style="font-size:12px;color:var(--text-secondary)">1-2 days | LOW effort</p>
+    <ul>
+      <li>R-001: ECR immutable tags</li>
+      <li>R-002: S3 public_access_block</li>
+      <li>R-003: DynamoDB PITR</li>
+      <li>R-004: npm ci in Dockerfiles</li>
+      <li>R-005: Billing alarm</li>
+      <li>R-006: ECR scan-on-push</li>
+      <li>R-007: VPC gateway endpoints</li>
+      <li>R-008: SNS subscription</li>
+      <li>R-009: Fix error handler</li>
+      <li>R-010: Configure CORS origin</li>
+    </ul>
+  </div>
+  <div class="wave-card">
+    <h4>Wave 2: Critical Fixes</h4>
+    <p style="font-size:12px;color:var(--text-secondary)">1-2 sprints | MEDIUM effort</p>
+    <ul>
+      <li>R-011: Scope IAM PassRole</li>
+      <li>R-012: Secure buildspec</li>
+      <li>R-013: Branch protection</li>
+      <li>R-014: Pipeline approval</li>
+      <li>R-015: Enable HTTPS</li>
+      <li>R-016: CodeStar Connections</li>
+      <li>R-017: Remote TF backend</li>
+      <li>R-018: WAF on ALBs</li>
+      <li>R-019: Restrict SG egress</li>
+    </ul>
+  </div>
+  <div class="wave-card">
+    <h4>Wave 3: Hardening</h4>
+    <p style="font-size:12px;color:var(--text-secondary)">2-4 sprints | MEDIUM effort</p>
+    <ul>
+      <li>R-020: VPC Flow Logs</li>
+      <li>R-021: Container Insights</li>
+      <li>R-022: Container hardening</li>
+      <li>R-023: CloudTrail data events</li>
+      <li>R-024: Pipeline scanning</li>
+      <li>R-025: Update dependencies</li>
+      <li>R-026: Disable Swagger (prod)</li>
+      <li>R-027: Multi-AZ NAT GW</li>
+    </ul>
+  </div>
+  <div class="wave-card">
+    <h4>Wave 4: Production Ready</h4>
+    <p style="font-size:12px;color:var(--text-secondary)">Before launch | HIGH effort</p>
+    <ul>
+      <li>R-028: Implement auth</li>
+      <li>R-029: VPC interface endpoints</li>
+      <li>R-030: Git SHA image tags</li>
+      <li>R-031: Remove force_destroy</li>
+      <li>R-032: S3 versioning</li>
+      <li>R-033: SNS encryption</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Dependency Chains</h3>
+<p><code>R-007 &rarr; R-019</code> (VPC endpoints reduce egress requirements)<br>
+<code>R-013 &rarr; R-014</code> (branch protection before pipeline gates)<br>
+<code>R-013 &rarr; R-016</code> (branch protection before connection migration)<br>
+<code>R-014 &rarr; R-024</code> (pipeline gates before scan stages)<br>
+<code>R-001 &rarr; R-030</code> (immutable tags before SHA-based tagging)</p>
+
+<!-- ============================================================ -->
+<h2 id="networking">IX. Networking &amp; Infrastructure Data</h2>
+
+<h3>VPC/Network Topology</h3>
+<p>Single VPC (10.120.0.0/16) in one AWS region with 2 public subnets, 2 private client subnets, and 2 private server subnets across 2 Availability Zones. Internet Gateway for public subnet access. Single NAT Gateway in public subnet AZ1 for private subnet outbound.</p>
+
+<h3>Security Group Rules</h3>
+<table>
+  <thead><tr><th>SG Name</th><th>Direction</th><th>Protocol</th><th>Port Range</th><th>Source/Destination</th><th>Description</th></tr></thead>
+  <tbody>
+    <tr><td>ALB SGs (Client + Server)</td><td>Ingress</td><td>TCP</td><td>80</td><td>0.0.0.0/0</td><td>HTTP from internet</td></tr>
+    <tr><td>ECS Client SG</td><td>Ingress</td><td>TCP</td><td>80</td><td>Client ALB SG</td><td>HTTP from Client ALB only</td></tr>
+    <tr><td>ECS Server SG</td><td>Ingress</td><td>TCP</td><td>3001</td><td>Server ALB SG</td><td>HTTP from Server ALB only</td></tr>
+    <tr><td>All ECS SGs</td><td>Egress</td><td>ALL</td><td>ALL</td><td>0.0.0.0/0</td><td>Unrestricted egress (TM-022)</td></tr>
+  </tbody>
+</table>
+
+<h3>IAM Role Summary</h3>
+<table>
+  <thead><tr><th>Role Name</th><th>Key Policies</th><th>Trust</th><th>Used By</th><th>Least Privilege</th></tr></thead>
+  <tbody>
+    <tr><td>ECS Execution Role</td><td>ECR pull, CloudWatch Logs</td><td>ecs-tasks.amazonaws.com</td><td>Client ECS, Server ECS</td><td>Appropriate</td></tr>
+    <tr><td>ECS Task Role</td><td>DynamoDB (read), S3 (read/list), <strong>iam:PassRole *</strong></td><td>ecs-tasks.amazonaws.com</td><td>Server ECS</td><td><span class="badge badge-critical">VIOLATION</span></td></tr>
+    <tr><td>DevOps Role</td><td>S3 *, ECS *, ECR, CodeDeploy, <strong>iam:PassRole *</strong></td><td>codebuild/codepipeline.amazonaws.com</td><td>CodeBuild, CodePipeline</td><td><span class="badge badge-critical">VIOLATION</span></td></tr>
+    <tr><td>CodeDeploy Role</td><td>ECS, ALB, S3, SNS</td><td>codedeploy.amazonaws.com</td><td>CodeDeploy</td><td>Appropriate</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="compliance">X. Compliance Mapping</h2>
+
+<h3>Framework Coverage Matrix</h3>
+<table>
+  <thead><tr><th>Framework</th><th>Total Controls</th><th>Compliant</th><th>Partial</th><th>Non-Compliant</th><th>N/A</th><th>Coverage %</th></tr></thead>
+  <tbody>
+    <tr><td>SOC 2 (CC criteria)</td><td>33</td><td>3</td><td>6</td><td>22</td><td>2</td><td>9%</td></tr>
+    <tr><td>ISO 27001:2022 (Annex A)</td><td>93</td><td>5</td><td>8</td><td>41</td><td>39</td><td>10%</td></tr>
+    <tr><td>NIST CSF 2.0</td><td>106</td><td>4</td><td>9</td><td>38</td><td>55</td><td>8%</td></tr>
+    <tr><td>PCI-DSS v4.0 (if applicable)</td><td>64</td><td>1</td><td>3</td><td>48</td><td>12</td><td>2%</td></tr>
+  </tbody>
+</table>
+
+<p>The system exhibits a <strong>pre-compliance posture</strong> (~12/100 overall readiness). The architecture provides a sound structural foundation (VPC segmentation, private subnets, Fargate isolation) but lacks nearly all security controls required for production compliance. See the full compliance gap analysis for detailed control-by-control mapping.</p>
+
+<!-- ============================================================ -->
+<h2 id="privacy">XI. Privacy Assessment</h2>
+
+<h3>Data Inventory Summary</h3>
+<p>Despite being a product catalog demo, the system processes: network identifiers (IP addresses via ALB/Nginx logs), browsing behavior (CloudWatch/access logs), user credentials entered in the demo login form, developer PII (name/email in Swagger and package.json), error context in logs, and infrastructure metadata in build environment variables.</p>
+
+<h3>LINDDUN Findings</h3>
+<table>
+  <thead><tr><th>ID</th><th>Category</th><th>Data Flow</th><th>Risk Level</th><th>Description</th><th>Recommendation</th></tr></thead>
+  <tbody>
+    <tr><td>PA-001</td><td>Detectability</td><td>User &rarr; ALBs</td><td><span class="badge badge-critical">CRITICAL</span></td><td>All personal data transmitted in plaintext (no TLS)</td><td>Enable HTTPS on all ALBs</td></tr>
+    <tr><td>PA-002</td><td>Unawareness</td><td>User &rarr; Login.vue</td><td><span class="badge badge-critical">CRITICAL</span>*</td><td>Deceptive login form collects credentials without processing</td><td>Remove form or add prominent warning</td></tr>
+    <tr><td>PA-003</td><td>Non-compliance</td><td>All routes</td><td><span class="badge badge-high">HIGH</span></td><td>No privacy notice or transparency mechanism</td><td>Create GDPR Art. 13 compliant privacy notice</td></tr>
+    <tr><td>PA-004</td><td>Identifiability</td><td>/api/docs</td><td><span class="badge badge-high">HIGH</span></td><td>Developer email exposed in public Swagger endpoint</td><td>Remove personal email; restrict endpoint</td></tr>
+    <tr><td>PA-005</td><td>Non-compliance</td><td>All data</td><td><span class="badge badge-high">HIGH</span></td><td>No data subject rights infrastructure</td><td>Implement SAR handling process</td></tr>
+    <tr><td>PA-006</td><td>Disclosure</td><td>Error handler</td><td><span class="badge badge-medium">MEDIUM</span></td><td>Error handler leaks internal details</td><td>Sanitize error responses</td></tr>
+    <tr><td>PA-007</td><td>Linkability</td><td>CloudWatch logs</td><td><span class="badge badge-medium">MEDIUM</span></td><td>Logs contain IP addresses (personal data)</td><td>Implement log anonymization</td></tr>
+    <tr><td>PA-008</td><td>Non-compliance</td><td>AWS processing</td><td><span class="badge badge-medium">MEDIUM</span></td><td>No DPA documentation for AWS</td><td>Execute and document AWS DPA</td></tr>
+    <tr><td>PA-009</td><td>Disclosure</td><td>TF state</td><td><span class="badge badge-low">LOW</span></td><td>GitHub PAT in plaintext state</td><td>Migrate to CodeStar Connections</td></tr>
+    <tr><td>PA-010</td><td>Linkability</td><td>API requests</td><td><span class="badge badge-low">LOW</span></td><td>Unrestricted CORS</td><td>Configure specific origin</td></tr>
+  </tbody>
+</table>
+<p style="font-size:12px;color:var(--text-secondary)">*PA-002 flagged as false positive candidate by validation-specialist. Consider downgrading to HIGH.</p>
+
+<!-- ============================================================ -->
+<h2 id="positive">XII. Positive Observations</h2>
+
+<div class="callout">
+  <div class="callout-title">Well-Implemented Security Controls</div>
+  <ul>
+    <li><strong>Private subnets for ECS tasks with SG segmentation:</strong> Good east-west isolation. Tasks are not directly internet-accessible. Satisfies network segmentation principles (NIST SC-7).</li>
+    <li><strong>Fargate launch type:</strong> AWS-managed infrastructure isolation eliminates host-level attack surface. No EC2 instances to patch or harden.</li>
+    <li><strong>Blue/Green deployment with auto-rollback:</strong> Reduces deployment risk and enables quick rollback on failure. Good operational resilience pattern.</li>
+    <li><strong>Read-only DynamoDB access from application:</strong> ECS Task Role has only read operations (Scan, Query, GetItem, BatchGetItem) for DynamoDB. Good least privilege for data operations.</li>
+    <li><strong>awsvpc network mode:</strong> Each task gets its own ENI, enabling per-task security group enforcement. Strong micro-segmentation foundation.</li>
+    <li><strong>Infrastructure as Code (Terraform):</strong> All infrastructure defined as code, providing reproducibility, auditability, and drift detection capability.</li>
+    <li><strong>HTTPS for AWS SDK calls:</strong> AWS SDK uses HTTPS by default for DynamoDB, S3, and other service API calls.</li>
+  </ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="assumptions">XIII. Assumptions &amp; Limitations</h2>
+
+<h3>Scope Boundaries</h3>
+<ul>
+  <li><strong>In scope:</strong> All Terraform modules (14), application code (Node.js backend, Vue.js frontend), Dockerfiles, buildspec, CI/CD pipeline configuration</li>
+  <li><strong>Out of scope:</strong> AWS account-level settings (SCPs, Organizations, root MFA), GitHub organization settings, runtime vulnerability scanning, penetration testing, Terraform plan/apply execution</li>
+</ul>
+
+<h3>Information Gaps</h3>
+<ul>
+  <li>npm audit was not executed; dependency vulnerability assessment based on version numbers only</li>
+  <li>Docker base images were not scanned for CVEs</li>
+  <li>GitHub branch protection status assumed (not managed by Terraform)</li>
+  <li>AWS account-level services (GuardDuty, Config, CloudTrail, SecurityHub) assumed not active</li>
+</ul>
+
+<h3>Confidence Disclaimers</h3>
+<ul>
+  <li>TM-023 (branch protection): MEDIUM confidence -- based on absence from Terraform, may exist in GitHub settings</li>
+  <li>TM-015 (dependencies): MEDIUM confidence escalated to HIGH via cross-agent validation; exact CVE applicability requires npm audit</li>
+  <li>PA-002 (login form): Flagged as potential false positive by validation specialist</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2 id="appendices">XIV. Appendices</h2>
+
+<details>
+<summary>A. Methodology Notes</summary>
+<div class="content">
+<h4>STRIDE-LM Categories</h4>
+<p>S=Spoofing, T=Tampering, R=Repudiation, I=Information Disclosure, D=Denial of Service, E=Elevation of Privilege, LM=Lateral Movement</p>
+<h4>PASTA Scoring (1-5)</h4>
+<p>Likelihood: 1=Rare, 2=Unlikely, 3=Possible, 4=Likely, 5=Almost Certain<br>
+Impact: 1=Negligible, 2=Minor, 3=Moderate, 4=Major, 5=Catastrophic</p>
+<h4>OWASP Risk Rating Bands (5x5 matrix)</h4>
+<p>CRITICAL: 20-25 | HIGH: 12-19 | MEDIUM: 6-11 | LOW: 1-5</p>
+<h4>CVSS v3.1 (Code Review)</h4>
+<p>CRITICAL: 9.0-10.0 | HIGH: 7.0-8.9 | MEDIUM: 4.0-6.9 | LOW: 0.1-3.9</p>
+</div>
+</details>
+
+<details>
+<summary>B. Framework Reference Table</summary>
+<div class="content">
+<h4>MITRE ATT&CK Techniques</h4>
+<table>
+  <thead><tr><th>ID</th><th>Name</th><th>Findings</th></tr></thead>
+  <tbody>
+    <tr><td>T1190</td><td>Exploit Public-Facing Application</td><td>TM-002, TM-008, TM-012</td></tr>
+    <tr><td>T1078</td><td>Valid Accounts</td><td>TM-003</td></tr>
+    <tr><td>T1195</td><td>Supply Chain Compromise</td><td>TM-004, TM-006, TM-014, TM-015, TM-023, TM-025</td></tr>
+    <tr><td>T1552</td><td>Unsecured Credentials</td><td>TM-005</td></tr>
+    <tr><td>T1530</td><td>Data from Cloud Storage</td><td>TM-009</td></tr>
+    <tr><td>T1498</td><td>Network DoS</td><td>TM-007, TM-018, TM-024</td></tr>
+    <tr><td>T1562</td><td>Impair Defenses</td><td>TM-011, TM-020, TM-021, TM-026</td></tr>
+    <tr><td>T1595</td><td>Active Scanning</td><td>TM-016</td></tr>
+    <tr><td>T1068</td><td>Exploitation for Privilege Escalation</td><td>TM-013, TM-017</td></tr>
+    <tr><td>T1485</td><td>Data Destruction</td><td>TM-010</td></tr>
+    <tr><td>T1048</td><td>Exfiltration Over Alternative Protocol</td><td>TM-022</td></tr>
+  </tbody>
+</table>
+<h4>CWE IDs</h4>
+<table>
+  <thead><tr><th>ID</th><th>Name</th><th>Findings</th></tr></thead>
+  <tbody>
+    <tr><td>CWE-269</td><td>Improper Privilege Management</td><td>TM-003, TM-004, TM-013, TM-017, TM-022</td></tr>
+    <tr><td>CWE-311</td><td>Missing Encryption of Sensitive Data</td><td>TM-001, TM-010, TM-019, TM-020</td></tr>
+    <tr><td>CWE-312</td><td>Cleartext Storage of Sensitive Information</td><td>TM-005</td></tr>
+    <tr><td>CWE-306</td><td>Missing Authentication for Critical Function</td><td>TM-002</td></tr>
+    <tr><td>CWE-862</td><td>Missing Authorization</td><td>TM-014, TM-023</td></tr>
+    <tr><td>CWE-732</td><td>Incorrect Permission Assignment</td><td>TM-008, TM-009</td></tr>
+    <tr><td>CWE-770</td><td>Allocation of Resources Without Limits</td><td>TM-007, TM-024</td></tr>
+    <tr><td>CWE-209</td><td>Error Message Containing Sensitive Info</td><td>TM-012</td></tr>
+    <tr><td>CWE-200</td><td>Exposure of Sensitive Information</td><td>TM-016</td></tr>
+    <tr><td>CWE-390</td><td>Detection of Error Condition Without Action</td><td>TM-011, TM-021, TM-026</td></tr>
+    <tr><td>CWE-400</td><td>Uncontrolled Resource Consumption</td><td>TM-018</td></tr>
+  </tbody>
+</table>
+</div>
+</details>
+
+<details>
+<summary>C. QA Corrections Log</summary>
+<div class="content">
+<table>
+  <thead><tr><th>Issue</th><th>Location</th><th>Severity</th><th>Correction Applied</th></tr></thead>
+  <tbody>
+    <tr><td>HIGH count stated as 9, should be 10</td><td>06-validated-findings.md line 728</td><td>Advisory</td><td>Corrected to HIGH=10 in consolidated report</td></tr>
+    <tr><td>Confidence escalations from validation report</td><td>TM-006, TM-009, TM-015</td><td>Critical</td><td>Escalated confidence MEDIUM to HIGH per cross-agent validation</td></tr>
+    <tr><td>14 cross-agent duplicate clusters</td><td>Findings across 4 agents</td><td>Critical</td><td>Deduplicated using TM-NNN as primary; cross-referenced CR/GRC/PA sources</td></tr>
+    <tr><td>Severity conflicts (5 clusters)</td><td>Clusters 2-8 in validation report</td><td>Advisory</td><td>Applied recommended resolutions; preserved original scores from each system</td></tr>
+    <tr><td>PA-002 false positive candidate</td><td>PA-002</td><td>Advisory</td><td>Noted as FP candidate in privacy section; retained finding with context</td></tr>
+    <tr><td>GRC-005 false positive candidate</td><td>GRC-005</td><td>Advisory</td><td>Not included as standalone finding; context captured in TM-009/TM-010</td></tr>
+  </tbody>
+</table>
+</div>
+</details>
+
+<details>
+<summary>D. Glossary</summary>
+<div class="content">
+<table>
+  <tbody>
+    <tr><td><strong>ALB</strong></td><td>Application Load Balancer</td></tr>
+    <tr><td><strong>ACM</strong></td><td>AWS Certificate Manager</td></tr>
+    <tr><td><strong>AZ</strong></td><td>Availability Zone</td></tr>
+    <tr><td><strong>CIDR</strong></td><td>Classless Inter-Domain Routing</td></tr>
+    <tr><td><strong>CORS</strong></td><td>Cross-Origin Resource Sharing</td></tr>
+    <tr><td><strong>CVSS</strong></td><td>Common Vulnerability Scoring System</td></tr>
+    <tr><td><strong>CWE</strong></td><td>Common Weakness Enumeration</td></tr>
+    <tr><td><strong>DPA</strong></td><td>Data Processing Agreement</td></tr>
+    <tr><td><strong>ECR</strong></td><td>Elastic Container Registry</td></tr>
+    <tr><td><strong>ECS</strong></td><td>Elastic Container Service</td></tr>
+    <tr><td><strong>ENI</strong></td><td>Elastic Network Interface</td></tr>
+    <tr><td><strong>GDPR</strong></td><td>General Data Protection Regulation (EU)</td></tr>
+    <tr><td><strong>HSTS</strong></td><td>HTTP Strict Transport Security</td></tr>
+    <tr><td><strong>IaC</strong></td><td>Infrastructure as Code</td></tr>
+    <tr><td><strong>IAM</strong></td><td>Identity and Access Management</td></tr>
+    <tr><td><strong>IGW</strong></td><td>Internet Gateway</td></tr>
+    <tr><td><strong>LINDDUN</strong></td><td>Linkability, Identifiability, Non-repudiation, Detectability, Disclosure, Unawareness, Non-compliance</td></tr>
+    <tr><td><strong>MitM</strong></td><td>Man-in-the-Middle</td></tr>
+    <tr><td><strong>NACL</strong></td><td>Network Access Control List</td></tr>
+    <tr><td><strong>NAT GW</strong></td><td>Network Address Translation Gateway</td></tr>
+    <tr><td><strong>OWASP</strong></td><td>Open Worldwide Application Security Project</td></tr>
+    <tr><td><strong>PASTA</strong></td><td>Process for Attack Simulation and Threat Analysis</td></tr>
+    <tr><td><strong>PITR</strong></td><td>Point-in-Time Recovery</td></tr>
+    <tr><td><strong>SG</strong></td><td>Security Group</td></tr>
+    <tr><td><strong>SPA</strong></td><td>Single Page Application</td></tr>
+    <tr><td><strong>SPOF</strong></td><td>Single Point of Failure</td></tr>
+    <tr><td><strong>STRIDE-LM</strong></td><td>Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege, Lateral Movement</td></tr>
+    <tr><td><strong>TLS</strong></td><td>Transport Layer Security</td></tr>
+    <tr><td><strong>VPC</strong></td><td>Virtual Private Cloud</td></tr>
+    <tr><td><strong>WAF</strong></td><td>Web Application Firewall</td></tr>
+  </tbody>
+</table>
+</div>
+</details>
+
+<details>
+<summary>E. Threat Model Lifecycle Triggers</summary>
+<div class="content">
+<p>Re-assess this threat model when:</p>
+<ul>
+  <li>Any authentication or authorization is added</li>
+  <li>The application handles user data or PII</li>
+  <li>New API endpoints are added</li>
+  <li>The system is deployed to a production AWS account</li>
+  <li>New AWS services are integrated</li>
+  <li>The CI/CD pipeline structure changes</li>
+  <li>The application migrates to a different compute platform</li>
+</ul>
+<p><strong>Recommended review cadence:</strong> Quarterly, or upon any trigger event listed above.</p>
+</div>
+</details>
+
+</div><!-- end main -->
+
+<script>
+// Diagram zoom
+var diagramScales = {};
+function zoomDiagram(id, factor) {
+  if (!diagramScales[id]) diagramScales[id] = 1;
+  diagramScales[id] *= factor;
+  if (diagramScales[id] < 0.3) diagramScales[id] = 0.3;
+  if (diagramScales[id] > 5) diagramScales[id] = 5;
+  document.getElementById(id).style.transform = 'scale(' + diagramScales[id] + ')';
+}
+function resetZoom(id) {
+  diagramScales[id] = 1;
+  document.getElementById(id).style.transform = 'scale(1)';
+}
+
+// Fullscreen
+function openFullscreen(src) {
+  var overlay = document.getElementById('fullscreenOverlay');
+  document.getElementById('fullscreenImg').src = src;
+  overlay.classList.add('active');
+}
+document.getElementById('fullscreenOverlay').addEventListener('click', function(e) {
+  if (e.target === this || e.target.id === 'fullscreenClose') {
+    this.classList.remove('active');
+  }
+});
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') {
+    document.getElementById('fullscreenOverlay').classList.remove('active');
+  }
+});
+
+// Download
+function downloadImg(src, filename) {
+  var a = document.createElement('a');
+  a.href = src;
+  a.download = filename;
+  a.click();
+}
+
+// Finding search and filter
+function filterFindings() {
+  var query = document.getElementById('findingSearch').value.toLowerCase();
+  var severity = document.getElementById('severityFilter').value;
+  var cards = document.querySelectorAll('#findingsContainer .finding-card');
+  cards.forEach(function(card) {
+    var matchSearch = !query || card.getAttribute('data-search').indexOf(query) !== -1 || card.textContent.toLowerCase().indexOf(query) !== -1;
+    var matchSeverity = !severity || card.getAttribute('data-severity') === severity;
+    card.style.display = (matchSearch && matchSeverity) ? '' : 'none';
+  });
+}
+
+// Sidebar active state
+var observer = new IntersectionObserver(function(entries) {
+  entries.forEach(function(entry) {
+    if (entry.isIntersecting) {
+      document.querySelectorAll('.sidebar nav a').forEach(function(a) { a.classList.remove('active'); });
+      var link = document.querySelector('.sidebar nav a[href="#' + entry.target.id + '"]');
+      if (link) link.classList.add('active');
+    }
+  });
+}, { rootMargin: '-80px 0px -80% 0px' });
+
+document.querySelectorAll('h2[id]').forEach(function(h) { observer.observe(h); });
+</script>
+</body>
+</html>

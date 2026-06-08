@@ -1,0 +1,76 @@
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#f5f5f5", "primaryTextColor": "#1a1a2e", "primaryBorderColor": "#555", "lineColor": "#4a4a6a", "secondaryColor": "#e8eaf6", "tertiaryColor": "#f5f5f5", "fontSize": "15px", "fontFamily": "'Segoe UI', 'Helvetica Neue', Arial, sans-serif", "edgeLabelBackground": "#ffffffee", "clusterBkg": "#f8f9fa", "clusterBorder": "#dee2e6"}, "flowchart": {"useMaxWidth": false, "htmlLabels": true, "curve": "basis", "padding": 24, "nodeSpacing": 60, "rankSpacing": 70}}}%%
+
+flowchart TB
+    User(["User: Run a threat model"])
+
+    subgraph Parent["Parent Conversation — Full Tool Access"]
+        direction TB
+        SKILL["<b>SKILL.md</b><br/>Orchestration Guide<br/>+ 8-Phase Methodology"]
+        Decide{"Solo or<br/>Team?"}
+        SKILL --> Decide
+    end
+
+    subgraph Core["Core Pipeline — Sequential"]
+        direction LR
+        SA["<b>security-architect</b><br/><i>Phase 1, 3-6, 8s</i><br/>STRIDE-LM, PASTA"]
+        DS["<b>diagram-specialist</b><br/><i>Phases 2, 7</i><br/>Mermaid DFDs"]
+    end
+
+    subgraph Specialists["Specialist Agents — Parallel (Team only)"]
+        direction LR
+        PA["<b>privacy-agent</b><br/><i>PIA, LINDDUN</i><br/>GDPR, CCPA, HIPAA"]
+        GRC["<b>grc-agent</b><br/><i>Compliance Mapping</i><br/>SOC 2, PCI-DSS, NIST"]
+        CR["<b>code-review-agent</b><br/><i>CVSS v3.1</i><br/>Code Evidence"]
+    end
+
+    subgraph PostProcess["Post-Processing — Sequential"]
+        direction LR
+        VS["<b>validation-specialist</b><br/><i>Deduplication</i><br/>Framework ID Verify<br/>Severity Consistency"]
+        RA["<b>report-analyst</b><br/><i>QA Review</i><br/>HTML, DOCX, PDF, PPTX"]
+        VS --> RA
+    end
+
+    subgraph FS["Shared Filesystem: threat-model-output/"]
+        direction LR
+        Phases["01-08<br/>Phase Files"]
+        TeamOut["privacy-assessment.md<br/>compliance-gap-analysis.md<br/>code-security-review.md"]
+        ValOut["validation-report.md"]
+        Reports["report.html<br/>report.docx<br/>report.pdf<br/>executive-summary.pptx"]
+    end
+
+    subgraph Refs["Reference Files — Institutional Knowledge"]
+        direction LR
+        R1["<b>frameworks.md</b><br/>STRIDE-LM, MITRE<br/>CWE, OWASP"]
+        R2["<b>mermaid-spec.md</b><br/>+ 4 diagram refs"]
+        R3["<b>report-template.md</b><br/>Sections I-XIV"]
+        R4["<b>agent-output-</b><br/><b>protocol.md</b>"]
+    end
+
+    User --> Parent
+    Parent -->|"spawns core agents"| Core
+    Parent -->|"spawns specialists"| Specialists
+    Parent -->|"spawns sequentially"| PostProcess
+    Core -->|"write"| FS
+    Specialists -->|"write"| FS
+    PostProcess -->|"read all, write"| FS
+    SA -.->|"consult"| R1
+    DS -.->|"consult"| R2
+    Specialists -.->|"consult"| Refs
+    RA -.->|"consult"| R3
+    PostProcess -.->|"consult"| Refs
+
+    classDef parent fill:#dbeafe,stroke:#3b82f6,stroke-width:2px,color:#1e3a5f
+    classDef agent fill:#f0fdf4,stroke:#22c55e,stroke-width:1.5px,color:#14532d
+    classDef diagram fill:#e0f2fe,stroke:#0284c7,stroke-width:1.5px,color:#0c4a6e
+    classDef post fill:#fef3c7,stroke:#f59e0b,stroke-width:1.5px,color:#78350f
+    classDef fs fill:#f3e8ff,stroke:#a855f7,stroke-width:1.5px,color:#581c87
+    classDef ref fill:#fff1f2,stroke:#f43f5e,stroke-width:1px,color:#881337
+    classDef user fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
+
+    class Parent parent
+    class SA,PA,GRC,CR agent
+    class DS diagram
+    class VS,RA post
+    class FS,Phases,TeamOut,ValOut,Reports fs
+    class Refs,R1,R2,R3,R4 ref
+    class User user
