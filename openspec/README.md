@@ -23,6 +23,7 @@ state) and the eval checks structure over that fact — it never infers content 
 | [`add-product-grade-diagrams`](changes/add-product-grade-diagrams/) | `threat-model-visuals`, `diagram-verification` | implemented + verified |
 | [`add-pipeline-observability`](changes/add-pipeline-observability/) | `pipeline-observability` | implemented + verified |
 | [`add-coverage-ledger`](changes/add-coverage-ledger/) | `completeness-coverage`, `coverage-verification` | proposed |
+| [`add-structured-output-validation-loop`](changes/add-structured-output-validation-loop/) | `structured-output-contract`, `manifest-validation-gate` | implemented + verified |
 
 Each change folder has `proposal.md` (why/what), `specs/<capability>/spec.md` (the
 ADDED/MODIFIED requirement deltas), `design.md` (technical approach + the determinism boundary), and
@@ -42,6 +43,14 @@ ADDED/MODIFIED requirement deltas), `design.md` (technical approach + the determ
 - **coverage-verification** — structure-only checks that every applicable item reached a terminal
   state (the agent tried), `present` is grounded, `unknown` is noted; never requires a specific item
   present.
+- **structured-output-contract** — the manifests' structural + consistency contract: post-hoc
+  JSON-Schema validation (the file-based analog of strict tool decoding), nullable/`unknown`/`other`
+  handling so absent data is never fabricated, the single authoritative OWASP band, internal
+  consistency + referential integrity over emitted facts, and judge-output integrity (no silent caps).
+- **manifest-validation-gate** — the in-flow validate → retry-with-specific-feedback loop: the agent's
+  pre-emit self-check, the orchestrator-run soft gate and the plugin `PreToolUse` hard gate, and the
+  routing of information genuinely absent from the source (to `null`/`unknown`/Open Questions) instead
+  of a retry.
 
 ## Working with it
 
