@@ -354,7 +354,7 @@ Before doing anything, discover what inputs are available. Not all agents may ha
 
 **Handling scoring system differences across agents:**
 Different agents use different scoring methodologies. These are distinct scales and MUST NOT be compared directly or averaged:
-- **Threat model findings**: OWASP Risk Rating (Likelihood × Impact, 1-25 scale) → Severity bands: CRITICAL (20-25), HIGH (12-19), MEDIUM (6-11), LOW (1-5)
+- **Threat model findings**: OWASP Risk Rating (Likelihood × Impact, 1-25 scale) → Severity bands: CRITICAL (17-25), HIGH (10-16), MEDIUM (5-9), LOW (1-4)
 - **Code review findings**: CVSS v3.1 (0-10 scale) → Severity: CRITICAL (9.0-10.0), HIGH (7.0-8.9), MEDIUM (4.0-6.9), LOW (0.1-3.9)
 - **Privacy findings**: Qualitative risk (HIGH/MEDIUM/LOW based on data sensitivity and regulatory exposure)
 - **GRC findings**: Gap severity (CRITICAL/HIGH/MEDIUM/LOW based on control importance and compliance risk)

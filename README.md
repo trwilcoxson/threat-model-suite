@@ -41,7 +41,7 @@ skills/      the Claude Code skills
 agents/      the specialist pipeline (security-architect, diagram-specialist,
              validation-specialist, report-analyst, privacy-agent, grc-agent,
              code-review-agent, security-reviewer, code-quality-reviewer)
-docs/        ARCHITECTURE.md, VALIDATION-PATTERNS.md, examples/
+docs/        ARCHITECTURE.md, VALIDATION-PATTERNS.md, STRUCTURED-OUTPUT-CONTRACT.md, examples/
 ```
 
 ### threat-model — the flagship skill
@@ -70,15 +70,38 @@ microservices+LLM app are committed under
 
 ## Install
 
+### As a plugin (recommended — ships the deterministic hard gate)
+
+The repo is a Claude Code plugin, so the skills, the specialist agents, and the **Manifest Validation
+Gate** hook all install together and the hook activates immediately — no `settings.json` edit:
+
+```text
+/plugin marketplace add trwilcoxson/threat-model-suite
+/plugin install threat-model-suite@threat-model-suite
+```
+
+(or, for a single-repo direct install: `/plugin install github:trwilcoxson/threat-model-suite`)
+
+Then: `Run a threat model on <target>`. Before the report is generated, a `PreToolUse` hook
+([`hooks/validate_gate.py`](hooks/validate_gate.py)) runs the deterministic validator over the emitted
+`recon.json`/`findings.json`/`coverage.json` and **blocks report generation until they pass**, feeding
+the specific defects back to the analysis agent to fix (the validate → retry-with-specific-feedback loop,
+enforced by the harness rather than the agent's goodwill). See
+[`docs/STRUCTURED-OUTPUT-CONTRACT.md`](docs/STRUCTURED-OUTPUT-CONTRACT.md).
+
+### Manual (skill only — soft gate)
+
 ```bash
 # Skills
 for s in threat-model compliance-assessment privacy-impact-assessment; do
   cp -r skills/$s ~/.claude/skills/$s
 done
-# Agents
-mkdir -p ~/.claude/agents && cp agents/*/*.md ~/.claude/agents/
+# Agents (flat .md files)
+mkdir -p ~/.claude/agents && cp agents/*.md ~/.claude/agents/
 ```
-Then restart Claude Code. Run a threat model with: `Run a threat model on <target>`.
+Then restart Claude Code. Run a threat model with: `Run a threat model on <target>`. Without the plugin
+hook, the gate is the SKILL.md "Manifest Validation Gate" instruction (the parent runs `run.py validate`
+and re-spawns on failure) — the same check, enforced by the orchestrator instead of the harness.
 
 ## License
 

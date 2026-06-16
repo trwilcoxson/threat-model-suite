@@ -77,7 +77,7 @@ Apply risk analysis results to the structural diagram from Phase 2. Produce the 
 
 6. **Produce L4 (Threat Overlay)**: Copy the L1 structure. Apply `highRisk`, `medRisk`, `lowRisk` classDefs based on the highest-severity validated threat per component. Use `:::noFindings` for components with no validated threats (NOT `:::lowRisk`). Use `:::lowRisk` only when analysis explicitly confirms low risk.
 
-7. **Enrich node labels with machine-parseable threat data**: For components with validated threats, use the annotation format from `mermaid-spec.md` §5: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`. Verify STRIDE abbreviations use single letters (S,T,R,I,D,E,LM), LxI calculation is correct, BAND matches score (CRITICAL 20-25, HIGH 12-19, MEDIUM 6-11, LOW 1-5), and CWE IDs are verified against `references/frameworks.md`.
+7. **Enrich node labels with machine-parseable threat data**: For components with validated threats, use the annotation format from `mermaid-spec.md` §5: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`. Verify STRIDE abbreviations use single letters (S,T,R,I,D,E,LM), LxI calculation is correct, BAND matches score (CRITICAL 17-25, HIGH 10-16, MEDIUM 5-9, LOW 1-4), and CWE IDs are verified against `references/frameworks.md`.
 
 8. **Add attack path overlays**: For the top 3-5 kill chains from Phase 5, overlay attack paths using `==>` thick arrows with numbered step labels and red `linkStyle` (`linkStyle N stroke:#cc0000,stroke-width:3px`). Attack path overlays appear ONLY in L4. **DO NOT use `~~>` — it is not valid Mermaid syntax.**
 
