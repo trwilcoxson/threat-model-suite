@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 import diagram_checks
+import schema_checks
 
 STRIDE_LM = {"S", "T", "R", "I", "D", "E", "LM"}
 SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
@@ -101,6 +102,21 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
     findings_doc = _load_json(run_dir / "findings.json", d, "findings manifest")
     report = run_dir / "report.md"
 
+    # ---- structure: validate each manifest against its JSON-Schema contract (schema/*.json).
+    # This is the file-based analog of a strict tool schema — enforced post-hoc because the agent
+    # writes the manifests as files (no constrained decoding). Structure only; the consistency,
+    # grounding, and coverage checks below are the semantic layer over the validated structure.
+    for doc, schema_name, label in (
+        (recon, "recon.schema.json", "recon"),
+        (findings_doc, "findings.schema.json", "findings"),
+    ):
+        if doc is not None:
+            try:
+                for v in schema_checks.violations(schema_checks.load_schema(schema_name), doc):
+                    d.add("structure", "schema-violation", f"{label}.json: {v}")
+            except (OSError, ValueError) as e:
+                d.add("structure", "schema-load-error", f"could not apply {schema_name}: {e}")
+
     # ---- structure: report.md present + has the expected sections
     raw_report = ""
     if not report.exists() or report.stat().st_size < 500:
@@ -133,15 +149,24 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                     d.add("grounding", "ungrounded-element",
                           f"recon {el['id']} '{el['name']}' — no evidence resolves in repo: {evs}")
 
+    # conditional requirement the schema can't express (validated in app code, not the schema): an
+    # 'other' detected_pattern must carry a detail, mirroring coverage's present->source rule.
+    if recon and recon.get("detected_pattern") == "other" and not (recon.get("detected_pattern_detail") or "").strip():
+        d.add("structure", "detected-pattern-other-without-detail",
+              "recon.detected_pattern is 'other' but detected_pattern_detail is empty")
+
     # ---- findings: consistency + grounding refs
     covered: set[str] = set()
     counts = {s: 0 for s in SEVERITIES}
     n_findings = 0
     cwe_total = mitre_total = 0
+    fids: set[str] = set()
     if findings_doc and _require(findings_doc, ["findings", "summary_counts", "no_issue_surface"], d, "findings"):
         for f in findings_doc["findings"]:
             n_findings += 1
             fid = f.get("id", "?")
+            if "id" in f:
+                fids.add(f["id"])
             if not _require(f, ["id", "stride_lm", "likelihood", "impact", "severity", "asset_refs", "surface_refs"], d, fid):
                 continue
             # value domains
@@ -152,12 +177,18 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                 counts[f["severity"]] += 1
             else:
                 d.add("structure", "bad-severity", f"{fid}: severity '{f['severity']}'")
-            # consistency: severity must equal band(L x I)
+            # consistency: severity must equal band(L x I). Guard the domain first so an
+            # out-of-range score (schema also flags it) can't be silently rubber-stamped as
+            # self-consistent — band() has no domain guard of its own.
             try:
-                expect = band(int(f["likelihood"]) * int(f["impact"]))
-                if f["severity"] != expect:
-                    d.add("consistency", "severity-formula",
-                          f"{fid}: severity {f['severity']} != band(L{f['likelihood']} x I{f['impact']})={expect}")
+                L, I = int(f["likelihood"]), int(f["impact"])
+                if not (1 <= L <= 5 and 1 <= I <= 5):
+                    d.add("structure", "out-of-range-LxI", f"{fid}: likelihood/impact must be 1-5, got L{L} I{I}")
+                else:
+                    expect = band(L * I)
+                    if f["severity"] != expect:
+                        d.add("consistency", "severity-formula",
+                              f"{fid}: severity {f['severity']} != band(L{L} x I{I})={expect}")
             except (ValueError, TypeError):
                 d.add("structure", "bad-LxI", f"{fid}: non-integer likelihood/impact")
             # grounding: refs must resolve to recon ids
@@ -167,11 +198,11 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
             covered.update(s for s in f.get("surface_refs", []) if s in surface_ids)
             covered.update(a for a in f.get("asset_refs", []) if a in surface_ids)
             # id well-formedness (fabrication is only partially checkable offline)
-            for c in f.get("cwe", []):
+            for c in (f.get("cwe") or []):
                 cwe_total += 1
                 if not re.fullmatch(r"CWE-\d+", c):
                     d.add("consistency", "malformed-cwe", f"{fid}: '{c}'")
-            for m in f.get("mitre", []):
+            for m in (f.get("mitre") or []):
                 mitre_total += 1
                 if not re.fullmatch(r"T\d{4}(\.\d{3})?", m):
                     d.add("consistency", "malformed-mitre", f"{fid}: '{m}'")
@@ -194,6 +225,16 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
         uncovered = surface_ids - covered - no_issue
         for s in sorted(uncovered):
             d.add("coverage", "uncovered-surface", f"surface '{s}' has no finding and is not marked no-issue")
+
+        # kill_chains: each declared step must reference a finding that exists (referential
+        # integrity). The id FORMATS (^KC^, ^TM-NNN$) are enforced structurally by the schema;
+        # this is the cross-field semantic check the schema cannot express.
+        for kc in findings_doc.get("kill_chains", []) or []:
+            kid = kc.get("id", "?")
+            for step in kc.get("steps", []) or []:
+                if step not in fids:
+                    d.add("consistency", "killchain-dangling-step",
+                          f"{kid}: step '{step}' is not a finding id in findings.json")
 
     # diagram verification (its own defect layer)
     diag = diagram_checks.check(raw_report, recon, findings_doc)

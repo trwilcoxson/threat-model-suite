@@ -160,7 +160,7 @@ Score each threat identified in Phase 3.
 - [ ] Components with NO validated findings kept as :::noFindings (not :::lowRisk)
 - [ ] Enriched node labels with machine-parseable annotations: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`
 - [ ] STRIDE abbreviations use single letters (S,T,R,I,D,E,LM)
-- [ ] LxI calculation correct, BAND matches score (CRITICAL 20-25, HIGH 12-19, MEDIUM 6-11, LOW 1-5)
+- [ ] LxI calculation correct, BAND matches score (CRITICAL 17-25, HIGH 10-16, MEDIUM 5-9, LOW 1-4)
 - [ ] CWE IDs verified against frameworks.md
 - [ ] Attack path overlays using ==> thick arrows with red linkStyle (L4 only)
 - [ ] Attack path overlays appear ONLY in L4 (not in L1-L3)

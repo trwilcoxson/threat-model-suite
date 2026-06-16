@@ -107,10 +107,10 @@ All agents MUST use these severity definitions (mapped to their scoring system):
 ### OWASP Risk Rating (threat model, privacy)
 | Severity | Score Range (L×I) | Description |
 |----------|-------------------|-------------|
-| CRITICAL | 20-25 | Immediate exploitation likely, severe business impact |
-| HIGH | 12-19 | Realistic attack path, significant business impact |
-| MEDIUM | 6-11 | Plausible attack, moderate business impact |
-| LOW | 1-5 | Theoretical or low-impact finding |
+| CRITICAL | 17-25 | Immediate exploitation likely, severe business impact |
+| HIGH | 10-16 | Realistic attack path, significant business impact |
+| MEDIUM | 5-9 | Plausible attack, moderate business impact |
+| LOW | 1-4 | Theoretical or low-impact finding |
 
 ### CVSS v3.1 (code review)
 | Severity | Score Range | Description |

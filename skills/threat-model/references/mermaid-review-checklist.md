@@ -58,7 +58,7 @@ Pre-submission quality gates for all Mermaid diagrams. Run this checklist before
 - [ ] Enriched node labels follow format: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`
 - [ ] STRIDE categories use single-letter abbreviations (S,T,R,I,D,E,LM)
 - [ ] LxI calculation is correct (Likelihood × Impact = Score)
-- [ ] BAND matches the score (CRITICAL 20-25, HIGH 12-19, MEDIUM 6-11, LOW 1-5)
+- [ ] BAND matches the score (CRITICAL 17-25, HIGH 10-16, MEDIUM 5-9, LOW 1-4)
 - [ ] CWE IDs are verified against `references/frameworks.md`
 - [ ] Ownership markers present where applicable (`[team:X]`, `[managed]`, `[vendor:X]`)
 - [ ] No `note right of` syntax used (invalid in flowchart mode)

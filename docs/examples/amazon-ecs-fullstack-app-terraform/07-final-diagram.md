@@ -403,7 +403,7 @@ Verification of machine-parseable annotations against frameworks.md reference ta
 | GitHubToken | I | 3x5=15 | HIGH | CWE-312 | YES -- CWE-312 in Data Protection group |
 | TFState | I | 3x5=15 | HIGH | CWE-312 | YES -- same as GitHubToken |
 
-**Band verification**: CRITICAL 20-25 (CodeBuild 25, DevOpsRole 20, ECSTaskRole 20). HIGH 12-19 (all 12-16 scores). MEDIUM 6-11 (all 6-9 scores). LOW 1-5 (SNS at 3). All correct.
+**Band verification**: CRITICAL 17-25 (CodeBuild 25, DevOpsRole 20, ECSTaskRole 20). HIGH 10-16 (all 12-16 scores). MEDIUM 5-9 (all 6-9 scores). LOW 1-4 (SNS at 3). All correct.
 
 ---
 
