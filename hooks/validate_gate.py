@@ -64,6 +64,15 @@ def _output_dir(tool_input: dict, cwd: str) -> Path:
     return Path(cwd) / "threat-model-output"
 
 
+def _project_root(tool_input: dict) -> str | None:
+    # The report-analyst prompts carry "The project root is <path>." The assessed project may differ
+    # from the session cwd (SKILL.md supports {project_root} != cwd); grounding must resolve evidence
+    # against the assessed project, not cwd, or every evidence string fails and the gate deadlocks.
+    prompt = tool_input.get("prompt", "") or ""
+    m = re.search(r"[Tt]he project root is\s+(\S+?)\.?(?:\s|$)", prompt)
+    return m.group(1) if m else None
+
+
 def main() -> None:
     try:
         event = json.load(sys.stdin)
@@ -84,18 +93,26 @@ def main() -> None:
         _allow()  # validator not found (manual/partial install) — fall back to the SKILL.md soft gate
 
     out_dir = _output_dir(tool_input, cwd)
+    # Ground against the ASSESSED project, which SKILL.md allows to differ from the session cwd. Use
+    # the prompt's declared project root; only add --repo when it resolves to a real dir. Never guess
+    # cwd — grounding evidence against the wrong tree fails every string and deadlocks the gate (B2).
+    # Omitting --repo demotes grounding to advisory; the structure/consistency/coverage contract (the
+    # gate's real job) is still enforced.
+    repo = _project_root(tool_input)
+    cmd = [sys.executable, str(validator), "validate", "--run", str(out_dir)]
+    if repo and Path(repo).is_dir():
+        cmd += ["--repo", repo]
     try:
-        proc = subprocess.run(
-            [sys.executable, str(validator), "validate", "--run", str(out_dir), "--repo", cwd],
-            capture_output=True, text=True, timeout=120,
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
     except (subprocess.TimeoutExpired, OSError):
         _allow()  # infra problem, not a contract failure — fail open
 
     if proc.returncode == 0:
         _allow()
 
-    defects = "\n".join(l for l in proc.stdout.splitlines() if l.startswith("DEFECT"))
+    # Match only real defect lines ("DEFECT [layer] code: ...") — not the FAIL message's prose,
+    # which also begins with the word "DEFECT" and would otherwise be fed back as a garbled defect.
+    defects = "\n".join(l for l in proc.stdout.splitlines() if l.startswith("DEFECT ["))
     _deny(
         "Manifest Validation Gate FAILED — report generation is blocked until the threat-model "
         f"manifests in {out_dir} pass the deterministic contract.\n\n{defects}\n\n"

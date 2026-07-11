@@ -40,8 +40,8 @@
           "description": "repo-relative path, glob, or literal source string that proves this element exists in the target"
         },
         "kind": {
-          "enum": ["process", "network", "trust", "tenant", "cicd", "region"],
-          "description": "trust_boundary only: the boundary class the LLM assigned (lets the eval reason about multi-zone chains without inferring it)"
+          "enum": ["process", "network", "trust", "tenant", "cicd", "region", "unknown", null],
+          "description": "trust_boundary only: the boundary class the LLM assigned (lets the eval reason about multi-zone chains without inferring it); 'unknown' or null/omitted when the sources don't reveal it — an honest absence the gate accepts, matching executor.md's absence rule"
         },
         "manifest": { "type": ["string", "null"], "description": "external_dep only: path to the dependency manifest/lockfile in evidence (enables the SBOM precondition); null/omitted when the dep has no manifest in the repo" },
         "risk": { "type": ["string", "null"], "description": "external_dep only: free-text risk note the LLM set (e.g. EOL, known-CVE) — a declared fact, not eval-inferred; null/omitted when none observed" }

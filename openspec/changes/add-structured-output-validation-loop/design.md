@@ -10,8 +10,11 @@ A ~90-line validator interprets exactly the JSON-Schema keywords the three schem
 (including `["x","null"]` unions), `required`, `properties`, `additionalProperties:false`, `items`,
 `enum`, `pattern` (full match), `minimum`/`maximum`, `minItems`, and local `$ref` to `#/$defs`. The
 `schema/*.json` become load-bearing: `checks.py` (recon + findings) and `coverage_checks.py` (the
-ledger) call it first and emit `schema-violation` defects; the previously hand-rolled subset is dropped
-in favor of the schema as the single source of truth. The schemas are tightened to match the contract
+ledger) call it first and emit `schema-violation` defects, so the schema is the authoritative
+*structural* contract. `checks.py` keeps a thin layer of consistency/semantic checks the schema cannot
+express (`severity == band(L×I)`, `out-of-range-LxI` domain guard before `band()`, count agreement,
+kill-chain referential integrity, `detected_pattern == other ⇒ detail`); these run over the
+now-schema-validated structure rather than re-deriving it. The schemas are tightened to match the contract
 they always implied: `additionalProperties:false`, `^TM-[0-9]{3}$` / `^KC[0-9]+$` id patterns, 1–5
 bounds, enum domains, and — the nullable pattern — `["string","null"]` / `["array","null"]` on the
 optional fields a source may legitimately lack (recon `description`/`tech`/`manifest`/`risk`/
