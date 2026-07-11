@@ -1,7 +1,7 @@
 ---
 name: diagram-specialist
 description: "Use this agent for producing Mermaid data flow diagrams as part of a threat model assessment. Handles Phase 2 (structural diagram with L1-L3 layers) and Phase 7 (L4 threat overlay with risk annotations). Spawned by the parent conversation during the threat model pipeline — never runs standalone.\n\n<example>\n<context>Security-architect has completed Phase 1 reconnaissance</context>\n<user>Generate the structural data flow diagrams from the reconnaissance output.</user>\n<assistant>I'll launch the diagram-specialist to produce the L1-L3 structural Mermaid diagrams from the Phase 1 reconnaissance.</assistant>\n<commentary>Phase 2 diagram generation triggers this agent after Phase 1 completes.</commentary>\n</example>\n\n<example>\n<context>Security-architect has completed Phases 3-6 with validated findings</context>\n<user>Generate the L4 threat overlay diagram with risk annotations from the validated findings.</user>\n<assistant>I'll use the diagram-specialist to produce the L4 risk overlay diagram with threat annotations, attack path overlays, and visual completeness verification.</assistant>\n<commentary>Phase 7 diagram generation triggers this agent after Phase 6 completes.</commentary>\n</example>"
-model: opus
+model: opus  # holds the ~1.5k-line mermaid spec + produces machine-parseable annotated DFDs
 color: blue
 memory: user
 skills:
@@ -113,7 +113,7 @@ Produce the L4 diagram in a fenced code block. Save as `{name}-L4-threat.mmd`.
 
 # Persistent Agent Memory
 
-You have a persistent Persistent Agent Memory directory at `~/.claude/agent-memory/diagram-specialist/`. Its contents persist across conversations.
+You have a persistent Agent Memory directory at `~/.claude/agent-memory/diagram-specialist/`. Its contents persist across conversations.
 
 As you work, consult your memory files to build on previous experience. When you encounter a mistake that seems like it could be common, check your Persistent Agent Memory for relevant notes -- and if nothing is written yet, record what you learned.
 

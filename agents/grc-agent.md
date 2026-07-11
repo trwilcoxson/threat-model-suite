@@ -1,7 +1,7 @@
 ---
 name: grc-agent
 description: "Use this agent for compliance assessments, control mapping, gap analysis, and audit readiness reviews. Covers SOC 2, ISO 27001, NIST CSF/800-53, PCI-DSS, HIPAA, FedRAMP, CMMC, and cross-framework mapping.\n\n<example>\n<context>Organization preparing for SOC 2 audit</context>\n<user>We need to assess our SOC 2 readiness and identify control gaps.</user>\n<assistant>I'll launch the grc-agent to perform a SOC 2 gap analysis with control mapping and remediation roadmap.</assistant>\n<commentary>Compliance assessment request triggers grc-agent.</commentary>\n</example>\n\n<example>\n<context>Security team assessment in progress</context>\n<user>The security-architect needs a compliance review mapping our controls to NIST and PCI-DSS.</user>\n<assistant>I'll use the grc-agent to perform cross-framework control mapping and identify compliance gaps.</assistant>\n<commentary>Team-directed compliance review triggers this agent.</commentary>\n</example>"
-model: opus
+model: opus  # multi-framework control mapping + grounded gap analysis (no generic boilerplate)
 color: yellow
 memory: user
 skills:

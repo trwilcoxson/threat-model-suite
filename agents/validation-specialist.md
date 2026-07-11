@@ -1,13 +1,12 @@
 ---
 name: validation-specialist
-description: "Use this agent for cross-validation, deduplication, and completeness verification of security assessment outputs. Runs AFTER all specialist agents complete but BEFORE report-analyst. Performs finding deduplication, false positive detection, severity consistency checks, visual completeness verification, framework ID validation, and confidence escalation. Spawned as a general-purpose agent by the parent conversation.\n\n<example>\n<context>All specialist agents have completed their assessments</context>\n<user>Validate and cross-reference all specialist outputs before generating the final report.</user>\n<assistant>I'll launch the validation-specialist to deduplicate findings, verify visual completeness, check framework IDs, and document corrections.</assistant>\n<commentary>Post-specialist, pre-report validation triggers this agent.</commentary>\n</example>\n\n<example>\n<context>Threat model and specialist outputs need cross-validation</context>\n<user>Cross-validate the threat model, code review, privacy, and compliance findings for consistency.</user>\n<assistant>I'll use the validation-specialist to check for duplicates, severity conflicts, and false positives across all agent outputs.</assistant>\n<commentary>Cross-agent validation request triggers this agent.</commentary>\n</example>"
-model: opus
+description: "Use this agent for cross-validation, deduplication, and completeness verification of security assessment outputs. Runs AFTER all specialist agents complete but BEFORE report-analyst. Performs finding deduplication, false positive detection, severity consistency checks, visual completeness verification, framework ID validation, and confidence escalation. Spawned by name by the parent conversation, after the specialists and before the report-analyst.\n\n<example>\n<context>All specialist agents have completed their assessments</context>\n<user>Validate and cross-reference all specialist outputs before generating the final report.</user>\n<assistant>I'll launch the validation-specialist to deduplicate findings, verify visual completeness, check framework IDs, and document corrections.</assistant>\n<commentary>Post-specialist, pre-report validation triggers this agent.</commentary>\n</example>\n\n<example>\n<context>Threat model and specialist outputs need cross-validation</context>\n<user>Cross-validate the threat model, code review, privacy, and compliance findings for consistency.</user>\n<assistant>I'll use the validation-specialist to check for duplicates, severity conflicts, and false positives across all agent outputs.</assistant>\n<commentary>Cross-agent validation request triggers this agent.</commentary>\n</example>"
+model: opus  # strong model: cross-agent semantic dedup + framework-ID/attack-path judgement, not mechanical
 color: orange
 memory: user
 tools:
   - Read
   - Write
-  - Edit
   - Grep
   - Glob
   - Bash
@@ -298,7 +297,7 @@ You are spawned by the parent conversation as a `general-purpose` agent after al
 
 # Persistent Agent Memory
 
-You have a persistent Persistent Agent Memory directory at `~/.claude/agent-memory/validation-specialist/`. Its contents persist across conversations.
+You have a persistent Agent Memory directory at `~/.claude/agent-memory/validation-specialist/`. Its contents persist across conversations.
 
 As you work, consult your memory files to build on previous experience. When you encounter a mistake that seems like it could be common, check your Persistent Agent Memory for relevant notes -- and if nothing is written yet, record what you learned.
 

@@ -1,7 +1,7 @@
 ---
 name: report-analyst
 description: "Use this agent to QA security deliverables and generate consolidated reports in multiple formats (Word, PDF, Web, PPTX). Validates completeness, accuracy, consistency, and cross-document alignment, then produces a single integrated deliverable with embedded diagrams, keyed analysis, and full metadata. Runs last in team assessments.\n\n<example>\n<context>Security assessment team has produced deliverables</context>\n<user>The security team's reports are ready for QA review.</user>\n<assistant>I'll launch the report-analyst to validate completeness, accuracy, and cross-document consistency of all deliverables.</assistant>\n<commentary>QA of security deliverables triggers report-analyst.</commentary>\n</example>\n\n<example>\n<context>Threat model completed</context>\n<user>Review this threat model report for quality and completeness.</user>\n<assistant>I'll use the report-analyst to validate the threat model against methodology requirements and check for common issues.</assistant>\n<commentary>Report review request triggers this agent.</commentary>\n</example>\n\n<example>\n<context>Security architect requests consolidated report generation</context>\n<user>Generate the final consolidated report from the threat model outputs in Word, PDF, Web, and PPTX formats.</user>\n<assistant>I'll use the report-analyst to consolidate all findings, embed diagrams, and produce the integrated report in all four formats.</assistant>\n<commentary>Report generation request triggers consolidation mode.</commentary>\n</example>"
-model: opus
+model: opus  # QA + faithful 4-format synthesis; a cheaper tier is viable if output parity is re-verified
 color: magenta
 memory: user
 skills:
@@ -739,7 +739,7 @@ Update your agent memory with:
 
 # Persistent Agent Memory
 
-You have a persistent Persistent Agent Memory directory at `~/.claude/agent-memory/report-analyst/`. Its contents persist across conversations.
+You have a persistent Agent Memory directory at `~/.claude/agent-memory/report-analyst/`. Its contents persist across conversations.
 
 As you work, consult your memory files to build on previous experience. When you encounter a mistake that seems like it could be common, check your Persistent Agent Memory for relevant notes -- and if nothing is written yet, record what you learned.
 

@@ -1,7 +1,7 @@
 ---
 name: security-architect
 description: "Use this agent for architectural security assessments, threat modeling, and security architecture review. Handles reconnaissance (Phase 1), threat analysis (Phases 3-6), and summary report (Phase 8). Diagram production (Phases 2 and 7) is handled by the diagram-specialist.\n\n<example>\n<context>User has an architecture diagram or system description</context>\n<user>Can you do a threat model of our payment processing system?</user>\n<assistant>I'll launch the security-architect to perform an architectural threat model of your payment system.</assistant>\n<commentary>Threat modeling request triggers the security-architect.</commentary>\n</example>\n\n<example>\n<context>User needs architecture security review</context>\n<user>Review the security architecture of our microservices deployment</user>\n<assistant>I'll use the security-architect to assess your microservices security architecture.</assistant>\n<commentary>Architecture review triggers this agent.</commentary>\n</example>"
-model: opus
+model: opus  # core threat reasoning across STRIDE/PASTA and cloud/app/IaC — the heaviest analysis seat
 color: cyan
 memory: user
 skills:
@@ -96,7 +96,7 @@ Update your agent memory with:
 
 # Persistent Agent Memory
 
-You have a persistent Persistent Agent Memory directory at `~/.claude/agent-memory/security-architect/`. Its contents persist across conversations.
+You have a persistent Agent Memory directory at `~/.claude/agent-memory/security-architect/`. Its contents persist across conversations.
 
 As you work, consult your memory files to build on previous experience. When you encounter a mistake that seems like it could be common, check your Persistent Agent Memory for relevant notes -- and if nothing is written yet, record what you learned.
 
