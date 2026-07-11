@@ -128,7 +128,7 @@ Comprehensive audit of which patterns from the anti-hallucination and bias preve
 
 ### 11. Uncertainty Propagation
 
-**Implementation:** Confidence levels (HIGH/MEDIUM/LOW) on every finding. Likelihood/impact scored 1-5. OWASP produces severity bands (CRITICAL 20-25, HIGH 12-19, MEDIUM 6-11, LOW 1-5) — bands rather than point estimates.
+**Implementation:** Confidence levels (HIGH/MEDIUM/LOW) on every finding. Likelihood/impact scored 1-5. The risk-rating matrix produces severity bands (CRITICAL 17-25, HIGH 10-16, MEDIUM 5-9, LOW 1-4) — bands rather than point estimates.
 
 **Source Evidence:**
 - [`agent-output-protocol.md:107-130`](../skills/threat-model/references/agent-output-protocol.md) — Severity definitions with score ranges for OWASP, CVSS, and Qualitative
