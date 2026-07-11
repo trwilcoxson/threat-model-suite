@@ -75,6 +75,8 @@ def check(coverage: dict | None, repo: Path, taxonomy: list[dict] | None = None)
         by_state[st] += 1
         if st in GROUNDED:
             src = led.get("source") or []
+            if isinstance(src, str):  # a single source may be given as a bare string; normalize to a list
+                src = [src]
             if not src:
                 D("present-without-source", f"'{t['id']}' is {st} but cites no source")
             elif not any(checks._resolves_in_repo(repo, s) for s in src):
