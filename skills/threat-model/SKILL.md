@@ -262,73 +262,18 @@ See [references/agent-prompts.md](references/agent-prompts.md) for all agent spa
 
 ### Post-Assessment Verification
 
-After the report-analyst completes, verify all expected files exist and are non-empty:
+After the report-analyst completes, run the shipped verification script over the output directory — it checks core outputs + manifests exist, the HTML report is structurally sound (PNG embeds present, no Mermaid CDN/runtime, balanced/closed script tags, body/html closed), and each agent left an Execution Log:
 
 ```bash
-# Core threat model outputs + manifests
-for f in 01-reconnaissance.md 02-structural-diagram.md 03-threat-identification.md \
-         04-risk-quantification.md 05-false-negative-hunting.md 06-validated-findings.md \
-         07-final-diagram.md 08-threat-model-report.md \
-         recon.json findings.json coverage.json; do
-  test -s "{output_dir}/$f" && echo "OK: $f" || echo "MISSING: $f"
-done
-
-# Report deliverables
-for f in report.html report.docx report.pdf executive-summary.pptx; do
-  test -s "{output_dir}/$f" && echo "OK: $f ($(wc -c < "{output_dir}/$f") bytes)" || echo "MISSING: $f"
-done
-
-# Team outputs (if team mode)
-for f in privacy-assessment.md compliance-gap-analysis.md code-security-review.md \
-         validation-report.md; do
-  test -s "{output_dir}/$f" 2>/dev/null && echo "OK: $f" || echo "NOT PRESENT: $f (expected in team mode only)"
-done
+bash "{refs_dir}/../scripts/verify_run.sh" "{output_dir}"
 ```
 
-#### HTML Report Content Validation
+It prints `OK`/`FAIL`/`WARN` lines and exits non-zero on any core/report/HTML failure. On a FAIL:
+- **HTML content failure** → re-spawn the report-analyst with the specific FAIL lines so it fixes `report.html`.
+- **Missing report deliverable** → re-spawn the report-analyst with the exact list of missing files so it regenerates just those.
+- **Missing core threat-model output** → investigate and report to the user.
 
-After verifying file existence, run these critical content checks on `report.html`:
-
-```bash
-# Check 1: Diagrams use embedded PNGs (not Mermaid CDN)
-grep -c '<img' "{output_dir}/report.html" | xargs -I{} echo "IMG tags found: {}"
-grep -qi 'mermaid' "{output_dir}/report.html" && echo "FAIL: Mermaid CDN reference found — must use PNG embeds" || echo "OK: No Mermaid CDN"
-
-# Check 2: No <\/script> escape (breaks HTML parser)
-grep -c '<\\/script>' "{output_dir}/report.html" | xargs -I{} test {} -eq 0 && echo "OK: No broken script escapes" || echo "FAIL: Found <\\/script> — replace with </script>"
-
-# Check 3: All script tags properly closed
-OPEN=$(grep -c '<script' "{output_dir}/report.html")
-CLOSE=$(grep -c '</script>' "{output_dir}/report.html")
-test "$OPEN" -eq "$CLOSE" && echo "OK: Script tags balanced ($OPEN/$CLOSE)" || echo "FAIL: Mismatched script tags (open=$OPEN, close=$CLOSE)"
-
-# Check 4: HTML structure is valid (has body content)
-grep -q '<body' "{output_dir}/report.html" && echo "OK: Body tag present" || echo "FAIL: No body tag"
-grep -q '</html>' "{output_dir}/report.html" && echo "OK: HTML properly closed" || echo "FAIL: HTML not closed"
-```
-
-If any HTML content checks fail, re-spawn the report-analyst with the specific failure details so it can fix the HTML output.
-
-If any report deliverables are missing, re-spawn the report-analyst with the specific list of missing deliverable files (e.g. report.html, report.docx, report.pdf, executive-summary.pptx) so it regenerates exactly those. If any core threat model outputs are missing, investigate and report to the user.
-
-#### Execution Log Verification
-
-Check that every agent produced an execution log:
-
-```bash
-# Check for execution logs in agent outputs
-for f in 01-reconnaissance.md 02-structural-diagram.md 08-threat-model-report.md 07-final-diagram.md; do
-  grep -q '## Execution Log' "{output_dir}/$f" && echo "OK: $f has execution log" || echo "MISSING LOG: $f"
-done
-
-# Check specialist agent execution logs (team mode)
-for f in privacy-assessment.md compliance-gap-analysis.md code-security-review.md; do
-  test -f "{output_dir}/$f" && (grep -q '## Execution Log' "{output_dir}/$f" && echo "OK: $f has execution log" || echo "MISSING LOG: $f") || true
-done
-
-# Check report generation log
-test -s "{output_dir}/report-generation-log.md" && echo "OK: report-generation-log.md" || echo "MISSING: report-generation-log.md"
-```
+(`WARN` lines — a missing Execution Log or a team-only file absent in solo mode — are advisory, not blocking.)
 
 #### Pipeline Summary
 
