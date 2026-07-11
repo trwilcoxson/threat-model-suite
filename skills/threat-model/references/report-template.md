@@ -6,6 +6,7 @@
 - Section II: System Overview (purpose, scope, tech stack, deployment model)
 - Section III: Architecture Diagram — Structural (rendered diagram, component metadata, trust boundaries, network topology)
 - Section IV: Risk Overlay Diagram (rendered diagram, component risk mapping, critical data flows)
+- Section IV-A: Coverage & Communication Visuals (STRIDE-per-element matrix, L×I heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph — each when applicable)
 - Section V: Asset Inventory (data assets, data flow summary)
 - Section VI: Threat Actor Profiles
 - Section VII: Findings (ordered by severity, standardized format)
