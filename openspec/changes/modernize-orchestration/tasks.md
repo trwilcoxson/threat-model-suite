@@ -23,8 +23,8 @@
 - [x] 3.8 Label security-reviewer + code-quality-reviewer as standalone companions in their bodies
 
 ## 4. Docs
-- [ ] 4.1 ARCHITECTURE.md §4.1/§4.6/§8: rewrite the stale constraint prose (tools-can't-expand, custom-can't-be-spawned, agents-can't-spawn, TaskOutput); reframe flat orchestration as an intentional choice
-- [ ] 4.2 ARCHITECTURE.md Component Inventory: relabel the "Built-in Agent Type" column (these are custom subagents; there is no built-in `security-architect`)
+- [x] 4.1 ARCHITECTURE.md §4.1/§4.6/§8: rewrite the stale constraint prose (tools-can't-expand, custom-can't-be-spawned, agents-can't-spawn, TaskOutput); reframe flat orchestration as an intentional choice
+- [x] 4.2 ARCHITECTURE.md Component Inventory: relabel the "Built-in Agent Type" column (these are custom subagents; there is no built-in `security-architect`)
 - [x] 4.3 README.md: roster wording → "7 pipeline personas + 2 standalone companions"
 
 ## 5. Verify

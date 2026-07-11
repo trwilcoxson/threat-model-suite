@@ -39,7 +39,7 @@ The system transforms a codebase or architecture description into a comprehensiv
 
 ### Core Principle: Flat Orchestration
 
-All agents are spawned as **flat peers by the parent conversation**. No agent spawns other agents. The parent conversation reads the skill file (SKILL.md), which contains the orchestration logic, and uses its full tool access (Task, TaskOutput, etc.) to manage the pipeline.
+All agents are spawned as **flat peers by the parent conversation** — a deliberate design choice (see §4.1), not a platform limit. The parent conversation reads the skill file (SKILL.md), which contains the orchestration logic, and uses its full tool access (the `Agent` spawn tool) to manage the pipeline, spawning each persona by its own `name`.
 
 ```mermaid
 flowchart TB
@@ -126,18 +126,20 @@ flowchart TB
 
 ### Component Inventory
 
-| Component | Type | Claude Code Primitive | Built-in Agent Type | Purpose |
-|-----------|------|----------------------|--------------------|---------|
-| `SKILL.md` | Skill | `~/.claude/skills/threat-model/SKILL.md` | N/A | 8-phase threat model methodology + orchestration guide |
-| `security-architect` | Agent | `~/.claude/agents/security-architect.md` | `security-architect` | Executes Phase 1 (recon), Phases 3-6 (analysis), Phase 8 (summary) |
-| `diagram-specialist` | Agent | `~/.claude/agents/diagram-specialist.md` | `security-architect` | Executes Phase 2 (structural DFDs) and Phase 7 (risk overlay) |
-| `privacy-agent` | Agent | `~/.claude/agents/privacy-agent.md` | `privacy-agent` | Privacy impact assessment |
-| `grc-agent` | Agent | `~/.claude/agents/grc-agent.md` | `grc-agent` | Compliance gap analysis |
-| `code-review-agent` | Agent | `~/.claude/agents/code-review-agent.md` | `code-review-agent` | Code-level vulnerability analysis |
-| `validation-specialist` | Agent | `~/.claude/agents/validation-specialist.md` | None (spawned as `general-purpose`) | Cross-agent validation and deduplication |
-| `report-analyst` | Agent | `~/.claude/agents/report-analyst.md` | `report-analyst` | QA review + 4-format report generation |
-| `security-reviewer` | Agent (standalone) | `~/.claude/agents/security-reviewer.md` | `security-reviewer` | **Standalone companion — not spawned by the pipeline.** On-demand code security review |
-| `code-quality-reviewer` | Agent (standalone) | `~/.claude/agents/code-quality-reviewer.md` | N/A | **Standalone companion — not spawned by the pipeline.** On-demand code-quality review |
+Every persona below is a **custom subagent** the suite ships (the only *built-in* subagent types are `Explore`, `Plan`, `general-purpose`); each is spawned by its own `name`.
+
+| Component | Type | Location | Spawned as (`subagent_type`) | Purpose |
+|-----------|------|----------|------------------------------|---------|
+| `SKILL.md` | Skill | `skills/threat-model/SKILL.md` | N/A | 8-phase threat model methodology + orchestration guide |
+| `security-architect` | Custom agent | `agents/security-architect.md` | `security-architect` | Phase 1 (recon), Phases 3-5 (generative analysis), Phases 6+8 (fresh-context validation + summary) |
+| `diagram-specialist` | Custom agent | `agents/diagram-specialist.md` | `diagram-specialist` | Phase 2 (structural DFDs) and Phase 7 (risk overlay + analytical visuals) |
+| `privacy-agent` | Custom agent | `agents/privacy-agent.md` | `privacy-agent` | Privacy impact assessment |
+| `grc-agent` | Custom agent | `agents/grc-agent.md` | `grc-agent` | Compliance gap analysis |
+| `code-review-agent` | Custom agent | `agents/code-review-agent.md` | `code-review-agent` | Code-level vulnerability analysis |
+| `validation-specialist` | Custom agent | `agents/validation-specialist.md` | `validation-specialist` | Cross-agent validation, deduplication, coverage-ledger merge |
+| `report-analyst` | Custom agent | `agents/report-analyst.md` | `report-analyst` | QA review + 4-format report generation |
+| `security-reviewer` | Custom agent (standalone) | `agents/security-reviewer.md` | `security-reviewer` | **Standalone companion — not spawned by the pipeline.** On-demand code security review |
+| `code-quality-reviewer` | Custom agent (standalone) | `agents/code-quality-reviewer.md` | `code-quality-reviewer` | **Standalone companion — not spawned by the pipeline.** On-demand code-quality review |
 | 16 reference files | Reference | `references/*.md` + `references/*.json` | N/A | Frameworks, checklists, diagram + visual specs, coverage taxonomy, observability spec, report template (14 .md + 2 .json) |
 
 > **Pipeline vs. companions.** The spawned pipeline is **7 agents** (security-architect, diagram-specialist, privacy-agent, grc-agent, code-review-agent, validation-specialist, report-analyst). `security-reviewer` and `code-quality-reviewer` are standalone companion agents invoked on demand, **not** part of the spawned pipeline. The repo also carries dev infrastructure that is not a runtime component: a reference-free reliability evals harness (`skills/threat-model/evals/reliability/`) and spec-first design docs (`openspec/`).
@@ -185,18 +187,19 @@ User: "Run a threat model on this project"
 
 ### 3.2 Agent Spawning
 
-Each agent is spawned via the `Task` tool with specific parameters:
+Each agent is spawned via the `Agent` tool (the older `Task` name still works as an alias) with specific parameters:
 
 ```
-Task(
-  subagent_type: "security-architect",    // built-in agent type
-  name: "threat-modeler",                 // display name
-  prompt: "Execute all 8 phases...",      // instructions + paths
-  run_in_background: false                // blocking (or true for parallel)
+Agent(
+  subagent_type: "security-architect",    // the custom agent's own name
+  name: "threat-modeler-recon",           // display name for this spawn
+  prompt: "Execute Phase 1...",           // instructions + paths
+  run_in_background: false                // blocking (or true for the parallel specialist wave)
 )
 ```
 
-The agent's `.md` file (in `~/.claude/agents/`) customizes the built-in type with domain-specific instructions, personality, model selection, and skill access.
+The custom agent's `.md` file (in `agents/`, or the plugin's `agents/`) supplies the persona's
+instructions, model, tools, and preloaded skills; it is loaded automatically on a by-name spawn.
 
 ### 3.3 Inter-Agent Communication
 
@@ -287,21 +290,27 @@ Step 3: Multi-Format Generation
 
 ## 4. Design Decisions and Justifications
 
-### 4.1 Why Flat Orchestration (Not Nested Agent Spawning)
+### 4.1 Why Flat Orchestration (a deliberate choice)
 
-<!-- TODO: platform-constraint prose updated in modernize-orchestration change -->
+**Decision**: The parent conversation spawns all agents as flat peers. No spawned agent hides
+orchestration inside itself.
 
-**Decision**: The parent conversation spawns all agents. No agent spawns other agents.
+**This is a design choice, not a platform limitation.** Current Claude Code (verified July 2026)
+*does* allow a subagent to spawn its own subagents (to a fixed depth), and a custom agent's `tools:`
+list is an allowlist over *all* tools (omit it to inherit everything; add `Agent` to grant nested
+spawning). The pipeline keeps spawning flat anyway because flatness is the property we want: every
+agent is visible to the user, there is no hidden orchestration buried in a subagent, and the pipeline
+is transparent and debuggable. The orchestration logic lives in SKILL.md, which loads into the parent's
+context, so the parent — which has the full tool set — drives the whole sequence.
 
-**Constraint discovered**: Claude Code custom agents (defined in `~/.claude/agents/`) can customize description, model, color, memory, and skills for built-in agent types, but **cannot add tools** beyond the built-in type's set. The `tools:` frontmatter field only **restricts** — it never expands.
-
-The built-in `security-architect` type has 6 tools: Bash, Read, Write, Edit, Grep, Glob. Listing Task, TeamCreate, or SendMessage in its frontmatter was silently ignored. The agent literally could not spawn subagents.
-
-**Additional constraint**: The `validation-specialist` has no built-in agent type counterpart. It cannot be spawned as `subagent_type: "validation-specialist"` — it must be spawned as `general-purpose` with custom instructions pointing to its `.md` file.
-
-**Resolution**: Move all orchestration logic to SKILL.md, which runs in the parent conversation. The parent has access to all tools. Every agent becomes a focused specialist that reads inputs, does its work, and writes outputs.
-
-**Benefit**: This architecture is actually cleaner than nested spawning. Every agent is visible to the user. There's no hidden orchestration happening inside an agent. The pipeline is transparent and debuggable.
+**Each persona is a custom subagent, spawned by its own `name`.** A subagent's identity is its `name`
+frontmatter; `security-architect`, `diagram-specialist`, `privacy-agent`, `grc-agent`,
+`code-review-agent`, `validation-specialist`, and `report-analyst` are the suite's own custom agents
+(the only *built-in* subagent types are `Explore`, `Plan`, and `general-purpose`). Each is spawned as
+`subagent_type: "<name>"` with its declared `model`/`tools`/`memory`. Earlier versions of this document
+described a "built-in `security-architect` type," a "tools can't expand" rule, and a `general-purpose`
+workaround for the validation-specialist; those were mistaken readings of an earlier platform and have
+been removed — see §4.6.
 
 ### 4.2 Why a Skill (Not Just an Agent)
 
@@ -343,15 +352,18 @@ The built-in `security-architect` type has 6 tools: Bash, Read, Write, Edit, Gre
 - **Severity consistency**: Different agents may rate the same issue differently. The validation step detects and documents these conflicts so the report-analyst can resolve them.
 - **Quality gate**: The validation-specialist is the "QA before QA" — it catches issues that would otherwise require the report-analyst to do detective work during consolidation.
 
-### 4.6 Why `general-purpose` for the Validation Specialist
+### 4.6 The validation-specialist is spawned by name
 
-**Decision**: The validation-specialist is spawned as `subagent_type: "general-purpose"` rather than a custom agent type.
+**Decision**: The validation-specialist is spawned as `subagent_type: "validation-specialist"`, like
+every other persona.
 
-**Constraint**: Claude Code only allows spawning agents whose `subagent_type` matches a built-in agent type. There is no built-in `validation-specialist` type. Attempting to spawn it as its custom type silently fails.
-
-**Resolution**: Spawn as `general-purpose` (which has access to all tools) and pass custom instructions in the prompt that point to the agent's `.md` file: "Read your full instructions from `/path/to/validation-specialist.md`".
-
-**Trade-off**: The agent doesn't get automatic loading of its `.md` file — it must explicitly read it. But it gains access to all tools, which is more than adequate for validation work (Read, Write, Grep, Glob, Bash).
+Earlier versions spawned it as `general-purpose` with a prompt that pointed at a copied `.md` file, in
+the belief that only built-in `subagent_type`s were spawnable. That belief was wrong: any custom agent
+is spawnable by its `name`, and `validation-specialist.md` carries `name: validation-specialist`.
+Spawning it by name is strictly better — it runs with its own declared least-privilege `tools` (the
+`general-purpose` workaround silently granted it the full tool set) and its routing `description`
+reaches the delegation router. The `/tmp` copy of its definition is gone; the agent definition loads
+automatically on a by-name spawn.
 
 ### 4.7 Why 16 Reference Files (Not Inline Instructions)
 
@@ -536,7 +548,7 @@ flowchart TD
     Fork --> GRC["<b>grc-agent</b><br/><i>background</i>"]
     Fork --> CR["<b>code-review-agent</b><br/><i>background</i>"]
 
-    PA -->|"privacy-assessment.md"| Join["Parent waits for all 3<br/><i>TaskOutput, block=true</i>"]
+    PA -->|"privacy-assessment.md"| Join["Parent waits for all 3<br/><i>on completion notifications</i>"]
     GRC -->|"compliance-gap-analysis.md"| Join
     CR -->|"code-security-review.md"| Join
 
@@ -590,14 +602,16 @@ The scaling rules are defined in SKILL.md § "Scaling Guidelines" and enforced t
 
 ### Claude Code Platform Constraints
 
-| Constraint | Impact | Mitigation |
+| Constraint | Impact | Mitigation / note |
 |-----------|--------|------------|
-| Custom agents cannot add tools beyond built-in set | No nested agent spawning | Flat orchestration in SKILL.md |
-| Custom-only agents (no built-in type) can't be spawned by name | validation-specialist requires workaround | Spawn as `general-purpose` with custom prompt |
-| `tools:` frontmatter only restricts, never expands | Listed tools silently ignored if not in built-in set | Only list tools that exist in the built-in type |
-| Agent context windows are independent | Each agent starts fresh — no shared memory | Filesystem-based communication via output files |
+| Agent context windows are independent | Each agent starts fresh — no shared memory | Filesystem-based communication via output files (a feature: durable, auditable hand-offs) |
+| Flat orchestration is a *choice*, not a limit | Subagents *can* nest and `tools:` *can* expand in current Claude Code — the pipeline stays flat for transparency/debuggability | Orchestration lives in SKILL.md; personas are spawned by `name` (see §4.1/§4.6) |
 | Mermaid rendering requires Node.js | `npx @mermaid-js/mermaid-cli` must be available | Documented as prerequisite |
 | macOS managed Python (PEP 668) | `pip install` fails outside venv | All Python usage wrapped in `python3 -m venv` |
+
+> The first three rows of this table in earlier versions ("custom agents cannot add tools", "custom-only
+> agents can't be spawned by name", "`tools:` only restricts") described an earlier platform and were
+> mistaken; current Claude Code is more capable, so the workarounds they motivated have been removed.
 
 ### Methodology Limitations
 
@@ -626,7 +640,7 @@ This system analyzes security — it should also be secure in its operation:
 | v1 | Monolithic security-architect with embedded team orchestration | Initial design — agent does everything |
 | v2 | Added validation-specialist, agent-output-protocol, reference files | Quality problems: duplicate findings, hallucinated IDs, inconsistent severity |
 | v3 | Split Mermaid conventions into 5 modular files | Single file was too large and mixed concerns (what vs when vs how) |
-| v4 | **Flat orchestration restructure** — moved team coordination from agent to SKILL.md | Discovered custom agents cannot add tools beyond built-in set. Entire team orchestration was silently broken. |
+| v4 | **Flat orchestration restructure** — moved team coordination from agent to SKILL.md | Kept orchestration in the parent for a transparent, debuggable pipeline. (Earlier notes attributed this to a since-disproven 'agents can't spawn agents' platform limit; flat orchestration is retained as an intentional choice.) |
 | v5 | **Diagram-specialist extraction** — split Phases 2,7 into diagram-specialist; slimmed Phase 8 to summary-only | Context rot: security-architect accumulated ~137K tokens by Phase 7-8. Extracting diagrams removes ~38K tokens of Mermaid refs, reducing peak context to ~80-90K. |
 | v6 | **Product-grade visuals, observability, coverage ledger, structured-output gate, orchestration modernization** — 8 product-grade diagram additions + analytical charts; a `tm.run-event/1` observability stream (`events.ndjson`) projected from Execution Logs; a completeness-coverage ledger (`coverage.json`); a reference-free reliability evals harness that gates structure; spec-first `openspec/` design | Move from "passing runs" to *verifiable* runs — measure diagram/coverage/observability reliability reference-free, and surface what each persona actually did and left unknown. |
 
