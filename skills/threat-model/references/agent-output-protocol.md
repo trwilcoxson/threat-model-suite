@@ -72,7 +72,7 @@ ALL findings from ALL agents MUST use this format:
 | Affected Component(s) | [matching diagram node IDs from Phase 2 structural diagram] |
 | Scoring System | [OWASP Risk Rating / CVSS v3.1 / Qualitative] |
 | Score | [numeric score, vector string, or N/A] |
-| Cross-Framework | [MITRE: Txxxx | CWE-NNN | OWASP category] |
+| Cross-Framework | [MITRE: Txxxx · CWE-NNN · OWASP category] |
 
 **Description**: [What is the issue and why it matters]
 
@@ -238,7 +238,7 @@ The validation-specialist checks every agent output against these rules:
 | Affected Component(s) | PaymentSvc |
 | Scoring System | CVSS v3.1 |
 | Score | 9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H) |
-| Cross-Framework | MITRE: T1190 | CWE-89 | OWASP A03:2021 |
+| Cross-Framework | MITRE: T1190 · CWE-89 · OWASP A03:2021 |
 
 **Description**: The payment query handler constructs SQL queries using string concatenation with user-supplied input, allowing SQL injection.
 

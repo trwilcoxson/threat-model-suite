@@ -33,6 +33,8 @@ wildcard IAM, and a public unencrypted S3 bucket holding `customer-master.xlsx`.
 encryption, public-subnet auto-IP, static IAM keys, lateral-movement framing) varies run to run —
 the expected breadth variance, not a crown-jewel miss.
 
+> **Honest negative:** the "public unencrypted S3 bucket" item above is stable but **over-scoped**. The harness's own quality judge flagged it (`agents/quality.json`, TM-007) as indefensible at CRITICAL — `aws_s3_bucket.data` (s3.tf:1-21) sets no ACL and no public-access resource, so the bucket is private by AWS default; the L5/I5 "unauthenticated internet users download `customer-master.xlsx`, no exploitation required" path rests only on a `# bucket is public` source comment the report elsewhere treats as untrusted data. The defensible finding is missing encryption/logging/versioning, not internet-public exposure. Its clustering every run is the harness catching a **stable over-claim**, not confirming it — which is why mean soundness is 0.85, not 1.0.
+
 ## Reasoning quality (judged)
 
 Mean soundness **0.85** (proportionate; findings traced to real `.tf` resources, no invented

@@ -4,7 +4,7 @@
 - Threat Actor Profiles (selection criteria, capability scoring)
 - STRIDE-LM (7 categories: S, T, R, I, D, E, LM)
 - AI/ML Security Threats (LLM, Agentic AI, RAG, Multi-Modal)
-- OWASP Risk Rating Methodology (Likelihood 1-5, Impact 1-5, Risk Matrix, Severity Bands)
+- Risk Rating — Likelihood × Impact matrix, OWASP-inspired (Likelihood 1-5, Impact 1-5, Risk Matrix, Severity Bands)
 - LINDDUN Privacy Threats (7 categories)
 - MITRE ATT&CK — Key Tactics and Techniques (13 tactics, technique IDs)
 - OWASP Top 10 (2021) and API Security Top 10 (2023)
@@ -101,7 +101,9 @@ Assess these when the system includes AI/ML components, **in addition to** STRID
 
 ---
 
-## OWASP Risk Rating Methodology
+## Risk Rating (Likelihood × Impact matrix, OWASP-inspired)
+
+> This is a simplified Likelihood × Impact risk matrix adapted for this skill — inspired by OWASP's risk-rating approach, not the formal OWASP Risk Rating Methodology (which scores multiple likelihood and impact factors on a 0-9 scale and averages them into LOW/MEDIUM/HIGH via a 3×3 matrix). The 1-5 × 1-5 → 1-25 scheme below is the suite's unified convention.
 
 The prioritization formula used after STRIDE-LM identification and PASTA attack simulation:
 
@@ -189,7 +191,7 @@ Reference the most architecturally relevant techniques per tactic.
 | Privilege Escalation | TA0004 | T1068 Exploitation for Privilege Escalation, T1078 Valid Accounts |
 | Defense Evasion | TA0005 | T1070 Indicator Removal, T1562 Impair Defenses, T1036 Masquerading |
 | Credential Access | TA0006 | T1110 Brute Force, T1539 Steal Web Session Cookie, T1552 Unsecured Credentials |
-| Discovery | TA0007 | T1046 Network Service Scanning, T1087 Account Discovery |
+| Discovery | TA0007 | T1046 Network Service Discovery, T1087 Account Discovery |
 | Lateral Movement | TA0008 | T1021 Remote Services, T1550 Use Alternate Auth Material |
 | Collection | TA0009 | T1530 Data from Cloud Storage, T1213 Data from Information Repositories |
 | Exfiltration | TA0010 | T1048 Exfiltration Over Alternative Protocol, T1567 Exfiltration Over Web Service |
@@ -336,7 +338,7 @@ Protocol-specific architectural threats beyond the OWASP API Top 10.
 - CWE-863: Incorrect Authorization
 - CWE-639: Authorization Bypass Through User-Controlled Key (IDOR)
 - CWE-269: Improper Privilege Management
-- CWE-732: Incorrect Permission Assignment
+- CWE-732: Incorrect Permission Assignment for Critical Resource
 
 ### Input Validation
 - CWE-20: Improper Input Validation
@@ -388,7 +390,7 @@ Rate each pillar as HIGH (H), MEDIUM (M), or LOW (L).
 
 ## PASTA — Process for Attack Simulation and Threat Analysis
 
-PASTA is the seven-stage, risk-centric methodology that provides the **attack simulation and business impact data** feeding into the OWASP Risk Rating formula. STRIDE-LM identifies threats; PASTA quantifies their likelihood and impact.
+PASTA is the seven-stage, risk-centric methodology that provides the **attack simulation and business impact data** feeding into the Risk Rating formula. STRIDE-LM identifies threats; PASTA quantifies their likelihood and impact.
 
 ### Seven Stages — Mapped to Skill Phases
 
@@ -410,7 +412,7 @@ For each STRIDE-LM threat, build a concrete attack path:
 2. **Attack steps**: What sequence of actions achieves the objective? What tools or techniques are required at each step?
 3. **Preconditions**: What must be true for the attack to succeed (configuration, timing, access level)?
 4. **Existing controls**: What security mechanisms must the attacker bypass?
-5. **Likelihood assessment**: Given the above, rate likelihood 1-5 (see OWASP Risk Rating section)
+5. **Likelihood assessment**: Given the above, rate likelihood 1-5 (see Risk Rating section)
 
 ### Stage 7 — Risk & Impact Analysis (produces Impact)
 
@@ -421,11 +423,11 @@ For each threat with a modeled attack path, assess business impact:
 3. **Operational impact**: Duration and severity of disruption, recovery complexity
 4. **Reputational impact**: Visibility, customer trust erosion, competitive implications
 5. **Regulatory impact**: Notification obligations, potential fines, audit findings, certification risk
-6. **Impact assessment**: Rate impact 1-5 using the highest dimension (see OWASP Risk Rating section)
+6. **Impact assessment**: Rate impact 1-5 using the highest dimension (see Risk Rating section)
 
 ### Completing the Risk Calculation
 
-After PASTA Stages 6-7 produce Likelihood and Impact scores, apply the OWASP Risk Rating formula:
+After PASTA Stages 6-7 produce Likelihood and Impact scores, apply the Risk Rating formula:
 
 ```
 Risk Score = Likelihood (1-5) x Impact (1-5)

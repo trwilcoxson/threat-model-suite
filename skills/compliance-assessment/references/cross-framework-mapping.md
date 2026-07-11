@@ -29,20 +29,22 @@
 | **Backup & Recovery** | A1.2 | A.8.13, A.8.14 | CP-9, CP-10 | N/A | §164.308(a)(7) |
 | **Physical Security** | CC6.4 | A.7.1, A.7.2, A.7.3, A.7.4, A.7.5, A.7.6, A.7.7, A.7.8, A.7.9, A.7.10, A.7.11, A.7.12, A.7.13, A.7.14 | PE-1, PE-2, PE-3, PE-4, PE-5, PE-6 | 9.1, 9.2, 9.3, 9.4 | §164.310(a)(1) |
 | **Security Awareness Training** | CC1.4 | A.6.3 | AT-2, AT-3 | 12.6 | §164.308(a)(5) |
-| **Risk Assessment** | CC3.2, CC3.4 | A.5.12 | RA-3 | 12.2 | §164.308(a)(1)(ii)(A) |
+| **Risk Assessment** | CC3.2, CC3.4 | Clause 6.1.2 † | RA-3 | 12.3.1 | §164.308(a)(1)(ii)(A) |
 | **Data Classification** | CC6.1 | A.5.12, A.5.13 | RA-2 | 3.2 | N/A |
 | **Network Security** | CC6.1, CC6.6 | A.8.20, A.8.21, A.8.22 | SC-7 | 1.2, 1.3 | §164.312(e)(1) |
 | **Endpoint Protection** | CC6.8 | A.8.1, A.8.7 | SI-3 | 5.2, 5.3 | §164.308(a)(5)(ii)(B) |
 | **Secure Development** | CC8.1 | A.8.25, A.8.26, A.8.27 | SA-11 | 6.2, 6.5 | N/A |
 | **Third-Party Management** | CC9.2 | A.5.19, A.5.20, A.5.21, A.5.22 | SA-9, SR-1 | 12.8, 12.9 | §164.308(b)(1) |
 | **Business Continuity** | A1.1, A1.2 | A.5.29, A.5.30 | CP-1, CP-2, CP-3, CP-4 | 12.10 | §164.308(a)(7) |
-| **Privacy / Data Protection** | P1.1, P1.2 | A.5.34 | PM-25, PT-2 | 3.1, 3.2 | §164.530 |
+| **Privacy / Data Protection** | P1.1 | A.5.34 | PT-2 † | 3.1, 3.2 | §164.530 † |
 | **Configuration Management** | CC6.1, CC8.1 | A.8.9 | CM-2, CM-6, CM-7 | 2.2 | N/A |
 | **Key Management** | CC6.1 | A.8.24 | SC-12 | 3.6, 3.7 | N/A |
 | **Monitoring & Alerting** | CC7.2 | A.8.16 | SI-4 | 10.7, 11.5 | §164.312(b) |
 | **Asset Management** | CC6.1 | A.5.9, A.5.10 | CM-8 | 12.5 | §164.310(d)(1) |
-| **Personnel Security** | CC1.4, CC1.5 | A.6.1, A.6.2, A.6.5, A.6.6 | PS-1, PS-2, PS-3, PS-4, PS-5, PS-6, PS-7, PS-8 | 12.7 | §164.308(a)(3) |
+| **Personnel Security** | CC1.4, CC1.5 | A.6.1, A.6.2, A.6.5, A.6.6 | PS-1, PS-2, PS-3, PS-4, PS-5, PS-6, PS-7, PS-8 | 12.7.1 † | §164.308(a)(3) |
 | **Data Disposal** | CC6.5 | A.8.10 | MP-6 | 3.1, 9.4 | §164.310(d)(2) |
+
+> **†** Approximate / not locally grounded: the cited control is real in its framework but is **not** detailed in this suite's local reference file — it falls outside the captured sections (NIST `PT-2` sits in the PII Processing and Transparency family, listed in the family summary but not detailed; HIPAA `§164.530` is a Privacy Rule administrative requirement, outside the local Security Rule reference; PCI `12.7.1` personnel screening is not in the local PCI file), or, for ISO 27001, it lives in a management-system clause (`Clause 6.1.2`, information security risk assessment) rather than an Annex A control. Verify against the primary standard before relying on these cells.
 
 ---
 

@@ -67,11 +67,11 @@ The Common Criteria (CC series) apply to ALL SOC 2 engagements. The additional c
 
 | ID | Criteria | Key Requirements |
 |----|----------|-----------------|
-| CC7.1 | Detects and monitors security events and anomalies | SIEM, log monitoring, alerting |
+| CC7.1 | Uses detection and monitoring procedures to identify configuration changes that introduce vulnerabilities and susceptibilities to newly discovered vulnerabilities | Vulnerability scanning, configuration-change detection, monitoring tooling |
 | CC7.2 | Monitors system components for anomalies | Infrastructure monitoring, performance |
 | CC7.3 | Evaluates security events to determine incidents | Incident triage, classification |
 | CC7.4 | Responds to identified security incidents | Incident response plan, containment |
-| CC7.5 | Identifies and remediates vulnerabilities | Vulnerability management, patching |
+| CC7.5 | Identifies, develops, and implements activities to recover from identified security incidents | Recovery procedures, restoration, post-incident recovery |
 
 ### CC8 — Change Management
 
@@ -117,7 +117,6 @@ The Common Criteria (CC series) apply to ALL SOC 2 engagements. The additional c
 
 | ID | Criteria | Key Requirements |
 |----|----------|-----------------|
-| P1.0 | Privacy criteria: Accepts and obtains commitments | Privacy notice, consent management |
 | P1.1 | Notice: Provides notice about its privacy practices | Privacy policy, data use disclosures |
 | P2.1 | Choice and Consent: Communicates choices to data subjects | Opt-in/opt-out mechanisms |
 | P3.1 | Collection: Collects personal information consistent with objectives | Data minimization, purpose limitation |
@@ -145,4 +144,4 @@ The Common Criteria (CC series) apply to ALL SOC 2 engagements. The additional c
 | Availability | A1.[1-3] | A1.2 | Availability in scope |
 | Processing Integrity | PI1.[1-5] | PI1.3 | Processing Integrity in scope |
 | Confidentiality | C1.[1-2] | C1.1 | Confidentiality in scope |
-| Privacy | P[1-8].[0-7] | P5.1 | Privacy in scope |
+| Privacy | P[1-8].[1-7] | P5.1 | Privacy in scope |

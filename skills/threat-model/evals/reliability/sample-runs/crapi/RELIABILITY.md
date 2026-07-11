@@ -11,7 +11,7 @@ tool server**. Run through the same harness with **zero code changes** (only `ta
 **The harness and skill scale.** On a large polyglot system the deterministic contract still held on
 every run, recon stayed complete, the high-severity core was stable, and the skill found both the
 classic API vulnerabilities **and** the AI/agentic threats — with the same machinery used on a
-9-file web app.
+~100-file web app.
 
 ## Deterministic contract (per run) — held on every run
 
@@ -52,7 +52,7 @@ product creation) — different real issues than the model surfaced, generated f
 
 ## Why this matters
 
-NodeGoat (9-file web app), TerraGoat (Terraform IaC), and crAPI (4-language microservices + LLM
+NodeGoat (~100-file web app), TerraGoat (Terraform IaC), and crAPI (4-language microservices + LLM
 agent) are three very different systems. The same reference-free harness produced a coherent
 reliability profile on all three with no per-target tuning — deterministic contract intact, stable
 crown-jewel core, real recall gaps. Adding a target is still just a `targets/*.yaml` and a clone.

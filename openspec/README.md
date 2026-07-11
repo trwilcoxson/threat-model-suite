@@ -22,8 +22,12 @@ state) and the eval checks structure over that fact — it never infers content 
 |---|---|---|
 | [`add-product-grade-diagrams`](changes/add-product-grade-diagrams/) | `threat-model-visuals`, `diagram-verification` | implemented + verified |
 | [`add-pipeline-observability`](changes/add-pipeline-observability/) | `pipeline-observability` | implemented + verified |
-| [`add-coverage-ledger`](changes/add-coverage-ledger/) | `completeness-coverage`, `coverage-verification` | proposed |
+| [`add-coverage-ledger`](changes/add-coverage-ledger/) | `completeness-coverage`, `coverage-verification` | implemented (live verification pending) |
 | [`add-structured-output-validation-loop`](changes/add-structured-output-validation-loop/) | `structured-output-contract`, `manifest-validation-gate` | implemented + verified |
+| [`modernize-orchestration`](changes/modernize-orchestration/) | `pipeline-orchestration` | implemented (live verification pending) |
+| [`refine-pipeline-flow`](changes/refine-pipeline-flow/) | `assessment-flow` | implemented (live verification pending) |
+| [`harden-eval-determinism-boundary`](changes/harden-eval-determinism-boundary/) | `eval-determinism` | implemented + verified |
+| [`correct-reference-data`](changes/correct-reference-data/) | `reference-fidelity` | implemented |
 
 Each change folder has `proposal.md` (why/what), `specs/<capability>/spec.md` (the
 ADDED/MODIFIED requirement deltas), `design.md` (technical approach + the determinism boundary), and

@@ -28,9 +28,9 @@ New controls introduced in 2022 are marked with **(NEW)**.
 | A.5.16 | Identity management | Full lifecycle of identities managed |
 | A.5.17 | Authentication information | Allocation and management of authentication information controlled |
 | A.5.18 | Access rights | Access rights provisioned, reviewed, modified, and removed per policy |
-| A.5.19 | Information security in supplier relationships | Processes to manage security risks from supplier use **(NEW scope)** |
+| A.5.19 | Information security in supplier relationships | Processes to manage security risks from supplier use |
 | A.5.20 | Addressing information security within supplier agreements | Relevant security requirements established with each supplier |
-| A.5.21 | Managing information security in the ICT supply chain | Processes to manage security risks in ICT supply chain **(NEW)** |
+| A.5.21 | Managing information security in the ICT supply chain | Processes to manage security risks in ICT supply chain |
 | A.5.22 | Monitoring, review and change management of supplier services | Monitor, review, evaluate, and manage changes in supplier security |
 | A.5.23 | Information security for use of cloud services | Processes for acquisition, use, management, and exit of cloud services **(NEW)** |
 | A.5.24 | Information security incident management planning and preparation | Management responsibilities and procedures for consistent response |

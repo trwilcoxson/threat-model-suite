@@ -36,12 +36,13 @@ flowchart TB
         TeamOut["privacy-assessment.md<br/>compliance-gap-analysis.md<br/>code-security-review.md"]
         ValOut["validation-report.md"]
         Reports["report.html<br/>report.docx<br/>report.pdf<br/>executive-summary.pptx"]
+        ObsFS["events.ndjson<br/>pipeline-summary.md<br/>coverage.json<br/>report-generation-log.md"]
     end
 
     subgraph Refs["Reference Files — Institutional Knowledge"]
         direction LR
         R1["<b>frameworks.md</b><br/>STRIDE-LM, MITRE<br/>CWE, OWASP"]
-        R2["<b>mermaid-spec.md</b><br/>+ 4 diagram refs"]
+        R2["<b>mermaid-spec.md</b><br/>+ 6 companion diagram refs"]
         R3["<b>report-template.md</b><br/>Sections I-XIV"]
         R4["<b>agent-output-</b><br/><b>protocol.md</b>"]
     end
@@ -71,6 +72,6 @@ flowchart TB
     class SA,PA,GRC,CR agent
     class DS diagram
     class VS,RA post
-    class FS,Phases,TeamOut,ValOut,Reports fs
+    class FS,Phases,TeamOut,ValOut,Reports,ObsFS fs
     class Refs,R1,R2,R3,R4 ref
     class User user

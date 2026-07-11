@@ -8,9 +8,11 @@ coverage 3/3 and quality up to 1.0.
 
 | Target | Diagram defects per run | Typical failures |
 |---|---|---|
-| NodeGoat | 8 / 6 / 6 | only L1+L4 layers (L2/L3 missing for a 6-20 component system); 0% of flows annotated; 0% ownership markers; L4 not linked to any TM-NNN |
+| NodeGoat | 7 / 6 / 6 | only L1+L4 layers (L2/L3 missing for a 6-20 component system); 0% of flows annotated; 0% ownership markers; L4 not linked to any TM-NNN |
 | TerraGoat | 5 / 5 / 6 | layers not stamped; no flow sensitivity annotations; no ownership markers; no legend/version stamp |
-| crAPI | 6 / 1 / 9 | same shape — missing/annotation-light layers, L4 risk overlay not linked to findings |
+| crAPI | 6 / 1 / 7 | same shape — missing/annotation-light layers, L4 risk overlay not linked to findings |
+
+_Counts reflect the corrected re-score — two deterministic sub-checks were fixed (see [Response](#response)): L4 linkage now matches on `TM-NNN`, and ownership is measured on L1 components. The corrections dropped NodeGoat run 1 (8→7) and crAPI run 3 (9→7); all nine runs still fail._
 
 The skill's *spec* already requires all of this (mermaid-spec §3–§8, mermaid-layers §2–§6,
 the 26-category visual-completeness checklist). The skill simply under-delivered the diagram, and

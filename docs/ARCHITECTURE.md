@@ -20,6 +20,10 @@ The system transforms a codebase or architecture description into a comprehensiv
 | `report.docx` | Professional Word document with TOC, cover page, embedded diagram PNGs |
 | `report.pdf` | Print-ready PDF |
 | `executive-summary.pptx` | 9-11 slide executive presentation with severity charts and diagram embeds |
+| Product-grade + analytical visuals | 8 product-grade diagram additions plus analytical charts (severity distribution, risk heatmap) beyond the L1-L4 DFDs |
+| `coverage.json` + coverage profile | Completeness-coverage ledger: every applicable production-grade item resolved to present / partial / absent / not-applicable / unknown, with unknowns surfaced as open questions |
+| `events.ndjson` + `pipeline-summary.md` | Pipeline observability: a `tm.run-event/1` stream projected from each persona's Execution Log ("what agent is doing what") |
+| `report-generation-log.md` | Report-analyst QA + generation log |
 
 ### What It's Good For
 
@@ -132,7 +136,11 @@ flowchart TB
 | `code-review-agent` | Agent | `~/.claude/agents/code-review-agent.md` | `code-review-agent` | Code-level vulnerability analysis |
 | `validation-specialist` | Agent | `~/.claude/agents/validation-specialist.md` | None (spawned as `general-purpose`) | Cross-agent validation and deduplication |
 | `report-analyst` | Agent | `~/.claude/agents/report-analyst.md` | `report-analyst` | QA review + 4-format report generation |
-| 11 reference files | Reference | `references/*.md` + `mermaid-config.json` | N/A | Frameworks, checklists, diagram specs, report template |
+| `security-reviewer` | Agent (standalone) | `~/.claude/agents/security-reviewer.md` | `security-reviewer` | **Standalone companion — not spawned by the pipeline.** On-demand code security review |
+| `code-quality-reviewer` | Agent (standalone) | `~/.claude/agents/code-quality-reviewer.md` | N/A | **Standalone companion — not spawned by the pipeline.** On-demand code-quality review |
+| 16 reference files | Reference | `references/*.md` + `references/*.json` | N/A | Frameworks, checklists, diagram + visual specs, coverage taxonomy, observability spec, report template (14 .md + 2 .json) |
+
+> **Pipeline vs. companions.** The spawned pipeline is **7 agents** (security-architect, diagram-specialist, privacy-agent, grc-agent, code-review-agent, validation-specialist, report-analyst). `security-reviewer` and `code-quality-reviewer` are standalone companion agents invoked on demand, **not** part of the spawned pipeline. The repo also carries dev infrastructure that is not a runtime component: a reference-free reliability evals harness (`skills/threat-model/evals/reliability/`) and spec-first design docs (`openspec/`).
 
 ### Two Execution Modes
 
@@ -225,7 +233,7 @@ Key elements:
 
 ### 3.5 The Reference File System
 
-The skill carries 11 reference files that provide deterministic, verifiable foundations:
+The skill carries 16 reference files (14 `.md` + 2 `.json`) that provide deterministic, verifiable foundations:
 
 | File | Role |
 |------|------|
@@ -240,6 +248,10 @@ The skill carries 11 reference files that provide deterministic, verifiable foun
 | `visual-completeness-checklist.md` | 26-category coverage tracker for diagram completeness |
 | `report-template.md` | Canonical report structure (sections I-XIV) |
 | `agent-output-protocol.md` | Standardized finding format for all agents |
+| `agent-prompts.md` | Canonical per-persona spawn prompts |
+| `analytical-visuals.md` | Product-grade analytical charts (severity distribution, risk heatmap) |
+| `coverage-taxonomy.md` / `coverage-taxonomy.json` | Completeness-coverage taxonomy — the items agents attempt and the ledger keys off |
+| `pipeline-observability.md` | `tm.run-event/1` stream spec + `tm-observe` renderer |
 
 These files serve as the system's **institutional knowledge** — they prevent hallucination of framework IDs, enforce consistent diagram conventions, and ensure report structure is deterministic across runs.
 
@@ -277,6 +289,8 @@ Step 3: Multi-Format Generation
 
 ### 4.1 Why Flat Orchestration (Not Nested Agent Spawning)
 
+<!-- TODO: platform-constraint prose updated in modernize-orchestration change -->
+
 **Decision**: The parent conversation spawns all agents. No agent spawns other agents.
 
 **Constraint discovered**: Claude Code custom agents (defined in `~/.claude/agents/`) can customize description, model, color, memory, and skills for built-in agent types, but **cannot add tools** beyond the built-in type's set. The `tools:` frontmatter field only **restricts** — it never expands.
@@ -297,7 +311,7 @@ The built-in `security-architect` type has 6 tools: Bash, Read, Write, Edit, Gre
 - **Separation of concerns**: The methodology (8 phases, reference files, checklists) is distinct from the agent's personality and capabilities. The skill defines *what* to do; the agent defines *who* does it.
 - **Reusability**: The skill could theoretically be attached to different agents or invoked in different contexts.
 - **Context injection**: Skills are loaded into the parent conversation's context, giving the parent access to the orchestration logic and reference file paths. An agent's instructions only affect that agent — they can't guide the parent.
-- **Reference file co-location**: The skill carries 11 reference files in its `references/` directory. These are domain knowledge (framework definitions, diagram specs, report templates) that multiple agents need. Co-locating them with the skill keeps the knowledge graph coherent.
+- **Reference file co-location**: The skill carries 16 reference files in its `references/` directory. These are domain knowledge (framework definitions, diagram specs, report templates) that multiple agents need. Co-locating them with the skill keeps the knowledge graph coherent.
 
 ### 4.3 Why Filesystem-Based Communication (Not Message Passing)
 
@@ -339,7 +353,7 @@ The built-in `security-architect` type has 6 tools: Bash, Read, Write, Edit, Gre
 
 **Trade-off**: The agent doesn't get automatic loading of its `.md` file — it must explicitly read it. But it gains access to all tools, which is more than adequate for validation work (Read, Write, Grep, Glob, Bash).
 
-### 4.7 Why 11 Reference Files (Not Inline Instructions)
+### 4.7 Why 16 Reference Files (Not Inline Instructions)
 
 **Decision**: Domain knowledge lives in standalone reference files, not embedded in agent instructions or the skill file.
 
@@ -347,7 +361,7 @@ The built-in `security-architect` type has 6 tools: Bash, Read, Write, Edit, Gre
 - **Token efficiency**: Reference files are loaded on demand. An agent only reads the files it needs. Embedding everything in instructions would bloat every agent's context.
 - **Single source of truth**: Framework definitions, diagram conventions, and report structure are defined once and referenced by all agents. Changes propagate automatically.
 - **Verifiability**: Framework IDs can be checked against the reference tables. If `frameworks.md` says CWE-89 is SQL Injection, and an agent cites CWE-89 for an XSS finding, the validation-specialist can catch the misattribution.
-- **Modularity**: The Mermaid diagram system is split into 5 files (spec, layers, diagrams, templates, review checklist) because each serves a different purpose at a different phase. The spec defines *what* to draw. The layers define *when* to draw it. The templates provide *starting points*. The review checklist validates *correctness*.
+- **Modularity**: The Mermaid diagram system is split into 6 files (spec, layers, diagrams, templates, review checklist, and the rendering config) because each serves a different purpose at a different phase. The spec defines *what* to draw. The layers define *when* to draw it. The templates provide *starting points*. The review checklist validates *correctness*. (`analytical-visuals.md` adds product-grade charts on top of these, giving the 7-file diagram-and-visual group shown in the component map.)
 
 ### 4.8 Why Four Report Formats
 
@@ -371,15 +385,18 @@ flowchart LR
         direction TB
         SKILL["<b>SKILL.md</b><br/>8 phases + orchestration"]
 
-        subgraph RefFiles["references/ — 11 files"]
+        subgraph RefFiles["references/ — 16 files (14 .md + 2 .json)"]
             direction TB
             FW["<b>frameworks.md</b><br/>STRIDE-LM, PASTA, MITRE,<br/>CWE, OWASP lookups"]
             AOP["<b>agent-output-protocol.md</b><br/>Standardized finding format"]
             RT["<b>report-template.md</b><br/>Sections I-XIV structure"]
             AC["<b>analysis-checklists.md</b><br/>Per-phase completeness"]
             VCC["<b>visual-completeness-checklist.md</b><br/>26 diagram categories"]
+            AP["<b>agent-prompts.md</b><br/>Persona spawn prompts"]
+            COV["<b>coverage-taxonomy.md / .json</b><br/>Coverage-ledger taxonomy"]
+            PO["<b>pipeline-observability.md</b><br/>Run-event stream spec"]
 
-            subgraph MermaidRefs["Mermaid Diagram System — 6 files"]
+            subgraph MermaidRefs["Diagram and Visual System — 7 files"]
                 direction LR
                 MS["mermaid-spec.md<br/><i>Symbols, edges, classDefs</i>"]
                 ML["mermaid-layers.md<br/><i>4-layer separation</i>"]
@@ -387,11 +404,12 @@ flowchart LR
                 MT["mermaid-templates.md<br/><i>Starter patterns</i>"]
                 MRC["mermaid-review-checklist.md"]
                 MC["mermaid-config.json<br/><i>Rendering theme</i>"]
+                AV["analytical-visuals.md<br/><i>Product-grade charts</i>"]
             end
         end
     end
 
-    subgraph Agents["Agent Definitions — ~/.claude/agents/"]
+    subgraph Agents["Agent Definitions — 9 (7 pipeline + 2 standalone)"]
         direction TB
         SA["<b>security-architect.md</b><br/>Type: security-architect<br/>Phases: 1, 3-6, 8s<br/>Skills: threat-model"]
         DS["<b>diagram-specialist.md</b><br/>Type: security-architect<br/>Phases: 2, 7<br/>Skills: threat-model"]
@@ -400,6 +418,8 @@ flowchart LR
         PA["<b>privacy-agent.md</b><br/>Type: privacy-agent"]
         GRC["<b>grc-agent.md</b><br/>Type: grc-agent"]
         VS["<b>validation-specialist.md</b><br/><i>No built-in type</i><br/>Spawned as: general-purpose"]
+        SR["<b>security-reviewer.md</b><br/>Type: security-reviewer<br/><i>Standalone companion — not in pipeline</i>"]
+        CQ["<b>code-quality-reviewer.md</b><br/><i>Standalone companion — not in pipeline</i>"]
     end
 
     subgraph Output["Output: threat-model-output/"]
@@ -407,6 +427,7 @@ flowchart LR
         P["<b>8 Phase Files</b><br/>01-reconnaissance.md<br/>through<br/>08-threat-model-report.md"]
         T["<b>Team Outputs</b><br/>privacy-assessment.md<br/>compliance-gap-analysis.md<br/>code-security-review.md<br/>validation-report.md"]
         R["<b>Report Deliverables</b><br/>report.html<br/>report.docx<br/>report.pdf<br/>executive-summary.pptx"]
+        OBS["<b>Observability and Coverage</b><br/>events.ndjson<br/>pipeline-summary.md<br/>coverage.json<br/>report-generation-log.md"]
     end
 
     SA -->|"writes 01, 03-06, 08"| P
@@ -434,12 +455,12 @@ flowchart LR
     classDef output fill:#f3e8ff,stroke:#a855f7,stroke-width:1.5px,color:#581c87
 
     class Skill skill
-    class RefFiles,FW,AOP,RT,AC,VCC ref
-    class MermaidRefs,MS,ML,MD,MT,MRC,MC mermaid
-    class SA,RA,CR,PA,GRC agent
+    class RefFiles,FW,AOP,RT,AC,VCC,AP,COV,PO ref
+    class MermaidRefs,MS,ML,MD,MT,MRC,MC,AV mermaid
+    class SA,RA,CR,PA,GRC,SR,CQ agent
     class DS diagram
     class VS special
-    class Output,P,T,R output
+    class Output,P,T,R,OBS output
 ```
 
 <details>
@@ -460,7 +481,8 @@ flowchart LR
 │   ├── privacy-agent.md             # Privacy impact assessment
 │   ├── grc-agent.md                 # Governance, risk & compliance
 │   ├── validation-specialist.md     # Cross-agent validation (spawned as general-purpose)
-│   └── security-reviewer.md         # Standalone code security review
+│   ├── security-reviewer.md         # Standalone companion (not in pipeline): code security review
+│   └── code-quality-reviewer.md     # Standalone companion (not in pipeline): code-quality review
 │
 └── skills/
     └── threat-model/
@@ -476,7 +498,12 @@ flowchart LR
             ├── mermaid-templates.md     # Starter templates for common architectures
             ├── mermaid-review-checklist.md  # Diagram quality gates
             ├── mermaid-config.json      # Rendering config (fonts, spacing, curves)
-            └── visual-completeness-checklist.md  # 26-category diagram coverage tracker
+            ├── visual-completeness-checklist.md  # 26-category diagram coverage tracker
+            ├── analytical-visuals.md    # Product-grade analytical charts
+            ├── agent-prompts.md         # Per-persona spawn prompts
+            ├── coverage-taxonomy.md     # Completeness-coverage taxonomy
+            ├── coverage-taxonomy.json   # Machine-readable coverage taxonomy
+            └── pipeline-observability.md # tm.run-event/1 stream spec + tm-observe renderer
 ```
 
 ---
@@ -601,5 +628,6 @@ This system analyzes security — it should also be secure in its operation:
 | v3 | Split Mermaid conventions into 5 modular files | Single file was too large and mixed concerns (what vs when vs how) |
 | v4 | **Flat orchestration restructure** — moved team coordination from agent to SKILL.md | Discovered custom agents cannot add tools beyond built-in set. Entire team orchestration was silently broken. |
 | v5 | **Diagram-specialist extraction** — split Phases 2,7 into diagram-specialist; slimmed Phase 8 to summary-only | Context rot: security-architect accumulated ~137K tokens by Phase 7-8. Extracting diagrams removes ~38K tokens of Mermaid refs, reducing peak context to ~80-90K. |
+| v6 | **Product-grade visuals, observability, coverage ledger, structured-output gate, orchestration modernization** — 8 product-grade diagram additions + analytical charts; a `tm.run-event/1` observability stream (`events.ndjson`) projected from Execution Logs; a completeness-coverage ledger (`coverage.json`); a reference-free reliability evals harness that gates structure; spec-first `openspec/` design | Move from "passing runs" to *verifiable* runs — measure diagram/coverage/observability reliability reference-free, and surface what each persona actually did and left unknown. |
 
-The current architecture (v5) extracts diagram production into a dedicated agent, reducing the security-architect's context window by ~35-42%. The flat orchestration model from v4 made this split trivial — no agent-to-agent communication changes were needed, only new spawn points in SKILL.md.
+The current architecture (v6) adds product-grade visuals, pipeline observability, a completeness-coverage ledger, and a reference-free reliability evals harness on top of v5. The v5 change extracted diagram production into a dedicated agent, reducing the security-architect's context window by ~35-42%. The flat orchestration model from v4 made this split trivial — no agent-to-agent communication changes were needed, only new spawn points in SKILL.md.
