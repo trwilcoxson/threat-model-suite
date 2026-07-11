@@ -99,6 +99,35 @@ def violations(schema: dict, data: Any) -> list[str]:
     return out
 
 
+HERE = Path(__file__).resolve().parent
+
+_SCHEMA_FOR = {"recon.json": "recon.schema.json", "findings.json": "findings.schema.json",
+               "coverage.json": "coverage.schema.json"}
+
+
+def check_sample_runs(root: Path) -> dict:
+    """Validate every emitted manifest under `root` against its schema. Returns
+    {conform, nonconforming: {relpath: [violations]}} — used by the self-check to prove the tightened
+    schemas break nothing retroactively."""
+    root = Path(root)
+    conform = 0
+    nonconforming: dict[str, list[str]] = {}
+    for f in sorted(root.rglob("*.json")):
+        schema_name = _SCHEMA_FOR.get(f.name)
+        if not schema_name:
+            continue
+        try:
+            vs = violations(load_schema(schema_name), json.loads(f.read_text()))
+        except (OSError, ValueError) as e:
+            vs = [f"load error: {e}"]
+        rel = str(f.relative_to(root))
+        if vs:
+            nonconforming[rel] = vs
+        else:
+            conform += 1
+    return {"conform": conform, "nonconforming": nonconforming}
+
+
 if __name__ == "__main__":
     import sys
 

@@ -109,6 +109,22 @@ def _recon_audit(ra: dict | None) -> str:
             + "".join(f"<li>{_e(m)}</li>" for m in missed) + "</ul>")
 
 
+def _judge_block(j: dict | None, sound_key: str) -> str:
+    """Render a semantic judge output ({<sound_key>, verdict, issues[], notes}). Guarded: a missing
+    payload shows a muted note, never raises."""
+    if not isinstance(j, dict) or not j:
+        return '<p class="mut">not recorded</p>'
+    parts = [f"<p>Soundness: <b>{_pct(j.get(sound_key))}</b> · verdict: <b>{_e(j.get('verdict', '?'))}</b>.</p>"]
+    issues = j.get("issues") or []
+    if issues:
+        parts.append("<p>Issues the judge flagged:</p><ul>")
+        for it in issues:
+            label = it.get("area") or it.get("item_id") or it.get("kind") or ""
+            parts.append(f"<li>[{_e(it.get('severity', ''))}] <b>{_e(label)}</b> — {_e(it.get('detail', ''))}</li>")
+        parts.append("</ul>")
+    return "".join(parts)
+
+
 def _stability(s: dict | None) -> str:
     if not s:
         return '<p class="mut">single run — no stability measured</p>'
@@ -124,33 +140,68 @@ def _stability(s: dict | None) -> str:
     return "".join(out)
 
 
-def _verdict(runs, recall, stability, judge_issues=None) -> str:
+def _d(x: Any) -> dict:
+    """Coerce a possibly-missing/malformed judge payload to a dict (guard: never trust its shape)."""
+    return x if isinstance(x, dict) else {}
+
+
+def _verdict(runs, agents, stability, judge_issues=None) -> str:
+    agents = _d(agents)
     judge_issues = judge_issues or []
     total_def = sum(len(r["defects"]) for r in runs)
-    gaps = (recall or {}).get("confirmed_gaps") or []
+    gaps = _d(agents.get("recall")).get("confirmed_gaps") or []
     stable_ratio = (stability or {}).get("stable_core_ratio")
-    if total_def == 0 and not gaps and not judge_issues and (stable_ratio is None or stable_ratio >= 0.8):
-        return ('<div class="banner green"><b>Reliable on this target.</b> Deterministic contract held on every run, '
-                'no confirmed recall gaps, and the high-severity core is stable across runs.</div>')
+    unstable = stable_ratio is not None and stable_ratio < 0.8
+
+    # Judge CONTENT signals — these QUALIFY the verdict (amber caveat), never hard-fail it, and are
+    # guarded so an odd/absent judge payload can't crash the banner (presentation-only). Judge
+    # INTEGRITY issues (malformed/incomplete judge OUTPUT) are handled separately by _judge_integrity_block and
+    # also prevent a clean green verdict here.
+    caveats = _judge_caveats(agents)
+
+    if total_def == 0 and not gaps and not judge_issues and not unstable:
+        if not caveats:
+            return ('<div class="banner green"><b>Reliable on this target.</b> Deterministic contract held on every run, '
+                    'no confirmed recall gaps, and the high-severity core is stable across runs.</div>')
+        return ('<div class="banner amber"><b>Reliable with caveats on this target.</b> The deterministic contract held '
+                'on every run, but the judged layers qualify it: ' + "; ".join(caveats) + '. See the judged sections below.</div>')
     cls = "red" if (total_def or gaps) else "amber"
     bits = []
     if total_def:
         bits.append(f"{total_def} deterministic defect(s)")
     if gaps:
         bits.append(f"{len(gaps)} confirmed recall gap(s)")
-    if stable_ratio is not None and stable_ratio < 0.8:
+    if unstable:
         bits.append(f"unstable core ({_pct(stable_ratio)})")
     if judge_issues:
         bits.append(f"{len(judge_issues)} judge-output issue(s)")
+    bits.extend(caveats)
     return f'<div class="banner {cls}"><b>Reliability issues on this target:</b> {", ".join(bits)}. See sections below.</div>'
 
 
-def _judge_block(issues) -> str:
+def _judge_integrity_block(issues) -> str:
     if not issues:
         return ""
     return ('<div class="banner amber"><b>Judge-output integrity.</b> A judged layer produced malformed or '
-            'incomplete output and was dropped — treat its "not recorded" below as a gap, not a clean pass.'
+            'incomplete output — treat its "not recorded" below as a gap, not a clean pass.'
             '<ul>' + "".join(f'<li><code>{_e(i["code"])}</code> — {_e(i["detail"])}</li>' for i in issues) + '</ul></div>')
+
+
+def _judge_caveats(agents: dict) -> list[str]:
+    """Content-level qualifications drawn from the judge outputs. Every access is guarded — a missing
+    or malformed judge payload yields no caveat, never an exception."""
+    out: list[str] = []
+    q = _d(agents.get("quality"))
+    ms = q.get("mean_soundness")
+    if isinstance(ms, (int, float)) and not isinstance(ms, bool) and ms < 0.6:
+        out.append(f"mean attack-path soundness {int(ms * 100)}% (judge, &lt;60%)")
+    prop = str(q.get("proportionality", "")).strip().lower()
+    if prop in ("inflated", "thin"):
+        out.append(f"finding set judged {prop}")
+    missed = _d(agents.get("recon_audit")).get("missed_subsystems") or []
+    if missed:
+        out.append(f"{len(missed)} subsystem(s) missed in recon — coverage % is optimistic")
+    return out
 
 
 def _coverage(runs: list[dict]) -> str:
@@ -185,8 +236,8 @@ def render(target: dict, runs: list[dict], agents: dict, stability: dict | None,
 <title>reliability — {_e(target['id'])}</title><style>{CSS}</style></head><body>
 <h1>threat-model — reliability report</h1>
 <p class="sub">target <code>{_e(target['id'])}</code> · {_e(target.get('source',''))} · {len(runs)} run(s) · generated {_e(generated)}</p>
-{_verdict(runs, agents.get('recall'), stability, judge_issues)}
-{_judge_block(judge_issues)}
+{_verdict(runs, agents, stability, judge_issues)}
+{_judge_integrity_block(judge_issues)}
 <h2>Deterministic contract (per run)</h2>
 <p>Reference-free: structure, internal consistency (<code>severity == band(L×I)</code>, counts, refs), grounding against the real repo, and coverage of the system's own discovered surface. Should hold on every run regardless of target.</p>
 {_contract(runs)}
@@ -198,6 +249,10 @@ def render(target: dict, runs: list[dict], agents: dict, stability: dict | None,
 {_coverage(runs)}
 <h2>Reasoning quality (judged, sampled)</h2>
 {_quality(agents.get('quality'))}
+<h2>Diagram correctness (judged, semantic)</h2>
+{_judge_block(agents.get('diagram_judge'), 'diagram_soundness')}
+<h2>Coverage correctness (judged, semantic)</h2>
+{_judge_block(agents.get('coverage_judge'), 'coverage_soundness')}
 <h2>Adversarial recall (reference-free completeness)</h2>
 {_recall(agents.get('recall'))}
 <h2>Recon completeness (coverage-denominator guard)</h2>

@@ -66,16 +66,24 @@ def _require(obj: dict, keys: list[str], d: Defects, where: str) -> bool:
 # -- grounding against the real repo ----------------------------------------
 
 def _resolves_in_repo(repo: Path, evidence: str) -> bool:
-    ev = evidence.strip()
-    # 1. direct path or glob
-    if (repo / ev).exists():
-        return True
-    try:
-        if any(repo.glob(ev)):
+    ev = (evidence or "").strip()
+    # Reject up front: empty/whitespace (`repo / ""` is the repo dir → always "exists") and absolute
+    # paths (`repo / "/etc/passwd"` escapes the repo to `/etc/passwd`). Neither is repo-relative evidence.
+    if not ev or Path(ev).is_absolute():
+        return False
+    # A `path:line` / `path:line:col` reference grounds via its path — try with a trailing :NN(:NN) stripped.
+    stripped = re.sub(r":\d+(?::\d+)?$", "", ev)
+    # 1. FULL relative path or glob must resolve (no bare-basename fallback — a common basename like
+    #    `package.json` must not ground an invented path such as `made/up/package.json`).
+    for cand in [ev] if stripped == ev else [ev, stripped]:
+        if (repo / cand).exists():
             return True
-    except (ValueError, OSError):
-        pass
-    # 2. literal string present somewhere in the tree (cheap grep, skip .git)
+        try:
+            if any(repo.glob(cand)):
+                return True
+        except (ValueError, OSError):
+            pass
+    # 2. literal source string present somewhere in the tree (cheap grep, skip .git)
     try:
         r = subprocess.run(
             ["grep", "-rqIF", "--exclude-dir=.git", ev, str(repo)],
@@ -85,14 +93,6 @@ def _resolves_in_repo(repo: Path, evidence: str) -> bool:
             return True
     except (subprocess.TimeoutExpired, OSError):
         pass
-    # 3. basename of a path-looking evidence string
-    base = ev.split("/")[-1]
-    if base and base != ev:
-        try:
-            if any(repo.rglob(base)):
-                return True
-        except (ValueError, OSError):
-            pass
     return False
 
 

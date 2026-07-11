@@ -49,7 +49,13 @@ def cmd_check(a) -> None:
 
 
 def _load(p: Path):
-    return json.loads(p.read_text()) if p.exists() else None
+    # Guarded: a judge/agent file that is absent or malformed must not crash report generation.
+    if not p.exists():
+        return None
+    try:
+        return json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
 # Required keys per agent-judged layer (from prompts/*.md output contracts). An absent file is a
@@ -92,9 +98,13 @@ def cmd_report(a) -> None:
     agents_dir = Path(a.agents) if a.agents else Path(a.runs_root) / "agents"
     judge_issues: list[dict] = []
     agents = {
+        # judge-integrity guard on the three verdict-relevant judges (absent != malformed != incomplete)
         "quality": _load_judge(agents_dir / "quality.json", JUDGE_KEYS["quality"], judge_issues),
         "recall": _load_judge(agents_dir / "recall.json", JUDGE_KEYS["recall"], judge_issues),
         "recon_audit": _load_judge(agents_dir / "recon-audit.json", JUDGE_KEYS["recon_audit"], judge_issues),
+        # presentation-only judges — rendered when present, guarded against malformed payloads
+        "diagram_judge": _load(agents_dir / "diagram-judge.json"),
+        "coverage_judge": _load(agents_dir / "coverage-judge.json"),
     }
     stab = None
     if len(rdirs) > 1:

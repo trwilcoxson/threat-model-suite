@@ -41,7 +41,9 @@ the actual flow (reconnaissance over real code/IaC), not a paraphrase.
    system has distinct principals, plus descriptive facts — trust_boundary `kind`, external_dep
    `risk`, and an optional top-level `detected_pattern` (the structural archetype you observed —
    a neutral fact, not a score; use `unknown` if genuinely ambiguous, or `other` +
-   `detected_pattern_detail` if it fits no listed archetype):
+   `detected_pattern_detail` if it fits no listed archetype). `roles[]` is also the **declared** auth
+   signal: a non-empty `roles[]` (or any S/E STRIDE finding) is what makes the **auth-sequence**
+   diagram required — the eval never infers auth from entry-point names:
    ```json
    {"system_name":"...","components":[{"id":"C1","name":"...","evidence":["app/routes/session.js"]}],
     "data_stores":[{"id":"D1","name":"...","evidence":["..."]}],
