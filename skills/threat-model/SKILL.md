@@ -37,14 +37,17 @@ should be honest about what the source materials do and do not reveal. Maintain 
    `has_containers`, `has_cicd`, `has_third_party`, `multi_tenant`, `has_personal_data`,
    `has_regulatory`, `has_ai_ml`, `has_hardware`). Tier-2 items apply only when their flag is true.
 2. **Resolve every applicable item to a terminal state, with evidence.** As recon and analysis proceed,
-   each agent records, for items in its domain: `present`/`partial` (with `detail` + a `source` that
-   resolves in the materials), `absent`/`not-applicable` (with a one-line reason `note`), or `unknown`
-   (with a `note` on what was searched and why it's undetermined). **Attempt every applicable item** —
-   `unknown` is a first-class, honest answer ("checked, the sources don't say"), never a silent omission.
-3. **Surface gaps (Phase 8 / validation).** The final coverage pass confirms no applicable item is left
-   unresolved, lifts `unknown`/`partial`/`absent`-by-gap items into the report's **Open Questions** and
-   **Known Limitations**, and records the coverage profile (counts by state, present-with-evidence
-   fraction) in `pipeline-summary.md`.
+   each agent records, for items in its domain, a `## Coverage States` section in its own output file:
+   `present`/`partial` (with `detail` + a `source` that resolves in the materials), `absent`/`not-applicable`
+   (with a one-line reason `note`), or `unknown` (with a `note` on what was searched and why it's
+   undetermined). **Attempt every applicable item** — `unknown` is a first-class, honest answer ("checked,
+   the sources don't say"), never a silent omission. Agents record states in their *own* files (no two
+   agents write `coverage.json` concurrently).
+3. **Merge and surface gaps (validation / Phase 8).** A single writer — the validation-specialist in team
+   mode, or the Phase 6+8 pass in solo mode — merges every agent's `## Coverage States` into the one
+   `coverage.json`, confirms no applicable item is left unresolved, lifts `unknown`/`partial`/`absent`-by-gap
+   items into the report's **Open Questions** and **Known Limitations**, and records the coverage profile
+   (counts by state, present-with-evidence fraction) in `pipeline-summary.md`.
 
 This is verified deterministically by `evals/reliability/coverage_checks.py` (every applicable item has a
 terminal state, `present` is grounded, `unknown` is noted, applicability matches the declared context) —

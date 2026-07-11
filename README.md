@@ -38,9 +38,10 @@ skills/      the Claude Code skills
   threat-model/                SKILL.md + references/ + evals/   (the flagship)
   compliance-assessment/       compliance gap analysis (Team mode)
   privacy-impact-assessment/   DPIA / LINDDUN privacy analysis (Team mode)
-agents/      the specialist pipeline (security-architect, diagram-specialist,
-             validation-specialist, report-analyst, privacy-agent, grc-agent,
-             code-review-agent, security-reviewer, code-quality-reviewer)
+agents/      the 7 pipeline personas (security-architect, diagram-specialist,
+             privacy-agent, grc-agent, code-review-agent, validation-specialist,
+             report-analyst) + 2 standalone companions (security-reviewer,
+             code-quality-reviewer) invoked on their own, not by the pipeline
 docs/        ARCHITECTURE.md, VALIDATION-PATTERNS.md, STRUCTURED-OUTPUT-CONTRACT.md, examples/
 ```
 
