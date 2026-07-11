@@ -38,7 +38,7 @@ def _core(run_dir: Path) -> list[dict]:
             key |= _norm_tokens(names.get(r, r))
         key |= _norm_tokens(f.get("title", ""))
         out.append({"id": f["id"], "key": key, "stride": set(f.get("stride_lm", [])),
-                    "cwe": set(f.get("cwe", [])), "severity": f["severity"], "title": f.get("title", "")})
+                    "cwe": set(f.get("cwe") or []), "severity": f["severity"], "title": f.get("title", "")})
     return out
 
 
@@ -68,7 +68,7 @@ def core_findings(run_dirs: list[Path]) -> list[dict]:
                 continue
             refs = f.get("asset_refs", []) + f.get("surface_refs", [])
             out.append({"run": ri + 1, "id": f["id"], "title": f.get("title", ""),
-                        "severity": f["severity"], "cwe": f.get("cwe", []),
+                        "severity": f["severity"], "cwe": f.get("cwe") or [],
                         "assets": [names.get(r, r) for r in refs]})
     return out
 

@@ -120,7 +120,7 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
     deps = recon.get("external_deps", [])
     recon_ids = {e["id"] for b in ("components", "data_stores", "entry_points", "trust_boundaries", "external_deps")
                  for e in recon.get(b, []) if isinstance(e, dict) and "id" in e}
-    all_mitre = {m for f in findings for m in f.get("mitre", [])}
+    all_mitre = {m for f in findings for m in (f.get("mitre") or [])}
     present: list[str] = []
 
     # attack tree + attack-flow — gate: >=3 declared kill chains

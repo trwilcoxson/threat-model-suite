@@ -124,11 +124,12 @@ def _stability(s: dict | None) -> str:
     return "".join(out)
 
 
-def _verdict(runs, recall, stability) -> str:
+def _verdict(runs, recall, stability, judge_issues=None) -> str:
+    judge_issues = judge_issues or []
     total_def = sum(len(r["defects"]) for r in runs)
     gaps = (recall or {}).get("confirmed_gaps") or []
     stable_ratio = (stability or {}).get("stable_core_ratio")
-    if total_def == 0 and not gaps and (stable_ratio is None or stable_ratio >= 0.8):
+    if total_def == 0 and not gaps and not judge_issues and (stable_ratio is None or stable_ratio >= 0.8):
         return ('<div class="banner green"><b>Reliable on this target.</b> Deterministic contract held on every run, '
                 'no confirmed recall gaps, and the high-severity core is stable across runs.</div>')
     cls = "red" if (total_def or gaps) else "amber"
@@ -139,7 +140,17 @@ def _verdict(runs, recall, stability) -> str:
         bits.append(f"{len(gaps)} confirmed recall gap(s)")
     if stable_ratio is not None and stable_ratio < 0.8:
         bits.append(f"unstable core ({_pct(stable_ratio)})")
+    if judge_issues:
+        bits.append(f"{len(judge_issues)} judge-output issue(s)")
     return f'<div class="banner {cls}"><b>Reliability issues on this target:</b> {", ".join(bits)}. See sections below.</div>'
+
+
+def _judge_block(issues) -> str:
+    if not issues:
+        return ""
+    return ('<div class="banner amber"><b>Judge-output integrity.</b> A judged layer produced malformed or '
+            'incomplete output and was dropped — treat its "not recorded" below as a gap, not a clean pass.'
+            '<ul>' + "".join(f'<li><code>{_e(i["code"])}</code> — {_e(i["detail"])}</li>' for i in issues) + '</ul></div>')
 
 
 def _coverage(runs: list[dict]) -> str:
@@ -168,12 +179,14 @@ def _coverage(runs: list[dict]) -> str:
             f"<tbody>{rows}</tbody></table>{dtl}")
 
 
-def render(target: dict, runs: list[dict], agents: dict, stability: dict | None, generated: str) -> str:
+def render(target: dict, runs: list[dict], agents: dict, stability: dict | None, generated: str,
+           judge_issues: list[dict] | None = None) -> str:
     return f"""<!doctype html><html><head><meta charset="utf-8">
 <title>reliability — {_e(target['id'])}</title><style>{CSS}</style></head><body>
 <h1>threat-model — reliability report</h1>
 <p class="sub">target <code>{_e(target['id'])}</code> · {_e(target.get('source',''))} · {len(runs)} run(s) · generated {_e(generated)}</p>
-{_verdict(runs, agents.get('recall'), stability)}
+{_verdict(runs, agents.get('recall'), stability, judge_issues)}
+{_judge_block(judge_issues)}
 <h2>Deterministic contract (per run)</h2>
 <p>Reference-free: structure, internal consistency (<code>severity == band(L×I)</code>, counts, refs), grounding against the real repo, and coverage of the system's own discovered surface. Should hold on every run regardless of target.</p>
 {_contract(runs)}

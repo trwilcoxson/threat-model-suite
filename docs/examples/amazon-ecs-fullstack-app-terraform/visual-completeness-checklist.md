@@ -121,7 +121,7 @@
 
 - [x] **Applicable?** YES
 - [x] **Represented in risk overlay?** (Phase 7) -- L4: 21 components carry enriched threat annotations in compact format (Name + Tech + STRIDE + LxI=Score BAND + CWE). 4 components use noFindings labels (no annotation needed). 1 external entity (User) has no annotation.
-- **Evidence:** Annotations verified: STRIDE single-letter abbreviations correct, LxI calculations verified, severity bands match scores (CRIT 20-25, HIGH 12-19, MED 6-11, LOW 1-5), CWE IDs verified against frameworks.md.
+- **Evidence:** Annotations verified: STRIDE single-letter abbreviations correct, LxI calculations verified, severity bands match scores (CRIT 17-25, HIGH 10-16, MED 5-9, LOW 1-4), CWE IDs verified against frameworks.md.
 - **Components:** All components with validated findings carry annotations
 
 ---

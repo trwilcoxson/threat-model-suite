@@ -1,0 +1,11 @@
+{
+  "name": "threat-model-suite",
+  "owner": { "name": "trwilcoxson" },
+  "plugins": [
+    {
+      "name": "threat-model-suite",
+      "source": "./",
+      "description": "Threat modeling, privacy, and compliance skills + specialist agents, with a deterministic manifest-validation hard gate (PreToolUse hook) that blocks report generation until the emitted manifests pass the structural + consistency contract."
+    }
+  ]
+}

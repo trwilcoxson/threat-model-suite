@@ -195,7 +195,7 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
    - `prompt`: See "Diagram-specialist Phase 7 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
    - Reads `02-structural-diagram.md`, `04-06.md`, writes `07-final-diagram.md`.
 
-6. **Spawn `report-analyst`** (blocking):
+6. **Run the Manifest Validation Gate** (see the "Manifest Validation Gate" section below) over the emitted `recon.json`/`findings.json`/`coverage.json`. Only once it passes, **spawn `report-analyst`** (blocking):
    - `subagent_type`: `"report-analyst"`
    - `name`: `"report-generator"`
    - `prompt`: See "Solo — report-analyst prompt" in [references/agent-prompts.md](references/agent-prompts.md)
@@ -241,7 +241,7 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
    - `prompt`: See "Team — validation-specialist prompt" in [references/agent-prompts.md](references/agent-prompts.md)
    - Reads all outputs, writes `validation-report.md`.
 
-9. **Spawn `report-analyst`** (blocking):
+9. **Run the Manifest Validation Gate** (see the "Manifest Validation Gate" section below) over the emitted `recon.json`/`findings.json`/`coverage.json`. Only once it passes, **spawn `report-analyst`** (blocking):
    - `subagent_type`: `"report-analyst"`
    - `name`: `"report-generator"`
    - `prompt`: See "Team — report-analyst prompt" in [references/agent-prompts.md](references/agent-prompts.md)
@@ -317,7 +317,7 @@ grep -q '</html>' "{output_dir}/report.html" && echo "OK: HTML properly closed" 
 
 If any HTML content checks fail, re-spawn the report-analyst with the specific failure details so it can fix the HTML output.
 
-If any report deliverables are missing, re-spawn the report-analyst to complete them. If any core threat model outputs are missing, investigate and report to the user.
+If any report deliverables are missing, re-spawn the report-analyst with the specific list of missing deliverable files (e.g. report.html, report.docx, report.pdf, executive-summary.pptx) so it regenerates exactly those. If any core threat model outputs are missing, investigate and report to the user.
 
 #### Execution Log Verification
 
@@ -435,6 +435,8 @@ Fill out the visual completeness checklist at `references/visual-completeness-ch
 Output a structured summary listing all components discovered, data assets, actors, threat actor profiles, attack surface entries, security controls, trust boundaries identified, and technology stack. Flag any gaps where information is missing — explicitly state assumptions. Note which visual completeness categories were marked applicable and which were excluded.
 
 **File Output**: Save Phase 1 output to `{output_dir}/01-reconnaissance.md`.
+
+**Machine-readable manifest**: Also emit `{output_dir}/recon.json` — the attack surface as structured data. Every element (`components`, `data_stores`, `entry_points`, `trust_boundaries`, `external_deps`) carries `evidence` (a repo path, glob, or literal string that resolves in the target), with optional per-element fields where they apply: trust-boundary `kind`, external-dep `manifest`/`risk`, and `tech`. At the **top level**, also set `roles[]` (include `anonymous`) and an optional `detected_pattern` (the system's structural archetype — `web-app`/`api`/`iac`/`polyglot-microservices`/…/`unknown`; use `other` + `detected_pattern_detail` if it fits none). Conform to [evals/reliability/schema/recon.schema.json](evals/reliability/schema/recon.schema.json); this is the manifest the validation gate checks.
 
 ## Phase 2 — Structural Diagram
 
@@ -649,7 +651,7 @@ Consult [references/mermaid-spec.md](references/mermaid-spec.md) §5-6 for threa
 
 3. **Produce L4 (Threat Overlay)**: Copy the L1 structure. Apply `highRisk`, `medRisk`, `lowRisk` classDefs based on the highest-severity validated threat per component. Use `:::noFindings` for components with no validated threats (NOT `:::lowRisk`). Use `:::lowRisk` only when analysis explicitly confirms low risk.
 
-4. **Enrich node labels with machine-parseable threat data**: For components with validated threats, use the annotation format from [mermaid-spec.md](references/mermaid-spec.md) §5: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`. Verify STRIDE abbreviations use single letters (S,T,R,I,D,E,LM), LxI calculation is correct, BAND matches score (CRITICAL 20-25, HIGH 12-19, MEDIUM 6-11, LOW 1-5), and CWE IDs are verified against [frameworks.md](references/frameworks.md).
+4. **Enrich node labels with machine-parseable threat data**: For components with validated threats, use the annotation format from [mermaid-spec.md](references/mermaid-spec.md) §5: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`. Verify STRIDE abbreviations use single letters (S,T,R,I,D,E,LM), LxI calculation is correct, BAND matches score (CRITICAL 17-25, HIGH 10-16, MEDIUM 5-9, LOW 1-4), and CWE IDs are verified against [frameworks.md](references/frameworks.md).
 
 5. **Add attack path overlays**: For the top 3-5 kill chains from Phase 5, overlay attack paths using `==>` thick arrows with numbered step labels and red `linkStyle` (`linkStyle N stroke:#cc0000,stroke-width:3px`). Attack path overlays appear ONLY in L4. **DO NOT use `~~>` — it is not valid Mermaid syntax.**
 
@@ -698,7 +700,34 @@ Produce a concise threat model summary. The full consolidated report (with all 1
    - Scope boundaries
    - Threat model lifecycle triggers (when to re-assess)
 
-**File Output**: Save to `{output_dir}/08-threat-model-report.md`.
+### Pre-Emit Self-Check (blocking)
+
+Before writing `findings.json`, verify these invariants yourself — they are exactly what the validation gate enforces, so catching them here avoids a re-spawn. This is the self-correction step: build the check into the work rather than relying on the gate to catch it.
+
+- **Severity = OWASP band of Likelihood × Impact** for every finding, using the frameworks.md bands (LOW 1-4, MEDIUM 5-9, HIGH 10-16, CRITICAL 17-25). Recompute each one; do not eyeball.
+- **`summary_counts` equals the actual per-severity tally.**
+- **Every `asset_refs`/`surface_refs` id exists in `recon.json`**, and **every entry point, data store, and trust boundary either appears in some finding or is listed in `no_issue_surface`** (examined-and-clean, not silently missed).
+- **Every `kill_chains[].steps` id is a real finding id**, and Likelihood and Impact are each in **1–5**.
+- If a value is genuinely not derivable from the sources, do **not** fabricate it. Leave the optional field `null` or omitted, or record the gap (`no_issue_surface`, coverage `unknown`, or an Open Question). Retrying or guessing is the wrong move when the information is simply absent from the source.
+
+**File Output**: Save the summary to `{output_dir}/08-threat-model-report.md`. Also emit `{output_dir}/findings.json` — the machine-readable mirror of the validated finding list, conforming to [evals/reliability/schema/findings.schema.json](evals/reliability/schema/findings.schema.json): `findings[]` (`id`, `stride_lm`, `likelihood`, `impact`, `severity`, `asset_refs`, `surface_refs`, `attack_path`, `remediation`, optional `cwe`/`mitre`), `summary_counts`, `no_issue_surface[]`, and `kill_chains[]`.
+
+## Manifest Validation Gate (deterministic, blocking — before report generation)
+
+Once the security-architect's analysis phases (1, 3–6, 8) have written `recon.json`, `findings.json`, and `coverage.json`, and **before** spawning the report-analyst, the parent orchestrator validates the manifest contract with the shipped deterministic validator. **This is where "the application validates" in a Claude Code flow:** there is no SDK wrapper around the model, so the deterministic validator (run via Bash) is the application code, and re-spawning the analysis agent is the retry — the file-based form of the *generate → validate semantics in code → retry with specific feedback* loop.
+
+> When the suite is installed as a **plugin**, a `PreToolUse` hook (`hooks/validate_gate.py`) runs this same validator automatically and **denies** the report-analyst spawn on failure — a hard gate enforced by the harness, with the defects fed back as the denial reason. The steps below are what the parent runs itself when the hook isn't present (a manual skill install); both invoke the identical `run.py validate`.
+
+```bash
+python3 ~/.claude/skills/threat-model/evals/reliability/run.py validate \
+  --run "{output_dir}" --repo "{project_root}"
+```
+
+It checks structure (schema: `TM-NNN`/`KC` id patterns, Likelihood/Impact 1–5, enum domains, no stray fields), consistency (`severity == band(L×I)`, `summary_counts`, kill-chain step references), grounding (recon evidence resolves in the repo), and coverage-ledger completeness — printing one `DEFECT [layer] code: detail` line per issue and exiting non-zero on failure.
+
+- **If it passes**, proceed to report generation.
+- **If it fails**, re-spawn the `security-architect` (fresh context) with the exact `DEFECT` lines as feedback — each names the field, the constraint, and the actual-vs-expected value (e.g. `TM-007: severity HIGH != band(L3 x I2)=MEDIUM`). Generic "validation failed, try again" gives the model no signal; pass the specific lines. Re-run the gate after the re-spawn; bound this to **2 retries**.
+- **A defect that reflects missing information in the source is not retryable.** If a surface genuinely carries no issue, mark it `no_issue_surface`; if a taxonomy item is not discoverable in the materials, set coverage `unknown` with a note and lift it into Open Questions. Do not retry the agent to "find" data the repository does not contain — that produces fabrication, not a fix.
 
 ## Scaling Guidelines
 
