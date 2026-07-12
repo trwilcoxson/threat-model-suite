@@ -1,6 +1,6 @@
 %%{init: {"theme": "base", "themeVariables": {"primaryColor": "#f5f5f5", "primaryTextColor": "#1a1a2e", "primaryBorderColor": "#555", "lineColor": "#4a4a6a", "secondaryColor": "#e8eaf6", "fontSize": "14px", "fontFamily": "'Segoe UI', 'Helvetica Neue', Arial, sans-serif", "edgeLabelBackground": "#ffffffee", "clusterBkg": "#f8f9fa", "clusterBorder": "#dee2e6"}, "flowchart": {"useMaxWidth": false, "htmlLabels": true, "curve": "basis", "padding": 20, "nodeSpacing": 40, "rankSpacing": 50}}}%%
 
-flowchart LR
+flowchart TB
     subgraph Skill["Skill: threat-model"]
         direction TB
         SKILL["<b>SKILL.md</b><br/>8 phases + orchestration"]
@@ -15,6 +15,7 @@ flowchart LR
             AP["<b>agent-prompts.md</b><br/>Persona spawn prompts"]
             COV["<b>coverage-taxonomy.md / .json</b><br/>Coverage-ledger taxonomy"]
             PO["<b>pipeline-observability.md</b><br/>Run-event stream spec"]
+            FW ~~~ AOP ~~~ RT ~~~ AC ~~~ VCC ~~~ AP ~~~ COV ~~~ PO
 
             subgraph MermaidRefs["Diagram and Visual System — 7 files"]
                 direction LR
@@ -31,15 +32,17 @@ flowchart LR
 
     subgraph Agents["Agent Definitions — 9 (7 pipeline + 2 standalone)"]
         direction TB
-        SA["<b>security-architect.md</b><br/>Type: security-architect<br/>Phases: 1, 3-6, 8s<br/>Skills: threat-model"]
-        DS["<b>diagram-specialist.md</b><br/>Type: security-architect<br/>Phases: 2, 7<br/>Skills: threat-model"]
+        SA["<b>security-architect.md</b><br/>Type: security-architect<br/>Phases: 1, 3-5, and 6+8 <i>(fresh context)</i><br/>Skills: threat-model"]
+        DS["<b>diagram-specialist.md</b><br/>Type: diagram-specialist<br/>Phases: 2, 7<br/>Skills: threat-model"]
         RA["<b>report-analyst.md</b><br/>Type: report-analyst<br/>Skills: docx, pdf, pptx, frontend-design"]
         CR["<b>code-review-agent.md</b><br/>Type: code-review-agent"]
         PA["<b>privacy-agent.md</b><br/>Type: privacy-agent"]
         GRC["<b>grc-agent.md</b><br/>Type: grc-agent"]
-        VS["<b>validation-specialist.md</b><br/><i>No built-in type</i><br/>Spawned as: general-purpose"]
+        VS["<b>validation-specialist.md</b><br/>Type: validation-specialist<br/><i>Spawned by name</i><br/>Cross-validate + merge coverage.json"]
         SR["<b>security-reviewer.md</b><br/>Type: security-reviewer<br/><i>Standalone companion — not in pipeline</i>"]
         CQ["<b>code-quality-reviewer.md</b><br/><i>Standalone companion — not in pipeline</i>"]
+        %% invisible chain: unconnected nodes would otherwise pack side-by-side and squash the layout
+        SA ~~~ DS ~~~ RA ~~~ CR ~~~ PA ~~~ GRC ~~~ VS ~~~ SR ~~~ CQ
     end
 
     subgraph Output["Output: threat-model-output/"]
@@ -48,6 +51,7 @@ flowchart LR
         T["<b>Team Outputs</b><br/>privacy-assessment.md<br/>compliance-gap-analysis.md<br/>code-security-review.md<br/>validation-report.md"]
         R["<b>Report Deliverables</b><br/>report.html<br/>report.docx<br/>report.pdf<br/>executive-summary.pptx"]
         OBS["<b>Observability and Coverage</b><br/>events.ndjson<br/>pipeline-summary.md<br/>coverage.json<br/>report-generation-log.md"]
+        P ~~~ T ~~~ R ~~~ OBS
     end
 
     SA -->|"writes 01, 03-06, 08"| P
