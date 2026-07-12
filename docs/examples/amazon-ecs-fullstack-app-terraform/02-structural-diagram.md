@@ -1,421 +1,363 @@
-# Phase 2 -- Structural Diagram
+# Diagram Specialist — Phase 2 Structural Diagram
 
 ## Metadata
 | Field | Value |
 |-------|-------|
 | Agent | diagram-specialist |
-| Date | 2026-02-18 |
-| Target System | Amazon ECS Fullstack App (Terraform Demo) |
-| Layer Strategy | Full 4-layer (L1, L2, L3) -- 18 components qualifies as Medium (6-20) |
-| Diagram Direction | TD (top-down) -- hierarchical architecture with clear user-to-data flow |
+| Phase | 2 (Structural — L1/L2/L3, no risk overlay) |
+| Date | 2026-07-11 |
+| Target System | AWS ECS Fullstack App (Terraform Demo) |
+| Layer strategy | **Full 4-layer** (medium system: 13 components → 6-20 band, mermaid-layers.md §6). L1/L2/L3 produced here; **L4 threat overlay deferred to Phase 7** (findings not yet scored). |
+| Node-id contract | Reuses canonical `recon.json` ids: C1-C13, D1-D6, E1-E5, TB1-TB6, R0-R5, X1-X5. |
+| Rendering | All three layers render clean with `@mermaid-js/mermaid-cli` + `mermaid-config.json` (`-w 3000 --scale 2`); PNG sizes 0.59-1.37 MB (no 67-byte stubs). |
+| Scope note | Phase 2 forbids risk content. No risk colors, no `⚠`/L×I annotations, no attack-path overlays, no `:::highRisk`/`medRisk`/`lowRisk`. Those are Phase 7. |
 
-## Design Decisions
+## Summary
+Three structural Mermaid flowcharts, one concern per layer, shared node ids so specialists and Phase 7 cross-reference cleanly:
 
-1. **Consolidation for density compliance**: CodeBuild Server and Client are consolidated into a single node (`CodeBuild`) since they share identical IAM roles, build patterns, and security properties. Similarly, CodeDeploy Server and Client are consolidated (`CodeDeploy`), and ECR Server and Client repos are consolidated (`ECR`). This reduces the node count from ~28 to ~22, keeping diagrams readable while preserving all security-relevant information. The structural distinction (server vs client) is noted in labels.
-2. **ECS Cluster omitted as a separate node**: The ECS Cluster is the container orchestration context, but for data flow purposes the relevant nodes are the Client ECS Service and Server ECS Service. The cluster context is represented by the private subnet subgraphs.
-3. **VPC and Networking represented as subgraph boundaries**: The VPC, subnets, and networking components are trust boundaries rather than data flow participants. They appear as subgraphs, not process nodes.
-4. **External dependencies**: npm Registry and Public ECR base images are included as external dependencies since they are supply chain attack surfaces identified in reconnaissance.
-5. **Control plane vs data plane**: CI/CD pipeline is clearly separated as control plane with `[BUILD]` and `[CTRL]` typed edges. User traffic is data plane with standard data flow edges.
-
-## Node ID Reference
-
-All layers use consistent node IDs for cross-referencing:
-
-| Node ID | Component | Type |
-|---------|-----------|------|
-| `User` | End User | External Entity |
-| `GitHub` | GitHub Repository | External Entity |
-| `npmReg` | npm Registry | External Dependency |
-| `pubECR` | Public ECR Base Images | External Dependency |
-| `ClientALB` | Client ALB | Process (Load Balancer) |
-| `ServerALB` | Server ALB | Process (Load Balancer) |
-| `ClientECS` | Client ECS Service | Process (Fargate + Nginx) |
-| `ServerECS` | Server ECS Service | Process (Fargate + Node.js) |
-| `DynamoDB` | DynamoDB Table | Data Store |
-| `S3Assets` | S3 Assets Bucket | Data Store |
-| `S3Pipeline` | S3 CodePipeline Bucket | Data Store |
-| `ECR` | ECR Repositories (Server + Client) | Data Store / Registry |
-| `CodePipeline` | AWS CodePipeline | Pipeline |
-| `CodeBuild` | AWS CodeBuild (Server + Client) | Pipeline |
-| `CodeDeploy` | AWS CodeDeploy (Server + Client) | Pipeline |
-| `SNS` | SNS Deployment Topic | Process |
-| `CloudWatch` | CloudWatch Log Groups | Data Store |
-| `ECSExecRole` | ECS Task Execution Role | Identity |
-| `ECSTaskRole` | ECS Task Role | Identity |
-| `DevOpsRole` | DevOps IAM Role | Identity |
-| `CodeDeployRole` | CodeDeploy IAM Role | Identity |
-| `GitHubToken` | GitHub OAuth Token | Secrets |
-| `TFState` | Terraform State File | Secrets |
-| `SG_ALB` | Security Groups (ALBs) | Control |
-| `SG_ECS` | Security Groups (ECS Tasks) | Control |
-| `Autoscaling` | ECS Autoscaling | Control |
+- **L1 — Architecture** (`ecs-fullstack-L1-architecture.mmd`): factual C4-level topology. Every process (C1-C13), data store (D1-D6), and external entity/dependency, with tech + ownership markers, inside VPC/subnet network zones and a CI/CD control plane. Typed data / control / build-deploy edges only.
+- **L2 — Trust & Identity** (`ecs-fullstack-L2-trust-identity.mmd`): all six trust boundaries (TB1-TB6) as dashed, trust-level-colored subgraphs; the four IAM roles (R1-R4) as identity diamonds; the present security controls (open SG, private-subnet SG chaining, ALB health check, blue/green rollback) as control subroutines; AUTH / ADMIN / KEY / CTRL edges.
+- **L3 — Data** (`ecs-fullstack-L3-data.mmd`): three data-classification zones (INTERNAL/PUBLIC, CONFIDENTIAL, RESTRICTED); encryption state (`[ENC]`/`[PLAIN]`) on **every** edge — the headline that all app-layer HTTP is `[PLAIN]`; the lone GitHub PAT secret (no vault/KMS) as a secrets hexagon; `[KEY]` credential flows; at-rest posture and 30-day retention in node labels.
 
 ---
 
-## L1: Architecture
+## L1 — Architecture
 
-Filename: `ecs-fullstack-L1-architecture.mmd`
+Factual topology. Neutral styling only. Network zones (VPC `10.120.0.0/16`, public/private subnets) and the CI/CD control plane are structural grouping subgraphs, not trust boundaries (those are L2). Every edge is typed (Data `-->`, Control `-.-> [CTRL]`, Build/Deploy `--> [BUILD]`, Async `--> [ASYNC]`, Admin `-.-> [ADMIN]`) and carries protocol + sensitivity.
 
 ```mermaid
 flowchart TD
-    %% Version: 2026-02-18 | Phase: 2 | System: ECS Fullstack App | Layer: L1
+    %% Version: 2026-07-11 | Phase: 2 | System: AWS ECS Fullstack Demo | Layer: L1
+    R0["Anonymous Internet User\n(browser · no credential)"]:::external
+    R5["Terraform Operator / Developer\n(AWS creds + GitHub PAT)"]:::external
+    X1["GitHub Repository\n[vendor:GitHub] source + PAT"]:::externalDep
+    X4["Docker Base Images\nbitnami/node:latest, nginx:latest\n[vendor:public-ECR]"]:::externalDep
 
-    User["End User\nBrowser\n[external]"]:::external
-    GitHub["GitHub Repository\n[vendor:GitHub]"]:::externalDep
-    npmReg["npm Registry\n[vendor:npm]"]:::externalDep
-    pubECR["Public ECR Base Images\nbitnami/node, nginx/nginx\n[vendor:AWS]"]:::externalDep
+    subgraph VPC["VPC 10.120.0.0/16 · AWS Account · Single Region · 2 AZ"]
+        subgraph PUB["Public Subnets — ALB tier"]
+            C4(["Client ALB\nAWS ALB · internet-facing · HTTP:80\n[vendor:AWS] [managed]"]):::neutral
+            C5(["Server / API ALB\nAWS ALB · internet-facing · HTTP:80\n[vendor:AWS] [managed]"]):::neutral
+        end
+        subgraph PRIV["Private Subnets — ECS Fargate task tier"]
+            C6(["ECS Cluster\nAmazon ECS on Fargate\n[vendor:AWS] [managed]"]):::neutral
+            C7(["ECS Service — client task\nawsvpc · Fargate\n[vendor:AWS] [managed]"]):::neutral
+            C8(["ECS Service — server task\nawsvpc · Fargate\n[vendor:AWS] [managed]"]):::neutral
+            C1(["Client SPA\nVue.js 2 · bootstrap-vue · Nginx\n[self-managed]"]):::neutral
+            C2(["Server API\nNode.js · Express 4 · aws-sdk v2\n[self-managed]"]):::neutral
+            C3(["Swagger / API Docs\nswagger-ui-express · /api/docs\n[self-managed]"]):::neutral
+        end
+    end
 
-    subgraph VPC["AWS VPC — 10.120.0.0/16"]
-        subgraph PubSubnets["Public Subnets — AZ1 + AZ2"]
-            ClientALB(["Client ALB\nAWS ALB · HTTP:80\n[vendor:AWS] [managed]"]):::neutral
-            ServerALB(["Server ALB\nAWS ALB · HTTP:80\n[vendor:AWS] [managed]"]):::neutral
+    subgraph CICD["CI/CD Control Plane"]
+        C9[/"CodePipeline\nSource/Build/Deploy · GitHub v1\n[vendor:AWS] [managed]"/]:::pipeline
+        C10[/"CodeBuild (server + client)\nstandard:4.0 · privileged_mode\n[vendor:AWS] [managed]"/]:::pipeline
+        C11[/"CodeDeploy\nblue/green ECS · ECSAllAtOnce\n[vendor:AWS] [managed]"/]:::pipeline
+        C12(["ECS Autoscaling + CloudWatch\nApp Auto Scaling · CPU/mem target\n[vendor:AWS] [managed]"]):::neutral
+        C13(["SNS Topic\ndeployment notifications\n[vendor:AWS] [managed]"]):::neutral
+    end
+
+    D1[("DynamoDB\nproduct catalog · PAY_PER_REQUEST\n[vendor:AWS] [managed]")]:::dataStore
+    D2[("S3 assets bucket\nproduct images · acl=private\n[vendor:AWS] [managed]")]:::dataStore
+    D3[("S3 artifact bucket\nsource + build artifacts\n[vendor:AWS] [managed]")]:::dataStore
+    D4[("ECR repositories\nserver + client images · MUTABLE\n[vendor:AWS] [managed]")]:::dataStore
+    D5[("CloudWatch Logs\nawslogs · 30-day retention\n[vendor:AWS] [managed]")]:::dataStore
+    D6[("Terraform State\nlocal file · contains github_token\n[self-managed]")]:::dataStore
+
+    R0 -->|"HTTP: SPA page load [PUBLIC] [PLAIN]"| C4
+    C4 -->|"HTTP: forward to client task [INTERNAL] [PLAIN]"| C7
+    C7 -.->|"[CTRL] ECS runs SPA container [INTERNAL]"| C1
+    R0 -->|"HTTP: GET /api/getAllProducts,/status [PUBLIC] [PLAIN]"| C5
+    C5 -->|"HTTP: forward to server task [INTERNAL] [PLAIN]"| C8
+    C8 -.->|"[CTRL] ECS runs API container [INTERNAL]"| C2
+    C2 -.->|"[CTRL] serves /api/docs [PUBLIC]"| C3
+    C2 -->|"HTTPS: DocumentClient.scan catalog [INTERNAL]"| D1
+    R0 -->|"HTTPS: product image fetch [INTERNAL]"| D2
+    C7 -->|"HTTP: awslogs task logs [INTERNAL]"| D5
+    C8 -->|"HTTP: awslogs task logs [INTERNAL]"| D5
+    R5 -->|"[BUILD] git push to main [INTERNAL]"| X1
+    R5 -.->|"[ADMIN] terraform apply · local state [RESTRICTED]"| D6
+    X1 -->|"[BUILD] source poll PollForSourceChanges [CONFIDENTIAL]"| C9
+    C9 -->|"[BUILD] store source + artifacts [CONFIDENTIAL]"| D3
+    C9 -->|"[BUILD] trigger build stage [INTERNAL]"| C10
+    X4 -->|"[BUILD] pull base image :latest [INTERNAL]"| C10
+    C10 -->|"[BUILD] docker build/push [CONFIDENTIAL]"| D4
+    C10 -->|"[BUILD] build logs [INTERNAL]"| D5
+    C9 -->|"[BUILD] trigger deploy stage [INTERNAL]"| C11
+    C11 -.->|"[CTRL] blue/green deploy [INTERNAL]"| C6
+    D4 -.->|"[CTRL] image pull on task start [INTERNAL]"| C6
+    C6 -.->|"[CTRL] schedule client tasks [INTERNAL]"| C7
+    C6 -.->|"[CTRL] schedule server tasks [INTERNAL]"| C8
+    C11 -->|"[ASYNC] deploy notifications [INTERNAL]"| C13
+    C12 -.->|"[CTRL] autoscaling CPU/mem [INTERNAL]"| C8
+
+    subgraph Legend["Legend — L1 Symbols & Edge Types"]
+        LG1["[ ] External Entity / Dependency"]:::external
+        LG2["([ ]) Process / Service"]:::neutral
+        LG3["[( )] Data Store"]:::dataStore
+        LG4["[/ /] CI/CD Pipeline"]:::pipeline
+        LG5["--> Data flow (default)"]
+        LG6["-.-> [CTRL] Control/API"]
+        LG7["--> [BUILD] Build/Deploy (orange)"]
+        LG8["--> [ASYNC] Async/Event (green)"]
+        LG9["-.-> [ADMIN] Admin/Ops (red)"]
+    end
+
+    linkStyle 11,13,14,15,16,17,18,19 stroke:#f39c12,stroke-width:2px
+    linkStyle 12 stroke:#cc0000,stroke-width:2px
+    linkStyle 24 stroke:#27ae60,stroke-width:2px
+
+    classDef neutral fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
+    classDef external fill:#cce5ff,stroke:#004085,stroke-width:1px,color:#000
+    classDef dataStore fill:#e2e3e5,stroke:#383d41,stroke-width:1px,color:#000
+    classDef pipeline fill:#d5dbdb,stroke:#7f8c8d,stroke-width:1px,color:#000
+    classDef externalDep fill:#f5f5f5,stroke:#333,stroke-width:3px,stroke-dasharray:3,color:#000
+```
+
+**L1 note — backend ALB is public.** Both `R0 --> C4` and `R0 --> C5` originate at the browser: the SPA's `RestServices.js` calls `http://<SERVER_ALB>/api/getAllProducts` directly, so the API ALB (C5) is reached from the Internet, not brokered by the front-end. This corrects the provided architecture PNG's implied front→back internal hop.
+
+---
+
+## L2 — Trust & Identity
+
+Trust boundaries as dashed subgraphs, colored by trust level (red = low/Internet, orange = medium/VPC, blue = identity mediation, purple = account). All six recon boundaries appear. IAM roles are identity diamonds; present controls are control subroutines. AUTH (`--o`, blue), ADMIN (`-.->`, red), KEY (`==>`), and CTRL (`-.->`) edges.
+
+```mermaid
+flowchart TD
+    %% Version: 2026-07-11 | Phase: 2 | System: AWS ECS Fullstack Demo | Layer: L2
+    R0["Anonymous Internet User\n(no credential)"]:::external
+    R5["Terraform Operator / Developer\n(AWS creds + GitHub PAT)"]:::external
+
+    subgraph TB5["TB5 · AWS Account / Region boundary"]
+        style TB5 stroke:#8e44ad,stroke-width:2px,stroke-dasharray: 5 5
+
+        subgraph TB1["TB1 · Internet edge — public ALBs (0.0.0.0/0:80 HTTP)"]
+            style TB1 stroke:#e74c3c,stroke-width:2px,stroke-dasharray: 5 5
+            C4(["Client ALB\ninternet-facing · HTTP:80"]):::neutral
+            C5(["Server / API ALB\ninternet-facing · HTTP:80"]):::neutral
+            SGpub[["Security Group\n0.0.0.0/0:80 open · no WAF · no TLS\n[control-owner:none]"]]:::control
         end
 
-        subgraph PrivClientSubnets["Private Client Subnets — AZ1 + AZ2"]
-            ClientECS(["Client ECS Service\nFargate · Nginx · Vue.js SPA\n[self-managed]"]):::neutral
+        subgraph TB6["TB6 · VPC perimeter (IGW / single NAT egress)"]
+            style TB6 stroke:#f39c12,stroke-width:2px,stroke-dasharray: 5 5
+            subgraph TB2["TB2 · Public subnet -> Private subnet (ECS tasks)"]
+                style TB2 stroke:#f39c12,stroke-width:2px,stroke-dasharray: 5 5
+                C6(["ECS Cluster\nFargate"]):::neutral
+                C7(["ECS client task\nVue/Nginx"]):::neutral
+                C8(["ECS server task\nExpress · aws-sdk v2"]):::neutral
+                PrivCtl[["Private Subnets + SG chaining\ntasks reachable only from ALB SG\n[control-owner:Platform]"]]:::control
+                HC[["ALB Health Check\nGET /status , /\n[control-owner:Platform]"]]:::control
+            end
         end
 
-        subgraph PrivServerSubnets["Private Server Subnets — AZ1 + AZ2"]
-            ServerECS(["Server ECS Service\nFargate · Node.js · Express\n[self-managed]"]):::neutral
+        subgraph TB3["TB3 · ECS task -> AWS services via IAM task role"]
+            style TB3 stroke:#2980b9,stroke-width:2px,stroke-dasharray: 5 5
+            R1{"ECS execution role\nECR pull · log write\n[vendor:AWS]"}:::identity
+            R2{"ECS task role\nDynamoDB/S3 scoped\niam:PassRole * (broad)\n[vendor:AWS]"}:::identity
+            D1[("DynamoDB\nproduct catalog")]:::dataStore
+            D2[("S3 assets\nproduct images")]:::dataStore
         end
+
+        subgraph TB4["TB4 · CI/CD supply chain (GitHub -> Pipeline -> ECR -> ECS)"]
+            style TB4 stroke:#e67e22,stroke-width:2px,stroke-dasharray: 5 5
+            X1["GitHub Repo\nsource + OAuth PAT"]:::externalDep
+            C9[/"CodePipeline\nGitHub v1 · PollForSourceChanges"/]:::pipeline
+            C10[/"CodeBuild\nprivileged_mode · standard:4.0"/]:::pipeline
+            C11[/"CodeDeploy\nblue/green ECS"/]:::pipeline
+            R3{"DevOps role\ns3:*/ecs:*/iam:PassRole *\n[vendor:AWS]"}:::identity
+            R4{"CodeDeploy role\nAWSCodeDeployRoleForECS\n[vendor:AWS]"}:::identity
+            D4[("ECR\nMUTABLE · no scan-on-push")]:::dataStore
+            BG[["Blue/Green Deploy\nauto-rollback on failure\n[control-owner:Platform]"]]:::control
+        end
+
+        D6[("Terraform State\nlocal · plaintext PAT")]:::dataStore
     end
 
-    subgraph AWSManaged["AWS Managed Services"]
-        DynamoDB[("DynamoDB Table\nProduct Catalog · PAY_PER_REQUEST\n[vendor:AWS] [managed]")]:::dataStore
-        S3Assets[("S3 Assets Bucket\nProduct Images · Private ACL\n[vendor:AWS] [managed]")]:::dataStore
-        S3Pipeline[("S3 CodePipeline Bucket\nBuild Artifacts · Private ACL\n[vendor:AWS] [managed]")]:::dataStore
-        ECR[("ECR Repositories\nServer + Client Images\n[vendor:AWS] [managed]")]:::dataStore
-        CloudWatch[("CloudWatch Logs\n30-day Retention\n[vendor:AWS] [managed]")]:::dataStore
-        SNS(["SNS Topic\nDeploy Notifications\n[vendor:AWS] [managed]"]):::neutral
+    R0 -->|"HTTP: anonymous, no credential [PUBLIC] [PLAIN]"| C4
+    R0 -->|"HTTP: anonymous API call [PUBLIC] [PLAIN]"| C5
+    SGpub -.->|"[CTRL] allow 0.0.0.0/0:80, no WAF/TLS [PUBLIC]"| C5
+    C4 -->|"HTTP: forward to task [INTERNAL] [PLAIN]"| C7
+    C5 -->|"HTTP: forward to task [INTERNAL] [PLAIN]"| C8
+    PrivCtl -.->|"[CTRL] ingress only from ALB SG [INTERNAL]"| C8
+    HC -.->|"[CTRL] health check GET /status [INTERNAL]"| C8
+    C8 --o|"[AUTH] assumes ECS task role [RESTRICTED]"| R2
+    C8 --o|"[AUTH] image pull via execution role [INTERNAL]"| R1
+    R2 -.->|"[CTRL] IAM: Get/Query/Scan catalog [INTERNAL]"| D1
+    R2 -.->|"[CTRL] IAM: GetObject/ListBucket [INTERNAL]"| D2
+    X1 ==>|"[KEY] OAuth PAT, long-lived [RESTRICTED]"| C9
+    C10 --o|"[AUTH] assumes DevOps role [RESTRICTED]"| R3
+    R3 -.->|"[ADMIN] s3:*/ecs:*/iam:PassRole * [RESTRICTED]"| D4
+    C11 --o|"[AUTH] assumes CodeDeploy role [INTERNAL]"| R4
+    R4 -.->|"[CTRL] blue/green register + deploy [INTERNAL]"| C6
+    BG -.->|"[CTRL] auto-rollback on failure [INTERNAL]"| C6
+    R5 -.->|"[ADMIN] terraform apply · PAT to local state [RESTRICTED]"| D6
+
+    subgraph Legend["Legend — L2 Trust & Identity"]
+        LG1["--- dashed subgraph = Trust Boundary"]
+        LG2["{ } Identity / IAM role"]:::identity
+        LG3["[[ ]] Security Control"]:::control
+        LG4["--o [AUTH] AuthN/AuthZ (blue)"]
+        LG5["==> [KEY] Secrets/Keys"]
+        LG6["-.-> [ADMIN] Admin/Ops (red)"]
+        LG7["-.-> [CTRL] Control/API"]
     end
 
-    subgraph CICDPipeline["CI/CD Pipeline"]
-        CodePipeline[/"CodePipeline\nAWS CodePipeline V1\n[vendor:AWS] [managed]"/]:::pipeline
-        CodeBuild[/"CodeBuild\nServer + Client Projects\nPrivileged Docker Mode\n[vendor:AWS] [managed]"/]:::pipeline
-        CodeDeploy[/"CodeDeploy\nBlue-Green · Auto-Rollback\n[vendor:AWS] [managed]"/]:::pipeline
-    end
-
-    %% Data Plane flows
-    User -->|"HTTP: SPA requests [PUBLIC]"| ClientALB
-    User -->|"HTTP: API requests [PUBLIC]"| ServerALB
-    ClientALB -->|"HTTP: forwarded requests [PUBLIC]"| ClientECS
-    ServerALB -->|"HTTP: forwarded requests [PUBLIC]"| ServerECS
-    ClientECS -->|"HTTP: cross-origin API calls [PUBLIC]"| ServerALB
-    ServerECS -->|"HTTPS: DynamoDB SDK queries [INTERNAL]"| DynamoDB
-    ServerECS -->|"HTTPS: S3 SDK object URLs [PUBLIC]"| S3Assets
-
-    %% Logging flows
-    ServerECS -->|"[ASYNC] HTTPS: container logs [INTERNAL]"| CloudWatch
-    ClientECS -->|"[ASYNC] HTTPS: container logs [INTERNAL]"| CloudWatch
-
-    %% CI/CD Control Plane flows
-    GitHub -->|"HTTPS: source poll [INTERNAL]"| CodePipeline
-    CodePipeline -.->|"[CTRL] AWS API: trigger build [INTERNAL]"| CodeBuild
-    CodeBuild -->|"[BUILD] HTTPS: docker push [INTERNAL]"| ECR
-    CodeBuild -->|"[BUILD] HTTPS: store artifacts [INTERNAL]"| S3Pipeline
-    CodePipeline -.->|"[CTRL] AWS API: trigger deploy [INTERNAL]"| CodeDeploy
-    CodeDeploy -.->|"[CTRL] AWS API: update ECS services [INTERNAL]"| ServerECS
-    CodeDeploy -.->|"[CTRL] AWS API: update ECS services [INTERNAL]"| ClientECS
-    CodeDeploy -->|"[ASYNC] AWS API: deploy notifications [INTERNAL]"| SNS
-
-    %% Supply chain flows
-    npmReg -->|"HTTPS: package download [INTERNAL]"| CodeBuild
-    pubECR -->|"HTTPS: base image pull [INTERNAL]"| CodeBuild
-
-    subgraph Legend["Legend"]
-        style Legend fill:#f8f9fa,stroke:#dee2e6
-        L_Ext["External Entity"]:::external
-        L_Proc(["Process"]):::neutral
-        L_DS[("Data Store")]:::dataStore
-        L_Pipe[/"Pipeline"/]:::pipeline
-        L_EDep["External Dep"]:::externalDep
-        L_DF["-->  Data flow"]
-        L_CTRL["-.-> [CTRL] Control/API"]
-        L_BUILD["-->  [BUILD] Build/Deploy"]
-        L_ASYNC["-->  [ASYNC] Async/Event"]
-    end
+    linkStyle 7,8,12,14 stroke:#2980b9,stroke-width:2px
+    linkStyle 13,17 stroke:#cc0000,stroke-width:2px
 
     classDef neutral fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
     classDef external fill:#cce5ff,stroke:#004085,stroke-width:1px,color:#000
     classDef dataStore fill:#e2e3e5,stroke:#383d41,stroke-width:1px,color:#000
     classDef identity fill:#d4e6f1,stroke:#2980b9,stroke-width:1px,color:#000
-    classDef secrets fill:#f9e79f,stroke:#f39c12,stroke-width:2px,color:#000
     classDef control fill:#abebc6,stroke:#27ae60,stroke-width:1px,color:#000
     classDef pipeline fill:#d5dbdb,stroke:#7f8c8d,stroke-width:1px,color:#000
     classDef externalDep fill:#f5f5f5,stroke:#333,stroke-width:3px,stroke-dasharray:3,color:#000
-    classDef outOfScope fill:#eee,stroke:#999,stroke-width:1px,stroke-dasharray:5,color:#666
 ```
+
+**L2 note — no AuthN/AuthZ at the application edge.** TB1 carries anonymous `[PLAIN]` traffic straight through; there is no auth gateway node because none exists in the system (Login.vue is an inert stub). The identity mediation (`--o [AUTH]`) that *does* exist is all machine-to-cloud: task→role and pipeline→role assumption. `iam:PassRole *` on both the task role (R2) and DevOps role (R3) is drawn as the broad grant it is. No `sequenceDiagram` companion is warranted (recon §1.9: auth sequence N/A).
 
 ---
 
-## L2: Trust and Identity
+## L3 — Data
 
-Filename: `ecs-fullstack-L2-trust-identity.mmd`
+Data-classification zones by sensitivity; encryption state on every edge. The system's defining data fact — all application HTTP is unencrypted — is visible as `[PLAIN]` on every ingress/east-west edge, while AWS-SDK/API calls to managed services are `[ENC]` (AWS-managed TLS). The single secret (GitHub PAT) is a secrets hexagon with an explicit "no vault/KMS" annotation; its `[KEY]` flow lands in unencrypted local Terraform state.
 
 ```mermaid
 flowchart TD
-    %% Version: 2026-02-18 | Phase: 2 | System: ECS Fullstack App | Layer: L2
+    %% Version: 2026-07-11 | Phase: 2 | System: AWS ECS Fullstack Demo | Layer: L3
+    R0["Anonymous Internet User\n(browser)"]:::external
+    R5["Terraform Operator\n(writes state)"]:::external
+    X1["GitHub Repo\n+ OAuth PAT"]:::externalDep
+    C5(["Server / API ALB\nHTTP:80 · no TLS listener"]):::neutral
+    C8(["ECS server task\nExpress · aws-sdk v2"]):::neutral
+    C9[/"CodePipeline"/]:::pipeline
+    C10[/"CodeBuild"/]:::pipeline
 
-    User["End User\nUnauthenticated"]:::external
-    GitHub["GitHub\n[vendor:GitHub]"]:::externalDep
-    npmReg["npm Registry"]:::externalDep
-    pubECR["Public ECR"]:::externalDep
-
-    subgraph InternetBoundary["Internet — Untrusted"]
-        style InternetBoundary stroke:#e74c3c,stroke-width:2px,stroke-dasharray: 5 5
+    subgraph ZPUB["INTERNAL / PUBLIC Data Zone — default AWS-managed encryption"]
+        style ZPUB fill:#e8f8f5,stroke:#1abc9c,stroke-width:1px
+        D1[("DynamoDB\ncatalog id/path/title · [INTERNAL]\nSSE: AWS-managed default [ENC]\nno PITR · no explicit KMS")]:::dataStore
+        D2[("S3 assets\nproduct images · [INTERNAL/PUBLIC]\nSSE: AWS-managed default [ENC]\nno public-access-block · no versioning")]:::dataStore
+        D5[("CloudWatch Logs\ntask + build logs · [INTERNAL]\nSSE: AWS-managed [ENC]\nretention: 30 days")]:::dataStore
     end
 
-    subgraph VPC["VPC Boundary — 10.120.0.0/16"]
-        style VPC stroke:#f39c12,stroke-width:2px,stroke-dasharray: 5 5
-
-        subgraph PubSubnets["Public Subnets — Low Trust"]
-            style PubSubnets stroke:#e74c3c,stroke-width:1px,stroke-dasharray: 5 5
-            ClientALB(["Client ALB\nHTTP:80 · No TLS"]):::neutral
-            ServerALB(["Server ALB\nHTTP:80 · No TLS"]):::neutral
-            SG_ALB[["Security Groups\nIngress: 0.0.0.0/0:80\n[control-owner:DevOps]"]]:::control
-        end
-
-        subgraph PrivClientSubnets["Private Client Subnets — Medium Trust"]
-            style PrivClientSubnets stroke:#f39c12,stroke-width:1px,stroke-dasharray: 5 5
-            ClientECS(["Client ECS\nFargate · No Auth"]):::neutral
-            SG_ECS_Client[["SG: ECS Client\nIngress: Client ALB SG only\n[control-owner:DevOps]"]]:::control
-        end
-
-        subgraph PrivServerSubnets["Private Server Subnets — Medium Trust"]
-            style PrivServerSubnets stroke:#f39c12,stroke-width:1px,stroke-dasharray: 5 5
-            ServerECS(["Server ECS\nFargate · No Auth · CORS *"]):::neutral
-            SG_ECS_Server[["SG: ECS Server\nIngress: Server ALB SG only\n[control-owner:DevOps]"]]:::control
-        end
+    subgraph ZCONF["CONFIDENTIAL Data Zone"]
+        style ZCONF fill:#fef9e7,stroke:#f39c12,stroke-width:2px
+        D3[("S3 artifacts\nsource + build output · [CONFIDENTIAL]\nSSE: AWS-managed [ENC] · force_destroy")]:::dataStore
+        D4[("ECR\nserver + client images · [CONFIDENTIAL]\nSSE: AWS-managed [ENC] · MUTABLE tags")]:::dataStore
     end
 
-    subgraph AWSManaged["AWS Managed Services — High Trust"]
-        style AWSManaged stroke:#27ae60,stroke-width:2px,stroke-dasharray: 5 5
-        DynamoDB[("DynamoDB")]:::dataStore
-        S3Assets[("S3 Assets")]:::dataStore
-        S3Pipeline[("S3 Pipeline Artifacts")]:::dataStore
-        ECR[("ECR Repos")]:::dataStore
-        CloudWatch[("CloudWatch")]:::dataStore
-        SNS(["SNS"]):::neutral
+    subgraph ZREST["RESTRICTED Data Zone — no vault / no KMS"]
+        style ZREST fill:#fdedec,stroke:#e74c3c,stroke-width:2px
+        PAT{{"GitHub PAT\nsole secret · no Secrets Manager/KMS\nno rotation"}}:::secrets
+        D6[("Terraform State\nlocal terraform.tfstate · [RESTRICTED]\nunencrypted at rest [PLAIN] · no locking")]:::dataStore
     end
 
-    subgraph CICDBoundary["CI/CD Pipeline — Elevated Trust"]
-        style CICDBoundary stroke:#8e44ad,stroke-width:2px,stroke-dasharray: 5 5
-        CodePipeline[/"CodePipeline"/]:::pipeline
-        CodeBuild[/"CodeBuild\nPrivileged Docker"/]:::pipeline
-        CodeDeploy[/"CodeDeploy\nBlue-Green"/]:::pipeline
-    end
+    R0 -->|"HTTP: API + image request [PUBLIC] [PLAIN]"| C5
+    C5 -->|"HTTP: proxied to API task [INTERNAL] [PLAIN]"| C8
+    C8 -->|"HTTPS: DynamoDB scan [INTERNAL] [ENC]"| D1
+    C8 -->|"HTTPS: S3 GetObject [INTERNAL] [ENC]"| D2
+    C8 -->|"HTTPS: awslogs stream [INTERNAL] [ENC]"| D5
+    C10 -->|"HTTPS: docker push image [CONFIDENTIAL] [ENC]"| D4
+    C9 -->|"HTTPS: source + artifacts [CONFIDENTIAL] [ENC]"| D3
+    R0 -->|"HTTPS: direct image fetch [INTERNAL] [ENC]"| D2
+    R5 ==>|"[KEY] terraform writes PAT [RESTRICTED] [PLAIN]"| PAT
+    PAT ==>|"[KEY] persisted into local state [RESTRICTED] [PLAIN]"| D6
+    X1 ==>|"[KEY] OAuth PAT to pipeline config [RESTRICTED] [PLAIN]"| C9
 
-    subgraph IAMIdentities["IAM Principals"]
-        ECSExecRole{"ECS Execution Role\nECR pull, CW Logs"}:::identity
-        ECSTaskRole{"ECS Task Role\nDynamoDB, S3 access"}:::identity
-        DevOpsRole{"DevOps Role\nPassRole *, ECR, S3, ECS\nCodeBuild, CodeDeploy"}:::identity
-        CodeDeployRole{"CodeDeploy Role\nECS, ALB, S3, SNS"}:::identity
-    end
-
-    Autoscaling[["Autoscaling\nCPU/Memory 50%\nMin:1 Max:4\n[control-owner:DevOps]"]]:::control
-
-    %% Data plane (no auth)
-    User -->|"HTTP: requests [PUBLIC]"| ClientALB
-    User -->|"HTTP: requests [PUBLIC]"| ServerALB
-    ClientALB -->|"HTTP: forwarded [PUBLIC]"| ClientECS
-    ServerALB -->|"HTTP: forwarded [PUBLIC]"| ServerECS
-    ClientECS -->|"HTTP: cross-origin API [PUBLIC]"| ServerALB
-    ServerECS -->|"HTTPS: queries [INTERNAL]"| DynamoDB
-    ServerECS -->|"HTTPS: object URLs [PUBLIC]"| S3Assets
-
-    %% IAM role assumptions
-    ECSExecRole -.->|"[CTRL] IAM: AssumeRole [RESTRICTED]"| ClientECS
-    ECSExecRole -.->|"[CTRL] IAM: AssumeRole [RESTRICTED]"| ServerECS
-    ECSTaskRole -.->|"[CTRL] IAM: AssumeRole [RESTRICTED]"| ServerECS
-    DevOpsRole -.->|"[CTRL] IAM: AssumeRole [RESTRICTED]"| CodeBuild
-    DevOpsRole -.->|"[CTRL] IAM: AssumeRole [RESTRICTED]"| CodePipeline
-    CodeDeployRole -.->|"[CTRL] IAM: AssumeRole [RESTRICTED]"| CodeDeploy
-
-    %% CI/CD control plane
-    GitHub -->|"HTTPS: source poll [INTERNAL]"| CodePipeline
-    CodePipeline -.->|"[CTRL] trigger build [INTERNAL]"| CodeBuild
-    CodeBuild -->|"[BUILD] docker push [INTERNAL]"| ECR
-    CodePipeline -.->|"[CTRL] trigger deploy [INTERNAL]"| CodeDeploy
-    CodeDeploy -.->|"[CTRL] update ECS [INTERNAL]"| ServerECS
-    CodeDeploy -.->|"[CTRL] update ECS [INTERNAL]"| ClientECS
-
-    %% Security control enforcement
-    SG_ALB -.->|"[CTRL] ingress filter"| ClientALB
-    SG_ALB -.->|"[CTRL] ingress filter"| ServerALB
-    SG_ECS_Client -.->|"[CTRL] ingress filter"| ClientECS
-    SG_ECS_Server -.->|"[CTRL] ingress filter"| ServerECS
-    Autoscaling -.->|"[CTRL] scaling policy"| ClientECS
-    Autoscaling -.->|"[CTRL] scaling policy"| ServerECS
-
-    %% Logging
-    ServerECS -->|"[ASYNC] logs [INTERNAL]"| CloudWatch
-    ClientECS -->|"[ASYNC] logs [INTERNAL]"| CloudWatch
-    CodeBuild -->|"[ASYNC] build logs [INTERNAL]"| CloudWatch
-
-    %% Supply chain
-    npmReg -->|"HTTPS: packages [INTERNAL]"| CodeBuild
-    pubECR -->|"HTTPS: base images [INTERNAL]"| CodeBuild
-
-    %% Notifications
-    CodeDeploy -->|"[ASYNC] notifications [INTERNAL]"| SNS
-
-    subgraph Legend["Legend"]
-        style Legend fill:#f8f9fa,stroke:#dee2e6
-        L_Ext["External Entity"]:::external
-        L_Proc(["Process"]):::neutral
-        L_DS[("Data Store")]:::dataStore
-        L_IAM{"IAM Role"}:::identity
-        L_Ctrl[["Security Control"]]:::control
-        L_Pipe[/"Pipeline"/]:::pipeline
-        L_EDep["External Dep"]:::externalDep
-        L_TB["--- = Trust Boundary"]
-        L_DF["-->  Data flow"]
-        L_CTRL["-.-> [CTRL] Control/API"]
-        L_BUILD["-->  [BUILD] Build/Deploy"]
-        L_ASYNC["-->  [ASYNC] Async"]
+    subgraph Legend["Legend — L3 Data & Encryption"]
+        LG1["shaded subgraph = Data Classification Zone"]
+        LG2["{{ }} Secret (no KMS/vault)"]:::secrets
+        LG3["[( )] Data Store"]:::dataStore
+        LG4["[ENC] = encrypted transit/at-rest"]
+        LG5["[PLAIN] = unencrypted (headline: all HTTP is PLAIN)"]
+        LG6["==> [KEY] Secrets/Keys flow"]
     end
 
     classDef neutral fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
     classDef external fill:#cce5ff,stroke:#004085,stroke-width:1px,color:#000
     classDef dataStore fill:#e2e3e5,stroke:#383d41,stroke-width:1px,color:#000
-    classDef identity fill:#d4e6f1,stroke:#2980b9,stroke-width:1px,color:#000
     classDef secrets fill:#f9e79f,stroke:#f39c12,stroke-width:2px,color:#000
-    classDef control fill:#abebc6,stroke:#27ae60,stroke-width:1px,color:#000
     classDef pipeline fill:#d5dbdb,stroke:#7f8c8d,stroke-width:1px,color:#000
     classDef externalDep fill:#f5f5f5,stroke:#333,stroke-width:3px,stroke-dasharray:3,color:#000
 ```
 
----
-
-## L3: Data
-
-Filename: `ecs-fullstack-L3-data.mmd`
-
-```mermaid
-flowchart TD
-    %% Version: 2026-02-18 | Phase: 2 | System: ECS Fullstack App | Layer: L3
-
-    User["End User"]:::external
-    GitHub["GitHub"]:::externalDep
-
-    subgraph PublicZone["PUBLIC Data Zone"]
-        style PublicZone fill:#e8f8f5,stroke:#1abc9c,stroke-width:1px
-        DynamoDB[("DynamoDB Table\nProduct Catalog\nid, title, path\nAWS-owned key encryption")]:::dataStore
-        S3Assets[("S3 Assets Bucket\nProduct Images\nDefault encryption\nNo versioning")]:::dataStore
-    end
-
-    subgraph InternalZone["INTERNAL Data Zone"]
-        style InternalZone fill:#eaf2f8,stroke:#2980b9,stroke-width:1px
-        S3Pipeline[("S3 Pipeline Bucket\nBuild Artifacts\nNo explicit encryption\nforce_destroy=true")]:::dataStore
-        ECR[("ECR Repos\nDocker Images\nMUTABLE tags\nDefault encryption")]:::dataStore
-        CloudWatch[("CloudWatch Logs\n30-day retention\nDefault encryption")]:::dataStore
-    end
-
-    subgraph RestrictedZone["RESTRICTED Data Zone"]
-        style RestrictedZone fill:#fdedec,stroke:#e74c3c,stroke-width:2px
-        GitHubToken{{"GitHub OAuth Token\nStored in CodePipeline config\nPlaintext in TF state"}}:::secrets
-        TFState{{"Terraform State File\nLocal filesystem\nContains secrets, no encryption"}}:::secrets
-    end
-
-    subgraph DataPlane["Data Plane"]
-        ClientALB(["Client ALB"]):::neutral
-        ServerALB(["Server ALB"]):::neutral
-        ClientECS(["Client ECS\nNginx · Vue.js SPA"]):::neutral
-        ServerECS(["Server ECS\nNode.js · Express\naws-sdk v2"]):::neutral
-    end
-
-    subgraph ControlPlane["Control Plane"]
-        CodePipeline[/"CodePipeline"/]:::pipeline
-        CodeBuild[/"CodeBuild"/]:::pipeline
-        CodeDeploy[/"CodeDeploy"/]:::pipeline
-    end
-
-    SNS(["SNS Topic\nNo encryption"]):::neutral
-
-    %% Data plane flows with encryption state
-    User -->|"HTTP: SPA + API [PUBLIC] [PLAIN]"| ClientALB
-    User -->|"HTTP: API requests [PUBLIC] [PLAIN]"| ServerALB
-    ClientALB -->|"HTTP: forwarded [PUBLIC] [PLAIN]"| ClientECS
-    ServerALB -->|"HTTP: forwarded [PUBLIC] [PLAIN]"| ServerECS
-    ClientECS -->|"HTTP: cross-origin API [PUBLIC] [PLAIN]"| ServerALB
-    ServerECS -->|"HTTPS: DynamoDB queries [INTERNAL] [ENC]"| DynamoDB
-    ServerECS -->|"HTTPS: S3 object URLs [PUBLIC] [ENC]"| S3Assets
-
-    %% CI/CD flows with encryption state
-    GitHubToken ==>|"[KEY] OAuth token [RESTRICTED]"| CodePipeline
-    GitHub -->|"HTTPS: source code [INTERNAL] [ENC]"| CodePipeline
-    CodePipeline -.->|"[CTRL] AWS API [INTERNAL] [ENC]"| CodeBuild
-    CodeBuild -->|"[BUILD] docker push [INTERNAL] [ENC]"| ECR
-    CodeBuild -->|"[BUILD] artifacts [INTERNAL] [ENC]"| S3Pipeline
-    CodePipeline -.->|"[CTRL] AWS API [INTERNAL] [ENC]"| CodeDeploy
-    CodeDeploy -.->|"[CTRL] task update [INTERNAL] [ENC]"| ServerECS
-    CodeDeploy -.->|"[CTRL] task update [INTERNAL] [ENC]"| ClientECS
-    CodeDeploy -->|"[ASYNC] notification [INTERNAL] [ENC]"| SNS
-
-    %% Logging flows
-    ServerECS -->|"[ASYNC] logs [INTERNAL] [ENC]"| CloudWatch
-    ClientECS -->|"[ASYNC] logs [INTERNAL] [ENC]"| CloudWatch
-
-    subgraph Legend["Legend"]
-        style Legend fill:#f8f9fa,stroke:#dee2e6
-        L_Pub["PUBLIC Zone (green)"]
-        L_Int["INTERNAL Zone (blue)"]
-        L_Res["RESTRICTED Zone (red)"]
-        L_Sec{{"Secrets"}}:::secrets
-        L_ENC["[ENC] = Encrypted in transit"]
-        L_PLAIN["[PLAIN] = Plaintext in transit"]
-        L_KEY["==> [KEY] Secret/Key flow"]
-    end
-
-    classDef neutral fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
-    classDef external fill:#cce5ff,stroke:#004085,stroke-width:1px,color:#000
-    classDef dataStore fill:#e2e3e5,stroke:#383d41,stroke-width:1px,color:#000
-    classDef identity fill:#d4e6f1,stroke:#2980b9,stroke-width:1px,color:#000
-    classDef secrets fill:#f9e79f,stroke:#f39c12,stroke-width:2px,color:#000
-    classDef control fill:#abebc6,stroke:#27ae60,stroke-width:1px,color:#000
-    classDef pipeline fill:#d5dbdb,stroke:#7f8c8d,stroke-width:1px,color:#000
-    classDef externalDep fill:#f5f5f5,stroke:#333,stroke-width:3px,stroke-dasharray:3,color:#000
-```
+**L3 note — `[PLAIN]` vs `[ENC]` split.** Every edge that touches the browser or crosses the ALB→task hop is `[PLAIN]` HTTP (no TLS listener is created). Everything from an ECS task or CodeBuild to a managed AWS service rides AWS-managed TLS (`[ENC]`). At rest, all AWS stores get AWS-owned default encryption (`[ENC]`, but no explicit SSE-KMS); the one store that is genuinely plaintext at rest is the **local Terraform state** holding the PAT. Category #10 (Secrets/Key Mgmt) was marked N/A in recon because there is no vault/KMS/HSM — the PAT node here draws that *absence* explicitly (the sole secret, unmanaged), rather than a managed secrets service.
 
 ---
 
-## Visual Completeness Coverage
+## Node-ID Reconciliation (recon.json → diagram nodes)
 
-Coverage of applicable categories in structural diagrams (L1 + L2 + L3):
+Every element in the reconnaissance appears in at least one layer under its canonical id.
 
-| # | Category | Covered? | Diagram(s) | Evidence |
-|---|----------|----------|------------|----------|
-| 1 | External Entities | YES | L1, L2, L3 | User, GitHub, npm Registry, Public ECR as `:::external` / `:::externalDep` |
-| 2 | Processes | YES | L1, L2, L3 | ClientALB, ServerALB, ClientECS, ServerECS, SNS as `([...])` stadiums |
-| 3 | Data Stores | YES | L1, L2, L3 | DynamoDB, S3Assets, S3Pipeline, ECR, CloudWatch as `[(...)]` cylinders |
-| 4 | Trust Boundaries | YES | L2 | Internet, VPC, Public Subnets, Private Client/Server Subnets, AWS Managed, CI/CD as dashed subgraphs |
-| 5 | Data Flow Labels | YES | L1, L2, L3 | Every edge labeled with protocol, data type, sensitivity |
-| 8 | Component Metadata | YES | L1, L2 | Tech stack, security features, managed/self-managed in node labels |
-| 9 | Identity Elements | YES | L2 | ECSExecRole, ECSTaskRole, DevOpsRole, CodeDeployRole as `{...}:::identity` diamonds |
-| 10 | Secrets/Key Mgmt | YES | L3 | GitHubToken, TFState as `{{...}}:::secrets` hexagons in RESTRICTED zone |
-| 11 | Control/Data Plane | YES | L1, L2 | CI/CD edges use `[CTRL]` and `[BUILD]` prefixes; user traffic uses default data flow |
-| 13 | Control Indicators | YES | L2 | SG_ALB, SG_ECS_Client, SG_ECS_Server, Autoscaling as `[[...]]:::control` subroutines |
-| 14 | Data Classification | YES | L3 | PUBLIC, INTERNAL, RESTRICTED zones as colored subgraphs |
-| 15 | Encryption State | YES | L3 | Every edge labeled with `[ENC]` or `[PLAIN]` |
-| 16 | Network Zones | YES | L1, L2 | VPC 10.120.0.0/16, Public Subnets, Private Client/Server Subnets as subgraphs with CIDR |
-| 17 | Deployment Pipeline | YES | L1, L2, L3 | CodePipeline, CodeBuild, CodeDeploy as `[/...../]:::pipeline` parallelograms |
-| 18 | External Dependencies | YES | L1, L2 | GitHub, npm Registry, Public ECR as `:::externalDep` |
-| 21 | Typed Edges | YES | L1, L2, L3 | Data flow, [CTRL], [BUILD], [ASYNC], [KEY] edge types used |
-| 22 | Ownership Markers | YES | L1 | `[vendor:AWS]`, `[vendor:GitHub]`, `[vendor:npm]`, `[self-managed]`, `[managed]` in labels |
-| 24 | Version Stamp | YES | L1, L2, L3 | `%% Version:` comment at top of each diagram |
-| 25 | Density Compliance | YES | All | L1: ~22 nodes in 4 subgraphs; L2: ~24 nodes in 6 subgraphs; L3: ~18 nodes in 5 subgraphs. No subgraph exceeds 15 nodes. |
+| recon id | Element | L1 | L2 | L3 |
+|----------|---------|:--:|:--:|:--:|
+| C1 | Client SPA | ✓ | (in C7) | — |
+| C2 | Server API | ✓ | (in C8) | — |
+| C3 | Swagger / API docs | ✓ | — | — |
+| C4 | Client ALB | ✓ | ✓ | — |
+| C5 | Server/API ALB | ✓ | ✓ | ✓ |
+| C6 | ECS Cluster | ✓ | ✓ | — |
+| C7 | ECS client service | ✓ | ✓ | — |
+| C8 | ECS server service | ✓ | ✓ | ✓ |
+| C9 | CodePipeline | ✓ | ✓ | ✓ |
+| C10 | CodeBuild | ✓ | ✓ | ✓ |
+| C11 | CodeDeploy | ✓ | ✓ | — |
+| C12 | Autoscaling + CloudWatch | ✓ | — | — |
+| C13 | SNS topic | ✓ | — | — |
+| D1-D6 | Data stores | ✓ | D1,D2,D4,D6 | ✓ (all 6) |
+| E1-E5 | Entry points | edges from R0/X1/health-check | ingress edges | ingress edges |
+| TB1-TB6 | Trust boundaries | (network zones) | ✓ (all 6 subgraphs) | (data zones) |
+| R0 | Anonymous user | ✓ | ✓ | ✓ |
+| R1-R4 | IAM roles | (implicit in edges) | ✓ (identity diamonds) | — |
+| R5 | Terraform operator | ✓ | ✓ | ✓ |
+| X1 | GitHub + PAT | ✓ | ✓ | ✓ |
+| X2,X3 | npm deps | (feed C10 build) | — | — |
+| X4 | Docker base images | ✓ | — | — |
+| X5 | CodeBuild image | (C10 label) | (C10 label) | — |
 
-**Categories deferred to Phase 7 (risk overlay)**:
-- 6: Risk Color Coding
-- 7: Threat Annotations
-- 12: Attack Paths
-- 23: Machine-Parseable Annotations
+Entry points E1-E5 are represented as edges rather than nodes (they are ingress interfaces): E1 `R0→C4`, E2 `R0→C5`, E3 `C2→C3` + public reach via C5, E4 `X1→C9`, E5 `HC→C8`. X2/X3/X5 (npm/build-image supply chain) are captured in the CodeBuild node label and the `X4→C10` base-image edge; they surface as first-class `:::externalDep` nodes in the Phase-7 SBOM/dependency visual, not the structural DFD.
 
-**Categories not applicable**:
-- 19: Tenant Boundaries (single-tenant demo)
-- 20: Region Boundaries (single-region deployment)
+## Visual Completeness — Phase 2 Coverage
 
-**Category 26 (Companion Diagrams)**: Attack trees will be produced in Phase 5; auth sequence (documenting the absence of auth) will be produced in Phase 3.
+Structural categories from `visual-completeness-checklist.md` (risk-overlay-only categories #6/#7/#12/#23 and companion #26 are correctly deferred to Phase 7):
+
+| # | Category | Covered | Where |
+|---|----------|:-------:|-------|
+| 1 | External Entities | ✓ | R0, R5, X1, X4 (L1); R0/R5 (L2/L3) |
+| 2 | Processes | ✓ | C1-C13 stadiums/parallelograms (L1) |
+| 3 | Data Stores | ✓ | D1-D6 cylinders (L1, L3) |
+| 4 | Trust Boundaries | ✓ | TB1-TB6 dashed subgraphs (L2) |
+| 5 | Data Flow Labels | ✓ | typed edges w/ protocol + sensitivity (all layers) |
+| 8 | Component Metadata | ✓ | tech + ownership on every process/store (L1) |
+| 9 | Identity Elements (IAM) | ✓ | R1-R4 identity diamonds (L2) |
+| 11 | Control vs Data Plane | ✓ | `-.-> [CTRL]` vs `-->`; CI/CD plane subgraph (L1/L2) |
+| 13 | Control Indicators | ✓ | SG, private-subnet chaining, health check, blue/green (L2) |
+| 14 | Data Classification Markers | ✓ | 3 zone subgraphs (L3) |
+| 15 | Encryption State | ✓ | `[ENC]`/`[PLAIN]` on every edge (L3) |
+| 16 | Network Zones | ✓ | VPC 10.120.0.0/16 + public/private subnets (L1) |
+| 17 | Deployment Pipeline | ✓ | C9-C11 parallelograms + ECR (L1/L2) |
+| 18 | External Dependency Markers | ✓ | GitHub X1, base images X4 double-border (L1) |
+| 21 | Typed Edges | ✓ | all edges use §4 typed prefixes |
+| 22 | Ownership Markers | ✓ | `[managed]`/`[self-managed]`/`[vendor:X]` (L1) |
+| 24 | Version Stamp | ✓ | `%% Version: ... | Layer: L{N}` on all 3 |
+| 25 | Density Compliance | ✓ | ≤23 core nodes/layer, subgraph-grouped |
+| 10 | Secrets/Key Mgmt | ✓ (absence) | PAT hexagon "no vault/KMS" (L3) — recon marked N/A; drawn as the finding it is |
+| 6,7,12,23 | Risk color / threat annots / attack paths / machine-parseable | deferred | **Phase 7 (L4)** |
+| 26 | Companion (attack tree) | deferred | **Phase 5/7** |
+| 19,20 | Tenant / Region boundaries | N/A | single-tenant, single-region (justified in checklist) |
+
+**Structural coverage: 18/18 applicable Phase-2 categories, plus #10 drawn as an explicit absence.**
+
+## Structural Acceptance Gate (self-check)
+
+| Gate item | Status | Evidence |
+|-----------|:------:|----------|
+| Layers present per scaling (13 comp → L1,L2,L3 now; L4 Phase 7) | PASS | 3 `mermaid` blocks, each stamped `Layer: L1/L2/L3` |
+| Every edge typed + annotated (protocol + sensitivity; `[ENC]`/`[PLAIN]` where it varies) | PASS | 0 bare edges; 100% of edges carry a `[PUBLIC|INTERNAL|CONFIDENTIAL|RESTRICTED]` and/or typed prefix; L3 every edge carries `[ENC]`/`[PLAIN]` |
+| Trust boundaries drawn (all inventory boundaries appear) | PASS | TB1-TB6 as dashed subgraphs in L2 |
+| Component metadata + ownership on processes/stores | PASS | every L1 stadium/cylinder carries tech + `[managed]`/`[self-managed]`/`[vendor:X]` |
+| Legend + version stamp on every diagram | PASS | per-layer Legend subgraph + `%% Version:` stamp |
+| No risk content in Phase 2 | PASS | no `:::highRisk`/`medRisk`/`lowRisk`, no `⚠`/L×I, no attack-path overlays |
+| Renders clean (no stub) | PASS | mmdc render: L1 1.37 MB, L2 1.08 MB, L3 0.59 MB PNG |
 
 ---
 
@@ -424,39 +366,33 @@ Coverage of applicable categories in structural diagrams (L1 + L2 + L3):
 ### Process Health
 | Metric | Value |
 |--------|-------|
-| Phase | 2 (Structural Diagram) |
-| Files Read | 9 (01-reconnaissance.md, visual-completeness-checklist.md, mermaid-spec.md, mermaid-layers.md, mermaid-diagrams.md, mermaid-templates.md, mermaid-review-checklist.md, mermaid-config.json, diagram-specialist.md) |
-| Files Written | 1 (02-structural-diagram.md) |
-| Diagrams Produced | 3 (L1, L2, L3) |
-| Errors Encountered | 0 |
-| Self-Assessed Output Quality | HIGH |
+| Inputs read | 01-reconnaissance.md, recon.json, visual-completeness-checklist.md, SKILL.md (Phase 2 + gate), mermaid-spec.md, mermaid-layers.md, mermaid-templates.md, mermaid-review-checklist.md, mermaid-config.json, diagram_checks.py |
+| Layers produced | 3 (L1 Architecture, L2 Trust & Identity, L3 Data) |
+| Files written | 1 (02-structural-diagram.md); 3 `.mmd` + 3 `.png` validation artifacts in scratchpad |
+| Errors encountered | 0 |
+| Self-assessed output quality | HIGH |
 
 ### Diagram Complexity
-| Diagram | Nodes | Edges | Subgraphs |
-|---------|-------|-------|-----------|
-| L1 Architecture | 22 | 21 | 5 (VPC, PubSubnets, PrivClient, PrivServer, AWSManaged, CICDPipeline, Legend) |
-| L2 Trust and Identity | 26 | 32 | 8 (Internet, VPC, PubSubnets, PrivClient, PrivServer, AWSManaged, CICD, IAMIdentities, Legend) |
-| L3 Data | 18 | 19 | 6 (PublicZone, InternalZone, RestrictedZone, DataPlane, ControlPlane, Legend) |
+| Layer | Core nodes | Edges | Subgraphs | Notes |
+|-------|:----------:|:-----:|:---------:|-------|
+| L1 Architecture | 23 (4 external, 13 comp, 6 store) | 26 | 4 (VPC, PUB, PRIV, CICD) + Legend | 8 BUILD, 1 ADMIN, 1 ASYNC, rest data/CTRL |
+| L2 Trust & Identity | 23 (2 principal, 4 IAM, 3 ALB/task, 3 pipeline, 3 store, 4 control, 4 misc) | 18 | 6 trust boundaries (TB1-TB6) + Legend | 4 AUTH, 2 ADMIN, 1 KEY, rest CTRL/data |
+| L3 Data | 14 (2 external, 1 dep, 4 process, 6 store, 1 secret) | 11 | 3 classification zones + Legend | 3 KEY, all edges carry `[ENC]`/`[PLAIN]` |
 
-### Mermaid Syntax Issues
-- None encountered. All diagrams use valid flowchart TD syntax with supported shapes, edge types, and classDef declarations.
-- Avoided `note` blocks (invalid in flowchart mode per mermaid-spec.md section 9).
-- Avoided `~~>` wavy arrows (invalid Mermaid syntax).
-- All special characters in labels wrapped in double quotes where needed.
+Total across layers: 55 edges, 13 content subgraphs. Each layer stays under the 25-node / 15-per-subgraph density limits (spec §6).
 
-### Visual Completeness
-- **Categories covered**: 19/24 applicable categories represented in structural diagrams
-- **Categories deferred to Phase 7**: 4 (Risk Color Coding, Threat Annotations, Attack Paths, Machine-Parseable Annotations) -- these are risk-overlay-only categories
-- **Categories deferred to companion diagrams**: 1 (Companion Diagrams -- Phase 3 auth sequence, Phase 5 attack trees)
-- **Categories not applicable**: 2 (Tenant Boundaries, Region Boundaries)
+### Mermaid Syntax Issues Encountered
+- **None material.** All three layers parsed and rendered on the first CLI pass (`@mermaid-js/mermaid-cli` + `mermaid-config.json`, `-w 3000 --scale 2`).
+- Precautions taken up front to avoid known pitfalls: every node/edge label double-quoted (labels contain `(`, `/`, `:`, `*`, `.`); `classDef` blocks placed at end-of-diagram; `linkStyle` indices counted against edge-statement order only (verified in-range by successful render — an out-of-range index would have errored); legend edge-type swatches written as quoted rectangle text (not real arrows) so they neither render as stray edges nor pollute the typed-edge fraction.
+- Nesting depth: L2 has one 3-level branch (TB5 › TB6 › TB2); rendered cleanly, so no flattening needed (spec §2 advises flatten "where possible", not mandatory).
 
-### Design Tradeoffs
-1. **Node consolidation**: Combined CodeBuild Server+Client, CodeDeploy Server+Client, and ECR Server+Client repos into single nodes to stay within density limits. This trades per-component granularity for diagram readability. The security properties of the paired components are identical, so no security-relevant information is lost.
-2. **ECS Cluster omission**: The ECS Cluster is an organizational resource, not a distinct data flow participant. Its security context (container insights disabled) is documented in reconnaissance and will be referenced in threat identification.
-3. **NAT Gateway omission as a node**: The NAT Gateway is a network infrastructure component. Its security relevance (single AZ, traffic to AWS services via internet) is captured in the VPC subgraph context and will be addressed in threat identification.
-4. **L2 density**: The L2 diagram is the densest at 26 nodes across 8 subgraphs. This is at the upper bound of the 25-node guideline. Given that splitting would fragment the trust relationship view, the single diagram was retained. All subgraphs remain under 15 nodes.
+### Visual Completeness Categories — Covered vs Skipped
+- **Covered (18 structural + #10 as absence)**: see coverage table above. Highest-signal visuals for this system are all present — `[PLAIN]` on both public ALBs (L1/L3), the Internet→public-ALB boundary on *both* ALBs (L2 TB1), the CI/CD supply-chain boundary (L2 TB4), and the `iam:PassRole *` task/DevOps roles (L2 R2/R3).
+- **Deferred to Phase 7 (correct, not skipped)**: #6 Risk Color, #7 Threat Annotations, #12 Attack Paths, #23 Machine-Parseable Annotations (all L4), #26 Companion attack tree (Phase 5/7). Phase 2 forbids risk content.
+- **N/A (justified in recon/checklist)**: #19 Tenant (single-tenant), #20 Region (single-region).
 
-### Assumptions
-1. The `InternetBoundary` subgraph in L2 is empty because external entities (User, GitHub) are outside all boundaries. The boundary is shown for completeness to mark the trust transition.
-2. The Server ECS service's cross-origin API call from Client ECS is shown as routing through the Server ALB, matching the actual network path (the Vue.js SPA makes HTTP requests to the Server ALB's public URL).
-3. AWS SDK calls from Server ECS to DynamoDB and S3 are shown as HTTPS [ENC] because the AWS SDK uses HTTPS by default, even though these calls transit the NAT Gateway to reach public AWS endpoints.
+### Self-Assessed Diagram Quality
+- **Structural fidelity — HIGH.** All 13 components, 6 stores, 5 entry points, 6 trust boundaries, 6 roles, 5 external deps are represented under canonical recon ids; the one non-obvious topology fact (backend API ALB is Internet-reachable directly from the browser) is drawn, not smoothed over.
+- **Spec compliance — HIGH.** Passes every structural acceptance-gate item and the deterministic `diagram_checks.py` structural requirements (layer stamps, ≥90% edges labeled / ≥60% annotated — actual 100%, trust-boundary subgraphs present, ownership markers on L1 process/store nodes, legend + version stamp + classDef).
+- **Known limitation.** `linkStyle` edge-coloring is index-based and correct-by-render, but if a future edit reorders edges the indices must be recounted; noted for the Phase-7 L4 author who will copy the L1 structure. X2/X3/X5 supply-chain deps are folded into node labels/edges here by design (structural DFD) and become first-class nodes in the Phase-7 SBOM visual.
+- **Handoff.** L4 (Phase 7) should copy the L1 node/edge skeleton verbatim and layer risk classes + `⚠ STRIDE · L×I` annotations + attack-path `==>` overlays onto it; L2/L3 boundaries and zones carry forward unchanged. Specialists (privacy/compliance/code-review) can cite any node by its recon id.

@@ -1,0 +1,46 @@
+flowchart TD
+    %% Version: 2026-07-11 | Phase: 7 | System: AWS ECS Fullstack Demo | Type: SBOM
+    App(["AWS ECS Fullstack App\nVue 2 SPA + Node/Express API"]):::neutral
+    Server(["Server API\nNode.js · Express 4"]):::neutral
+    Client(["Client SPA\nVue.js 2 · Nginx"]):::neutral
+    Build[/"CodeBuild\nstandard:4.0 · privileged_mode"/]:::pipeline
+
+    App --> Server
+    App --> Client
+    App -->|"[BUILD] pipeline source (PAT)"| GitHub
+
+    %% Supply-chain root: GitHub source + PAT (X1)
+    GitHub["GitHub repo + OAuth PAT\n(X1) no manifest\n⚠ long-lived, no rotation (TM-012)"]:::riskDep
+
+    %% Server npm deps (X2, manifest: Code/server/package-lock.json)
+    Server -->|"npm · package-lock.json (X2)"| AwsSdk["aws-sdk 2.x\n⚠ v2 maintenance/EOL (TM-018)"]:::riskDep
+    Server --> Express["express 4.x"]:::externalDep
+    Server --> Cors["cors"]:::externalDep
+    Server --> SwaggerUi["swagger-ui-express\n(publishes /api/docs, TM-003)"]:::externalDep
+    Server --> SwaggerJsdoc["swagger-jsdoc"]:::externalDep
+    Server --> Artillery["artillery (load-test dep)"]:::externalDep
+
+    %% Client npm deps (X3, manifest: Code/client/package-lock.json)
+    Client -->|"npm · package-lock.json (X3)"| Vue["vue 2.x\n⚠ EOL, no SCA (TM-018)"]:::riskDep
+    Client --> BootstrapVue["bootstrap-vue\n⚠ tied to Vue 2 EOL (TM-018)"]:::riskDep
+    Client --> Axios["axios"]:::externalDep
+
+    %% Base images (X4, no manifest) — pulled at build
+    Build --> NodeBase["public.ecr.aws bitnami/node:latest\n(X4) ⚠ unpinned :latest (TM-018)"]:::riskDep
+    Build --> NginxBase["nginx:latest\n(X4) ⚠ unpinned :latest (TM-018)"]:::riskDep
+    Server -.->|"[BUILD] docker build"| Build
+    Client -.->|"[BUILD] docker build"| Build
+
+    %% CodeBuild managed image (X5)
+    Build --> CbImage["aws/codebuild/standard:4.0\n(X5) ⚠ outdated + privileged (TM-015)"]:::riskDep
+
+    subgraph Legend["Legend — SBOM / Dependency"]
+        SL1["Dependency (manifest-backed)"]:::externalDep
+        SL2["Risky dep (EOL / unpinned / no scan)"]:::riskDep
+        SL3["App / build node"]:::neutral
+    end
+
+    classDef neutral fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
+    classDef externalDep fill:#cce5ff,stroke:#004085,stroke-width:1px,color:#000
+    classDef riskDep fill:#ffcccc,stroke:#cc0000,stroke-width:2px,color:#000
+    classDef pipeline fill:#d5dbdb,stroke:#7f8c8d,stroke-width:1px,color:#000

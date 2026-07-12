@@ -1,0 +1,31 @@
+flowchart TD
+    %% Version: 2026-07-11 | Phase: 7 | System: AWS ECS Fullstack Demo | Type: Attack Tree | Chain: KC01
+    Goal(["GOAL (KC01): Deny service + inflict AWS cost\nwith zero credentials"]):::highRisk
+
+    AND1{AND}
+    Goal --> AND1
+
+    SG1(["Sub-goal: reach the API anonymously"]):::neutral
+    SG2(["Sub-goal: amplify beyond capacity/budget"]):::neutral
+    AND1 --> SG1
+    AND1 --> SG2
+
+    OR1{OR}
+    SG1 --> OR1
+    T3["TM-003 · T1595: enumerate via /api/docs\nCWE-200 (Swagger public)"]:::medRisk
+    T1["TM-001 · T1190: unauth GET /api/getAllProducts\nCWE-306 (no authN/authZ)"]:::highRisk
+    OR1 --> T3
+    OR1 --> T1
+
+    AND2{AND}
+    SG2 --> AND2
+    T4["TM-004 · T1498: no WAF / rate limit\nCWE-770 (flood, 4-task cap)"]:::highRisk
+    T5["TM-005 · T1498: full-table scan per call\nCWE-400 (PAY_PER_REQUEST cost DoS)"]:::highRisk
+    AND2 --> T4
+    AND2 --> T5
+
+    classDef highRisk fill:#ffcccc,stroke:#cc0000,stroke-width:2px,color:#000
+    classDef medRisk fill:#ffe6cc,stroke:#cc7a00,stroke-width:2px,color:#000
+    classDef lowRisk fill:#ccffcc,stroke:#008000,stroke-width:2px,color:#000
+    classDef noFindings fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
+    classDef neutral fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
