@@ -11,6 +11,11 @@ from __future__ import annotations
 import re
 from typing import Any
 
+# Technique-id regexes. ATTACK_TID matches an ATT&CK T#### only when it is NOT preceded by a letter or
+# a dot — so the `T0051` inside an ATLAS `AML.T0051` id never registers as an ATT&CK technique (the two
+# layer detectors stay separate; determinism-boundary constraint). ATLAS_TID is the ATLAS technique shape.
+ATTACK_TID = r"(?<![A-Za-z.])T\d{4}(?:\.\d{3})?"
+ATLAS_TID = r"AML\.T\d{4}(?:\.\d{3})?"
 EDGE_OPS = r"(?:-->|-\.->|--o|==>|--x|<-->)"
 SENSITIVITY = r"\[(?:PUBLIC|INTERNAL|CONFIDENTIAL|RESTRICTED)\]"
 TYPED_PREFIX = r"\[(?:CTRL|AUTH|KEY|ADMIN|ASYNC|REPL|BUILD)\]"
@@ -105,7 +110,8 @@ def _typed(blocks: list[str], *types: str) -> list[str]:
     return [b for b in blocks if any(re.search(p, b.lower()) for p in pats)]
 
 
-def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, findings_doc: dict | None) -> dict[str, Any]:
+def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, findings_doc: dict | None,
+                      coverage: dict | None = None) -> dict[str, Any]:
     """Presence/shape/consistency of the analytical & communication visuals.
 
     Each visual is gated by a precondition derived from SKILL-DECLARED facts (kill_chains, roles,
@@ -137,7 +143,7 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
             D("no-attack-tree", f"{len(kill_chains)} kill chains declared but no attack tree (flowchart with AND/OR gates)")
         else:
             present.append("attack-tree")
-            extra = {t for b in trees for t in re.findall(r"T\d{4}(?:\.\d{3})?", b)} - all_mitre
+            extra = {t for b in trees for t in re.findall(ATTACK_TID, b)} - all_mitre
             if extra:
                 warnings.append(f"attack tree references techniques absent from findings: {sorted(extra)[:5]}")
             if len(trees) < min(len(kill_chains), 5):
@@ -199,17 +205,53 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
             if miss:
                 warnings.append(f"{len(miss)} scored finding(s) not plotted on heat map: {miss[:5]}")
 
-    # MITRE ATT&CK technique layer — gate: >=1 finding with a technique
+    # MITRE ATT&CK technique layer — gate: >=1 finding with a technique.
+    # The ATT&CK layer is told apart from the ATLAS layer ONLY by domain: an atlas-atlas block is
+    # EXCLUDED from `nav`, and the ATT&CK T\d{4} regex uses ATTACK_TID (no-letter/no-dot lookbehind) so
+    # the `T0051` inside an `AML.T0051` ATLAS id is never read as an ATT&CK technique (design decision 2).
     if all_mitre:
-        nav = [b for b in re.findall(r"```json\s(.*?)```", report_text, re.DOTALL) if '"techniques"' in b and '"domain"' in b]
+        nav = [b for b in re.findall(r"```json\s(.*?)```", report_text, re.DOTALL)
+               if '"techniques"' in b and '"domain"' in b and '"atlas-atlas"' not in b]
         att = _section(report_text, "att&ck", "attack navigator", "mitre att", "technique heatmap")
-        if not nav and not re.search(r"T\d{4}", att):
+        if not nav and not re.search(ATTACK_TID, att):
             D("no-attack-layer", "findings map to ATT&CK techniques but no ATT&CK technique layer/heatmap rendered")
         else:
             present.append("attack-layer")
-            shown = {t for src in ([att] + nav) for t in re.findall(r"T\d{4}(?:\.\d{3})?", src)}
+            shown = {t for src in ([att] + nav) for t in re.findall(ATTACK_TID, src)}
             if all_mitre - shown:
                 warnings.append(f"ATT&CK layer missing techniques from findings: {sorted(all_mitre - shown)[:5]}")
+
+    # MITRE ATLAS technique layer — gate: declared has_ai_ml OR >=1 finding with an ATLAS id.
+    # Reuses the ATT&CK Navigator emitter with domain=="atlas-atlas"; discriminated from the ATT&CK
+    # layer ONLY by that domain + the AML. prefix. Grounding, well-formedness, and abstention mirror the
+    # ATT&CK block: the shown technique ids MUST be a subset of the findings' own atlas[] ids (never
+    # "technique X must appear"); with no AI surface the whole block is skipped.
+    all_atlas = {a for f in findings for a in (f.get("atlas") or [])}
+    has_ai_ml = bool((coverage or {}).get("context", {}).get("has_ai_ml"))
+    if all_atlas or has_ai_ml:
+        atlas_navs = [b for b in re.findall(r"```json\s(.*?)```", report_text, re.DOTALL)
+                      if '"atlas-atlas"' in b]
+        if all_atlas and not atlas_navs:
+            D("no-atlas-layer", f"findings map to {len(all_atlas)} ATLAS technique(s) but no ATLAS Navigator "
+                                'layer (json with domain "atlas-atlas") rendered')
+        elif atlas_navs:
+            present.append("atlas-layer")
+            tids = {t for src in atlas_navs for t in re.findall(r'"techniqueID"\s*:\s*"([^"]+)"', src)}
+            # well-formedness: every techniqueID on the layer is AML.T#### shaped
+            malformed = {t for t in tids if not re.fullmatch(ATLAS_TID, t)}
+            if malformed:
+                D("malformed-atlas-layer-id", f"ATLAS layer techniqueID(s) not AML.T#### shaped: {sorted(malformed)[:5]}")
+            shown = {t for t in tids if re.fullmatch(ATLAS_TID, t)}
+            # grounding: shown ids MUST be a subset of the distinct findings' atlas[] ids
+            ungrounded = shown - all_atlas
+            if ungrounded:
+                D("atlas-layer-ungrounded",
+                  f"ATLAS layer shows technique(s) no finding maps to: {sorted(ungrounded)[:5]}")
+            # every sub-technique's parent technique must be present on the layer
+            orphan = {t for t in shown if "." in t and re.sub(r"\.\d{3}$", "", t) not in shown}
+            if orphan:
+                D("atlas-layer-orphan-subtechnique",
+                  f"ATLAS sub-technique(s) shown without their parent technique: {sorted(orphan)[:5]}")
 
     # RBAC / authorization matrix — gate: >=2 declared roles
     if len(roles) >= 2:
@@ -253,7 +295,8 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
             "stats": {"analytical_present": present, "kill_chains": len(kill_chains), "roles": len(roles)}}
 
 
-def check(report_text: str, recon: dict | None, findings_doc: dict | None) -> dict[str, Any]:
+def check(report_text: str, recon: dict | None, findings_doc: dict | None,
+          coverage: dict | None = None) -> dict[str, Any]:
     defects: list[dict[str, str]] = []
     warnings: list[str] = []
 
@@ -344,7 +387,7 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None) -> di
                 warn(f"{len(hi_tm) - len(covered_hi)}/{len(hi_tm)} HIGH+ findings not annotated in L4 overlay")
 
     # analytical & communication visuals (gated by skill-declared facts; structure-only)
-    an = analytical_checks(report_text, blocks, recon, findings_doc)
+    an = analytical_checks(report_text, blocks, recon, findings_doc, coverage)
     defects.extend(an["defects"])
     warnings.extend(an["warnings"])
 
@@ -370,8 +413,11 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None) -> di
 if __name__ == "__main__":
     import json
     import sys
+    from pathlib import Path
     rd = sys.argv[1]
     rep = open(f"{rd}/report.md").read()
     recon = json.load(open(f"{rd}/recon.json"))
     findings = json.load(open(f"{rd}/findings.json"))
-    print(json.dumps(check(rep, recon, findings), indent=2))
+    cov_path = f"{rd}/coverage.json"
+    coverage = json.load(open(cov_path)) if Path(cov_path).exists() else None
+    print(json.dumps(check(rep, recon, findings, coverage), indent=2))

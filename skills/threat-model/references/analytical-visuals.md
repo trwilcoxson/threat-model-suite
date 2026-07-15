@@ -87,6 +87,80 @@ invented in the layer that no finding maps to.
 
 ---
 
+## §3a MITRE ATLAS Technique Layer  *(when `has_ai_ml`)*
+
+The adversarial-ML counterpart of §3, for AI/ML targets. MITRE ATLAS ships an ATT&CK-Navigator-compatible
+layer schema, so this reuses the **same Navigator JSON emitter** — the only load-bearing differences are
+`domain: "atlas-atlas"` and the `AML.` technique-id prefix. Produced only when `coverage.context.has_ai_ml`
+is true; on a non-AI target it is not emitted and every other artifact (including the §3 ATT&CK layer) is
+unchanged.
+
+```markdown
+## MITRE ATLAS Technique Coverage
+
+| ATLAS Tactic | Technique | ID | Findings |
+|--------------|-----------|----|----------|
+| Execution | LLM Prompt Injection | AML.T0051 | TM-007 |
+| Persistence | Poison Training Data | AML.T0020 | TM-009 |
+| Exfiltration | Exfiltration via ML Inference API | AML.T0024 | TM-011 |
+```
+
+```json
+{
+  "name": "ATLAS layer — ExampleAIApp",
+  "domain": "atlas-atlas",
+  "techniques": [
+    {"techniqueID": "AML.T0051", "score": 20, "comment": "TM-007 (indirect prompt injection)"},
+    {"techniqueID": "AML.T0020", "score": 15, "comment": "TM-009 (RAG poisoning)"}
+  ]
+}
+```
+
+Grounding rule (identical to §3, over the `atlas[]` field): the technique ids shown are a **subset of the
+distinct `atlas[]` ids across the findings** — no technique on the layer that no finding maps to, and every
+sub-technique's parent technique also present. Select ids from the MITRE ATLAS reference table in
+`frameworks.md`. The eval (`diagram_checks.analytical_checks`) detects this layer **only** by
+`domain: "atlas-atlas"` + the `AML.` prefix and never runs the ATT&CK `T####` regex over an ATLAS id.
+
+---
+
+## §3b OWASP-LLM Top-10 Coverage Checklist  *(when `has_ai_ml`)*
+
+A coverage **checklist**, **not a second diagram** — OWASP-LLM content is a subset of ATLAS, so this is a
+projection of the ATLAS layer, rendered through the **same table renderer as the §1 STRIDE matrix**. Fixed
+10-row enum (LLM01–LLM10). Each row resolves to a finding id / `n-a` / `clean` by asking "does any finding's
+own `atlas[]` id fall in this class's crosswalk set?" (the OWASP-LLM→ATLAS crosswalk in `frameworks.md`). A
+row whose crosswalk set matches no finding is a legitimate `n-a` / `clean` — honest abstention.
+
+- **Header**: the first column MUST be labeled `OWASP-LLM` (this is how the eval locates the checklist and
+  scopes the `malformed-owasp-llm` id guardrail to it — a stray OWASP-category cell elsewhere is not
+  mis-read).
+- **Cells**: a finding id (`TM-NNN`), `n-a` (class inapplicable to this system), or `clean` (in scope,
+  examined, no finding). No blank cells.
+
+```markdown
+## OWASP-LLM Top-10 Coverage Checklist
+
+| OWASP-LLM | Class | Coverage |
+|-----------|-------|----------|
+| LLM01:2025 | Prompt Injection | TM-007 |
+| LLM02:2025 | Sensitive Information Disclosure | TM-011 |
+| LLM03:2025 | Supply Chain | clean |
+| LLM04:2025 | Data and Model Poisoning | TM-009 |
+| LLM05:2025 | Improper Output Handling | clean |
+| LLM06:2025 | Excessive Agency | n-a |
+| LLM07:2025 | System Prompt Leakage | clean |
+| LLM08:2025 | Vector and Embedding Weaknesses | TM-009 |
+| LLM09:2025 | Misinformation | n-a |
+| LLM10:2025 | Unbounded Consumption | clean |
+```
+
+Use the verified official `LLM01:2025`–`LLM10:2025` ids from the OWASP-LLM Top-10 table in `frameworks.md`;
+the eval format-checks each id against `^LLM(0[1-9]|10):2025$` and never requires any particular class to be
+covered.
+
+---
+
 ## §4 Authorization (RBAC) Matrix  *(when ≥2 roles/principals)*
 
 Roles × resources, with an explicit `anonymous` / unauthenticated row, marking `allow` / `deny` /

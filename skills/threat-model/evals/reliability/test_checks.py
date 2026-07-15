@@ -276,6 +276,117 @@ def t_control_matrix():
     assert any(d["code"] == "no-control-matrix" and d["layer"] == "diagram" for d in nomatrix)
 
 
+def _atlas_layer(*ids):
+    """A minimal ATLAS Navigator layer (domain atlas-atlas) showing the given technique ids."""
+    techs = ", ".join('{"techniqueID": "%s", "score": 10}' % i for i in ids)
+    return "## MITRE ATLAS Technique Layer\n```json\n" \
+           '{ "domain": "atlas-atlas", "techniques": [' + techs + "] }\n```\n"
+
+
+def t_atlas_layer():
+    """ATLAS layer grounding (T4-03): shown technique ids MUST be a subset of the findings' own
+    atlas[] ids; discriminated by domain atlas-atlas + AML. prefix; skipped when there is no AI surface."""
+    ai = {"context": {"has_ai_ml": True}}
+    fdoc = {"findings": [{"id": "TM-001", "atlas": ["AML.T0051"]}]}
+
+    def codes(report, fd=fdoc, cov=ai):
+        return {d["code"] for d in dc.analytical_checks(report, [], _recon(1, 0), fd, cov)["defects"]}
+
+    # grounded + well-formed -> no atlas defect, layer registered as present
+    ok = dc.analytical_checks(_atlas_layer("AML.T0051"), [], _recon(1, 0), fdoc, ai)
+    okc = {d["code"] for d in ok["defects"]}
+    assert "atlas-layer-ungrounded" not in okc and "malformed-atlas-layer-id" not in okc, okc
+    assert "atlas-layer" in ok["stats"]["analytical_present"]
+
+    # ungrounded: a technique on the layer that no finding maps to -> defect
+    assert "atlas-layer-ungrounded" in codes(_atlas_layer("AML.T0051", "AML.T0043"))
+    # malformed techniqueID on the layer (not AML.T#### shaped) -> defect
+    assert "malformed-atlas-layer-id" in codes(_atlas_layer("AML.T999"))
+    # sub-technique shown without its parent technique -> orphan defect
+    sub = {"findings": [{"id": "TM-001", "atlas": ["AML.T0051.000"]}]}
+    assert "atlas-layer-orphan-subtechnique" in codes(_atlas_layer("AML.T0051.000"), fd=sub)
+    # findings declare ATLAS ids but no layer rendered -> no-atlas-layer
+    assert "no-atlas-layer" in codes("# r\n")
+
+    # non-AI run: has_ai_ml false AND no finding declares atlas -> whole block skipped (even if a
+    # stray atlas json block is present), never penalized for the layer's absence.
+    non_ai = dc.analytical_checks(_atlas_layer("AML.T0051"), [], _recon(1, 0),
+                                  {"findings": [{"id": "TM-001"}]}, {"context": {"has_ai_ml": False}})
+    ncodes = {d["code"] for d in non_ai["defects"]}
+    assert not any(c.startswith("atlas-layer") or c == "no-atlas-layer" or c == "malformed-atlas-layer-id"
+                   for c in ncodes), ncodes
+    assert "atlas-layer" not in non_ai["stats"]["analytical_present"]
+    # and no coverage at all (coverage=None) with no atlas ids -> also skipped
+    assert "atlas-layer" not in dc.analytical_checks(_atlas_layer("AML.T0051"), [], _recon(1, 0),
+                                                     {"findings": [{"id": "TM-001"}]})["stats"]["analytical_present"]
+
+
+def _run_codes(report_body, findings=None):
+    """Full run_checks over a synthetic run dir; returns the set of defect codes. The report is padded
+    past the 500-byte floor so run_checks reads it (else report_text is empty)."""
+    with tempfile.TemporaryDirectory() as td:
+        run = Path(td)
+        (run / "recon.json").write_text("{}")
+        fdoc = {"findings": findings or [],
+                "summary_counts": {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0},
+                "no_issue_surface": []}
+        (run / "findings.json").write_text(json.dumps(fdoc))
+        (run / "report.md").write_text(report_body + "\n<!-- " + "pad " * 160 + "-->\n")
+        return {d["code"] for d in checks.run_checks(run, run)["defects"]}
+
+
+def t_atlas_vocab():
+    """Controlled-vocabulary id guardrail (T4-07), keyed on the DECLARED framework field:
+    malformed-atlas over the atlas[] field, malformed-owasp-llm over the OWASP-LLM checklist column."""
+    base = {"id": "TM-001", "title": "t", "stride_lm": ["S"], "likelihood": 3, "impact": 3,
+            "severity": "MEDIUM", "asset_refs": [], "surface_refs": [], "attack_path": "p", "remediation": "r"}
+
+    def fcodes(f):
+        return {d["code"] for d in _cvss_defect_codes(f)}
+
+    # malformed ATLAS id in the atlas[] field -> flagged; a well-formed one passes; absence never flags
+    assert "malformed-atlas" in fcodes({**base, "atlas": ["AML.T99999"]})
+    assert "malformed-atlas" not in fcodes({**base, "atlas": ["AML.T0051"]})
+    assert "malformed-atlas" not in fcodes({**base})
+    assert "malformed-atlas" not in fcodes({**base, "atlas": None})
+    # a bare ATT&CK-shaped token is NOT a valid ATLAS id (keyed on framework, no cross-namespace pass)
+    assert "malformed-atlas" in fcodes({**base, "atlas": ["T1190"]})
+
+    # OWASP-LLM checklist column: a malformed class id -> flagged; the full 2025 ids pass. Detected by
+    # the "OWASP-LLM" header cell, so a finding's OWASP-category cell elsewhere is never mis-read.
+    good_checklist = ("## OWASP-LLM Top-10 Coverage Checklist\n"
+                      "| OWASP-LLM | Class | Coverage |\n"
+                      "|-----------|-------|----------|\n"
+                      "| LLM01:2025 | Prompt Injection | TM-001 |\n"
+                      "| LLM10:2025 | Unbounded Consumption | n-a |\n")
+    assert "malformed-owasp-llm" not in _run_codes(good_checklist)
+    bad_checklist = good_checklist + "| LLM99:2025 | Bogus | clean |\n"
+    assert "malformed-owasp-llm" in _run_codes(bad_checklist)
+    # a bare LLM class id in a NON-checklist table (no OWASP-LLM header) is not flagged (scoping)
+    other_table = ("## Finding Detail\n"
+                   "| Attribute | Value |\n"
+                   "|-----------|-------|\n"
+                   "| OWASP Category | A03:2021 Injection (LLM01/LLM06 indirect) |\n")
+    assert "malformed-owasp-llm" not in _run_codes(other_table)
+
+
+def t_atlas_schema():
+    """Additive atlas[] field: omitted/null validate; a malformed AML.T99999 fails on shape."""
+    schema = schema_checks.load_schema("findings.schema.json")
+    f = {"id": "TM-001", "title": "t", "stride_lm": ["S"], "likelihood": 3, "impact": 3,
+         "severity": "MEDIUM", "asset_refs": [], "surface_refs": [], "attack_path": "p", "remediation": "r"}
+
+    def doc(finding):
+        return {"findings": [finding], "summary_counts": {"LOW": 0, "MEDIUM": 1, "HIGH": 0, "CRITICAL": 0},
+                "no_issue_surface": []}
+
+    assert schema_checks.violations(schema, doc(f)) == [], "omitted atlas must validate"
+    assert schema_checks.violations(schema, doc({**f, "atlas": None})) == [], "null atlas must validate"
+    assert schema_checks.violations(schema, doc({**f, "atlas": ["AML.T0051"]})) == [], "well-formed atlas validates"
+    bad = schema_checks.violations(schema, doc({**f, "atlas": ["AML.T99999"]}))
+    assert any("atlas" in v and "pattern" in v for v in bad), bad
+
+
 def t_schema():
     """Schema conformance: every committed recon/findings manifest still validates."""
     res = schema_checks.check_sample_runs(schema_checks.HERE / "sample-runs")
@@ -287,7 +398,7 @@ def t_schema():
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
-             t_verdict, t_schema]
+             t_atlas_layer, t_atlas_vocab, t_atlas_schema, t_verdict, t_schema]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

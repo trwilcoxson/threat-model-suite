@@ -15,7 +15,7 @@ Define `{output_dir}` as `{project_root}/threat-model-output/` unless the user s
 - **Diagram spec**: [references/mermaid-spec.md](references/mermaid-spec.md) — symbol taxonomy (3 tiers), 8 typed edge types, classDefs, threat annotations, accessibility, ownership markers
 - **Diagram layers**: [references/mermaid-layers.md](references/mermaid-layers.md) — 4-layer separation (L1 Architecture, L2 Trust & Identity, L3 Data, L4 Threat Overlay), scaling rules
 - **Companion diagrams**: [references/mermaid-diagrams.md](references/mermaid-diagrams.md) — attack trees, attack flows, auth sequences, data lifecycle diagrams
-- **Analytical visuals**: [references/analytical-visuals.md](references/analytical-visuals.md) — STRIDE-per-element matrix, L×I risk heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph
+- **Analytical visuals**: [references/analytical-visuals.md](references/analytical-visuals.md) — STRIDE-per-element matrix, L×I risk heat map, MITRE ATT&CK layer, MITRE ATLAS layer + OWASP-LLM Top-10 checklist (when `has_ai_ml`), RBAC matrix, SBOM/dependency graph
 - **Diagram templates**: [references/mermaid-templates.md](references/mermaid-templates.md) — copy-paste-ready templates (SaaS, Event-Driven, K8s), symbol/edge legends
 - **Diagram review checklist**: [references/mermaid-review-checklist.md](references/mermaid-review-checklist.md) — pre-submission quality gates
 - **Frameworks**: [references/frameworks.md](references/frameworks.md) — STRIDE-LM, PASTA, OWASP Risk Rating, MITRE ATT&CK, CWE groups, LINDDUN
@@ -606,6 +606,8 @@ Now that findings are scored and kill chains declared, produce and verify the ri
 - **STRIDE-per-element coverage matrix** — always. Fully populated (every cell a `TM-NNN` / `n/a` / `clean`).
 - **Likelihood×Impact risk heat map** — when any finding is scored. 5×5 grid, every finding at its own (L,I) cell.
 - **MITRE ATT&CK technique layer** — when any finding carries a MITRE id. Technique table; Navigator JSON layer at ≥5 techniques.
+- **MITRE ATLAS technique layer** — when `has_ai_ml` (see analytical-visuals.md §3a). Reuse the ATT&CK Navigator emitter with `domain: "atlas-atlas"` and `AML.T####` ids; the shown ids are a subset of the findings' own `atlas[]` ids. Not produced on non-AI targets.
+- **OWASP-LLM Top-10 coverage checklist** — when `has_ai_ml` (see analytical-visuals.md §3b). Rendered through the STRIDE-matrix table renderer (rows LLM01–LLM10, cells = `TM-NNN` / `n-a` / `clean`, resolved via the crosswalk); **no second diagram**.
 - **Authorization (RBAC) matrix** — when ≥2 roles (declare them in recon `roles[]`, incl. anonymous). Roles × resources, anonymous row.
 - **SBOM / dependency graph** — when external deps are backed by a manifest (set `manifest` on the recon dep). Rooted graph with `:::externalDep` leaves.
 

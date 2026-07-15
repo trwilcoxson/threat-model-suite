@@ -47,6 +47,12 @@ _CVSS_VECTOR_RE = re.compile(r"^AV:([NALP])/AC:([LH])/PR:([NLH])/UI:([NR])$")
 # D3FEND (D3-NTA); a framework_ref that is present but unshaped is flagged, mirroring malformed-cwe.
 _CTL_ID_RE = re.compile(r"^CTL-[0-9]{3}$")
 _FRAMEWORK_REF_RE = re.compile(r"^([A-Z]{2}-[0-9]+(\([0-9]+\))?|D3-[A-Z]+)$")
+# OWASP-LLM Top-10 id vocabulary (LLM01:2025 .. LLM10:2025). The loose shape captures an authored id in
+# the checklist table (the DECLARED framework field); the strict shape validates it. The distinctive LLM
+# prefix cannot collide with ATT&CK T#### / ATLAS AML.T#### ids, so the guardrail is keyed on the
+# framework unambiguously — a bare `T3` OWASP-Agentic token is never read as an ATT&CK technique.
+_OWASP_LLM_LOOSE = re.compile(r"LLM\d+(?::\d+)?")
+_OWASP_LLM_STRICT = re.compile(r"LLM(0[1-9]|10):2025")
 
 
 def exploitability_band(vector: str) -> int:
@@ -189,7 +195,7 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
     covered: set[str] = set()
     counts = {s: 0 for s in SEVERITIES}
     n_findings = 0
-    cwe_total = mitre_total = 0
+    cwe_total = mitre_total = atlas_total = 0
     control_classes = {"mitigated": 0, "accepted-risk": 0, "none": 0, "uncovered": 0}
     controls_total = 0
     fids: set[str] = set()
@@ -258,6 +264,15 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                 mitre_total += 1
                 if not re.fullmatch(r"T\d{4}(\.\d{3})?", m):
                     d.add("consistency", "malformed-mitre", f"{fid}: '{m}'")
+            # AI/ML controlled-vocabulary guardrail — keyed on the DECLARED framework field (the
+            # atlas[] field -> the ATLAS regex), never guessed from the bare token, so an AML.T####
+            # id is never run through the ATT&CK T\d{4} regex. Shape-only, mirroring malformed-mitre;
+            # a missing/null atlas[] is never flagged. Broader ATLAS namespace than the schema's
+            # technique-only field: tactics TA, techniques T, mitigations M, case-studies CS.
+            for a in (f.get("atlas") or []):
+                atlas_total += 1
+                if not re.fullmatch(r"AML\.(TA\d{4}|T\d{4}(\.\d{3})?|M\d{4}|CS\d{4})", a):
+                    d.add("consistency", "malformed-atlas", f"{fid}: '{a}'")
 
             # control coverage (the defensive dual of surface coverage) — reference-free over the
             # finding's OWN emitted facts. A `control` defect layer, NEVER in the production gate:
@@ -329,8 +344,30 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                     d.add("consistency", "killchain-dangling-step",
                           f"{kid}: step '{step}' is not a finding id in findings.json")
 
-    # diagram verification (its own defect layer)
-    diag = diagram_checks.check(raw_report, recon, findings_doc)
+    # AI/ML controlled-vocabulary guardrail (OWASP-LLM) — keyed on the DECLARED framework field: the
+    # OWASP-LLM Top-10 checklist table, identified by an "OWASP-LLM" header cell (never any table that
+    # merely mentions an LLM class in prose, so a finding's OWASP-category cell is not mis-read). Every
+    # LLM-prefixed id in that checklist is validated against the fixed vocabulary, shape only, mirroring
+    # malformed-mitre/atlas. Never requires a particular class to be present.
+    if raw_report:
+        for tbl in diagram_checks._md_tables(raw_report):
+            if not any(re.search(r"owasp[-\s]?llm", c, re.I) for c in tbl["header"]):
+                continue
+            for row in tbl["rows"]:
+                for cell in row:
+                    for tok in _OWASP_LLM_LOOSE.findall(cell):
+                        if not _OWASP_LLM_STRICT.fullmatch(tok):
+                            d.add("consistency", "malformed-owasp-llm", f"OWASP-LLM checklist id '{tok}'")
+
+    # diagram verification (its own defect layer). Coverage carries the has_ai_ml gate for the ATLAS
+    # layer block; loaded softly (coverage has its own checker in coverage_checks) so an absent
+    # coverage.json never adds a defect here.
+    cov_path = run_dir / "coverage.json"
+    try:
+        coverage = json.loads(cov_path.read_text()) if cov_path.exists() else None
+    except (OSError, ValueError):
+        coverage = None
+    diag = diagram_checks.check(raw_report, recon, findings_doc, coverage)
     d.items.extend(diag["defects"])
 
     scores = _scores(d, grounded, ungrounded, surface_ids, covered, findings_doc)
@@ -351,6 +388,7 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
             "ungrounded": ungrounded,
             "cwe_ids": cwe_total,
             "mitre_ids": mitre_total,
+            "atlas_ids": atlas_total,
             "controls": controls_total,
             "control_coverage": control_classes,
             "diagram": diag["stats"],
