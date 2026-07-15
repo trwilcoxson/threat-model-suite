@@ -123,6 +123,46 @@ Likelihood is derived from PASTA attack simulation (Stages 4-5).
 | **4** | High | Straightforward with common tools and basic technical knowledge; few preconditions |
 | **5** | Very High | Trivially exploitable, automatable, no special skills or access needed |
 
+### Decomposed Likelihood — CVSS v3.1 exploitability (optional, auditable)
+
+The 1-5 Likelihood above is the user-facing number. Optionally decompose *why* it is what it is by recording a **CVSS v3.1 exploitability vector** behind it — the same judgment Phase 4.2 already exercises (entry point, preconditions, controls to bypass), captured as four metrics: Attack Vector (AV), Attack Complexity (AC), Privileges Required (PR), User Interaction (UI). Emit it as the canonical string `AV:_/AC:_/PR:_/UI:_` (e.g. `AV:N/AC:L/PR:N/UI:R`). It is **optional** — a threat whose Likelihood was not decomposed omits it rather than inventing metrics.
+
+**Scoping (two decisions, stated explicitly):**
+- Only the CVSS **exploitability** sub-score is adopted to inform Likelihood. The CVSS **impact** sub-score is **not** adopted — Impact stays on the PASTA-derived 1-5 axis below.
+- Because the suite does **not** adopt the CVSS **Scope** metric, Privileges Required uses the **Scope-Unchanged** weights, pinned below.
+
+**Frozen metric weights** (FIRST.org CVSS v3.1 spec):
+
+| Metric | Value → weight |
+|--------|----------------|
+| **AV** Attack Vector | Network `N`=0.85, Adjacent `A`=0.62, Local `L`=0.55, Physical `P`=0.20 |
+| **AC** Attack Complexity | Low `L`=0.77, High `H`=0.44 |
+| **PR** Privileges Required (Scope-Unchanged) | None `N`=0.85, Low `L`=0.62, High `H`=0.27 |
+| **UI** User Interaction | None `N`=0.85, Required `R`=0.62 |
+
+**Exploitability sub-score** = `8.22 × AV × AC × PR × UI`. The fixed maximum is `8.22 × 0.85 × 0.77 × 0.85 × 0.85 = 3.887043` (the normalizer).
+
+**Exploitability → 1-5 band** (normalized quintiles; `frac = sub-score ÷ 3.887043`, `band = min(5, ⌊frac × 5⌋ + 1)`):
+
+| Normalized fraction | Likelihood band |
+|---------------------|-----------------|
+| 0.0 – 0.2 | **1** |
+| 0.2 – 0.4 | **2** |
+| 0.4 – 0.6 | **3** |
+| 0.6 – 0.8 | **4** |
+| 0.8 – 1.0 | **5** |
+
+Worked examples (the eval locks these against drift):
+
+| Vector | sub-score | frac | band |
+|--------|-----------|------|------|
+| `AV:N/AC:L/PR:N/UI:N` | 3.887 | 1.00 | **5** (trivially exploitable) |
+| `AV:N/AC:L/PR:N/UI:R` | 2.835 | 0.73 | **4** |
+| `AV:N/AC:H/PR:L/UI:N` | 1.620 | 0.42 | **3** |
+| `AV:L/AC:H/PR:H/UI:R` | 0.333 | 0.09 | **1** |
+
+This is the **single source** the reference-free eval implements (`evals/reliability/checks.py` `exploitability_band()`); when a finding carries a `cvss_vector`, the eval recomputes the sub-score over that vector and flags a `cvss-likelihood` defect if it does not band to the finding's own stated Likelihood. It is a **consistency relation, not an answer key** — change the vector and the required band changes with it; it never asserts which Likelihood is "correct". The thresholds are **v1 and tunable** — a recalibration is a one-line edit to the table above, which the eval reads as its source of truth.
+
 ### Impact Scoring (1-5)
 
 Impact is derived from PASTA business impact analysis (Stages 6-7). Assess across four dimensions and take the **highest** as the overall impact score:

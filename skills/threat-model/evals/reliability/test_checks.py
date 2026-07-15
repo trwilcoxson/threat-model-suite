@@ -5,6 +5,7 @@ One runnable check per non-trivial fix — each fails loudly if the logic regres
 """
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
 
@@ -165,6 +166,47 @@ def t_verdict():
                          "issues": [{"area": "flows", "severity": "low", "detail": "x"}]}, "diagram_soundness")
 
 
+def _cvss_defect_codes(finding):
+    """Run the full findings pipeline over one finding and return the set of defect codes.
+    Only the cvss_* codes are asserted on; the throwaway run trips unrelated defects we ignore."""
+    with tempfile.TemporaryDirectory() as td:
+        run = Path(td)
+        (run / "recon.json").write_text("{}")
+        fdoc = {"findings": [finding],
+                "summary_counts": {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0},
+                "no_issue_surface": []}
+        (run / "findings.json").write_text(json.dumps(fdoc))
+        (run / "report.md").write_text("stub")
+        out = checks.run_checks(run, run)
+        return out["defects"]
+
+
+def t_cvss():
+    """cvss-likelihood: recompute exploitability over the finding's OWN vector, compare to its OWN band."""
+    # worked examples lock the frameworks.md mapping table against drift
+    assert checks.exploitability_band("AV:N/AC:L/PR:N/UI:N") == 5
+    assert checks.exploitability_band("AV:N/AC:L/PR:N/UI:R") == 4
+    assert checks.exploitability_band("AV:N/AC:H/PR:L/UI:N") == 3
+    assert checks.exploitability_band("AV:L/AC:H/PR:H/UI:R") == 1
+
+    base = {"id": "TM-001", "title": "t", "stride_lm": ["S"], "impact": 3, "severity": "MEDIUM",
+            "asset_refs": [], "surface_refs": [], "attack_path": "p", "remediation": "r"}
+
+    def codes(f):
+        return {d["code"] for d in _cvss_defect_codes(f)}
+
+    # consistent vector + band -> no cvss-likelihood defect
+    assert "cvss-likelihood" not in codes({**base, "likelihood": 4, "cvss_vector": "AV:N/AC:L/PR:N/UI:R"})
+    # stated likelihood disagrees with the vector's band -> exactly one cvss-likelihood defect
+    bad = _cvss_defect_codes({**base, "likelihood": 2, "cvss_vector": "AV:N/AC:L/PR:N/UI:R"})
+    assert sum(d["code"] == "cvss-likelihood" for d in bad) == 1, bad
+    # absent vector (omitted, and explicit null) -> check does not fire (back-compat / abstention)
+    assert "cvss-likelihood" not in codes({**base, "likelihood": 4})
+    assert "cvss-likelihood" not in codes({**base, "likelihood": 4, "cvss_vector": None})
+    # a partial vector that slipped past the schema -> structure defect, never a silent pass
+    assert "bad-cvss-vector" in codes({**base, "likelihood": 4, "cvss_vector": "AV:N/AC:L/PR:N"})
+
+
 def t_schema():
     """Schema conformance: every committed recon/findings manifest still validates."""
     res = schema_checks.check_sample_runs(schema_checks.HERE / "sample-runs")
@@ -175,7 +217,7 @@ def t_schema():
 
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
-             t_grounding, t_layersize, t_sectionkeyword, t_verdict, t_schema]
+             t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_verdict, t_schema]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

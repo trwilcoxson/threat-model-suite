@@ -485,6 +485,8 @@ Build a concrete attack path for each threat:
 ### 4.3 Likelihood Scoring (1-5)
 Assign likelihood 1-5 with written justification. See [frameworks.md](references/frameworks.md) for scoring guidance. Justify by referencing the specific threat actor profile and attack path.
 
+Optionally decompose the Likelihood into a **CVSS v3.1 exploitability vector** `AV:_/AC:_/PR:_/UI:_`, drawing the four metric values (Attack Vector, Attack Complexity, Privileges Required, User Interaction) directly from the Phase 4.2 attack path. The 1-5 band stays the user-facing number (avoids CVSS false precision); the vector is the audit trail behind it. See the "Decomposed Likelihood" table in [frameworks.md](references/frameworks.md). This is **optional** — a threat whose Likelihood you did not decompose omits the vector rather than inventing metrics.
+
 ### 4.4 PASTA Stage 7 — Business Impact Analysis
 Assess business impact across financial, operational, reputational, and regulatory dimensions. Reference the Phase 1 Asset Inventory for data sensitivity. See [frameworks.md](references/frameworks.md).
 
@@ -495,7 +497,7 @@ Take the highest dimension score. Justify by identifying the driving dimension. 
 Calculate Risk = Likelihood x Impact. Apply severity bands from [frameworks.md](references/frameworks.md).
 
 ### Output Format
-Produce a scored threat table with all Phase 3 fields plus: Threat Actor, Attack Path Summary, Likelihood (1-5), Impact (1-5), Risk Score, Severity Band.
+Produce a scored threat table with all Phase 3 fields plus: Threat Actor, Attack Path Summary, Likelihood (1-5), CVSS Vector (optional, per row), Impact (1-5), Risk Score, Severity Band.
 
 **File Output**: Save to `{output_dir}/04-risk-quantification.md`.
 
@@ -656,7 +658,7 @@ Before writing `findings.json`, verify these invariants yourself — they are ex
 - **Every `kill_chains[].steps` id is a real finding id**, and Likelihood and Impact are each in **1–5**.
 - If a value is genuinely not derivable from the sources, do **not** fabricate it. Leave the optional field `null` or omitted, or record the gap (`no_issue_surface`, coverage `unknown`, or an Open Question). Retrying or guessing is the wrong move when the information is simply absent from the source.
 
-**File Output**: Save the summary to `{output_dir}/08-threat-model-report.md`. Also emit `{output_dir}/findings.json` — the machine-readable mirror of the validated finding list, conforming to [evals/reliability/schema/findings.schema.json](evals/reliability/schema/findings.schema.json): `findings[]` (`id`, `stride_lm`, `likelihood`, `impact`, `severity`, `asset_refs`, `surface_refs`, `attack_path`, `remediation`, optional `cwe`/`mitre`), `summary_counts`, `no_issue_surface[]`, and `kill_chains[]`.
+**File Output**: Save the summary to `{output_dir}/08-threat-model-report.md`. Also emit `{output_dir}/findings.json` — the machine-readable mirror of the validated finding list, conforming to [evals/reliability/schema/findings.schema.json](evals/reliability/schema/findings.schema.json): `findings[]` (`id`, `stride_lm`, `likelihood`, `impact`, `severity`, `asset_refs`, `surface_refs`, `attack_path`, `remediation`, optional `cwe`/`mitre`/`cvss_vector`), `summary_counts`, `no_issue_surface[]`, and `kill_chains[]`.
 
 ## Manifest Validation Gate (deterministic, blocking — before report generation)
 

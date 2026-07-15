@@ -32,6 +32,31 @@ def band(score: int) -> str:
     return "CRITICAL"
 
 
+# CVSS v3.1 exploitability sub-score = 8.22 * AV * AC * PR * UI (FIRST.org v3.1 spec). Frozen metric
+# weights; PR uses the Scope-Unchanged column because the suite does not adopt CVSS Scope. These weights,
+# the normalizer, and the exploitability->1-5 thresholds are published as one table in
+# references/frameworks.md — this is the single implementation of that table, no second scheme.
+_CVSS_AV = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.20}
+_CVSS_AC = {"L": 0.77, "H": 0.44}
+_CVSS_PR = {"N": 0.85, "L": 0.62, "H": 0.27}  # Scope-Unchanged
+_CVSS_UI = {"N": 0.85, "R": 0.62}
+EXPLOIT_MAX = 3.887043  # 8.22 * 0.85 * 0.77 * 0.85 * 0.85 — the fixed maximum sub-score
+_CVSS_VECTOR_RE = re.compile(r"^AV:([NALP])/AC:([LH])/PR:([NLH])/UI:([NR])$")
+
+
+def exploitability_band(vector: str) -> int:
+    """Map a CVSS v3.1 exploitability vector to a 1-5 Likelihood band via normalized quintiles.
+    Raises ValueError on an unparseable vector.
+    # ponytail: v1 uniform quintile split; upgrade path = recalibrate the five thresholds in
+    # frameworks.md from a corpus of scored runs (a data edit, not a code change)."""
+    m = _CVSS_VECTOR_RE.match((vector or "").strip())
+    if not m:
+        raise ValueError(f"unparseable CVSS exploitability vector {vector!r}")
+    av, ac, pr, ui = m.groups()
+    sub = 8.22 * _CVSS_AV[av] * _CVSS_AC[ac] * _CVSS_PR[pr] * _CVSS_UI[ui]
+    return min(5, int(sub / EXPLOIT_MAX * 5) + 1)
+
+
 class Defects:
     def __init__(self) -> None:
         self.items: list[dict[str, str]] = []
@@ -191,6 +216,26 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                               f"{fid}: severity {f['severity']} != band(L{L} x I{I})={expect}")
             except (ValueError, TypeError):
                 d.add("structure", "bad-LxI", f"{fid}: non-integer likelihood/impact")
+            # consistency: an optional CVSS exploitability vector must band to the finding's OWN
+            # likelihood. Reference-free — recompute 8.22*AV*AC*PR*UI over the finding's own vector
+            # and compare the derived band to its own stated likelihood (same recompute-over-emitted-
+            # facts family as severity-formula). Fires only when the field is present; an unparseable
+            # vector that slipped past the schema is a structure defect, never a silent pass.
+            vec = f.get("cvss_vector")
+            if vec:
+                try:
+                    derived = exploitability_band(vec)
+                except ValueError:
+                    d.add("structure", "bad-cvss-vector",
+                          f"{fid}: cvss_vector {vec!r} is not a legal AV:_/AC:_/PR:_/UI:_ vector")
+                else:
+                    try:
+                        stated = int(f["likelihood"])
+                    except (ValueError, TypeError):
+                        stated = None  # a non-integer likelihood is already flagged as bad-LxI above
+                    if stated is not None and stated != derived:
+                        d.add("consistency", "cvss-likelihood",
+                              f"{fid}: stated likelihood {stated} != derived band {derived} from cvss_vector {vec}")
             # grounding: refs must resolve to recon ids
             for ref in f.get("asset_refs", []) + f.get("surface_refs", []):
                 if recon_ids and ref not in recon_ids:
