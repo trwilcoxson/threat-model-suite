@@ -106,6 +106,16 @@ datastore, is that boundary placed right — remains the diagram judge's job (`p
 - **PlantUML/C4 or self-hosted Kroki for D2.** Rejected per T1: PlantUML's `dot` layout tangles on dense
   threat models and defaults to GPL; Kroki is stateless so it cannot read D2's local icon files (and the
   public instance rate-limits). D2 renders via its own CLI.
+- **draw.io / diagrams.net (mxGraph).** Evaluated hands-on after the fact (five real headless renders; see
+  `docs/research/visual-engine-2026-07/DRAWIO-EVAL.md`). It has the **best icon library tested** (~10k
+  official cloud stencils, offline) and **richer nested trust boundaries than D2** — but no single
+  agent-authorable source delivers typed icons + nested boundaries + per-edge annotations + clean
+  auto-layout together: the geometry `.drawio` path forces manual node placement (breaks automatic
+  layout), the declarative CSV path drops boundaries and per-edge annotation labels, and the only
+  all-in-one path (`drawio-ai-kit`) is imperative JS execution — the pattern that disqualified mingrammer
+  `diagrams` in T1. It also has no Chromium-free render tier (needed by `add-offline-render-pipeline`) and
+  rides on the EOL mxGraph core. Kept as a **documented strong alternate**, not the flagship — revisit if
+  priorities reweight from single-source determinism toward icon/boundary fidelity.
 - **`architecture-beta` for native Mermaid icons.** Rejected: prettier icon syntax but `group`/`service`
   /`edge` keywords with no `-->`/`subgraph`/`classDef` — it would nuke the existing eval. Stay on
   `flowchart` + the `icon` shape.
