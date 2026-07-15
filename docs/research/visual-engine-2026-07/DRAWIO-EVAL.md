@@ -28,8 +28,10 @@ auto-layout:
 - **`poc/04-drawio-csv-autolayout.png`** — declarative CSV + `--layout elkLayered`, zero geometry: clean
   orthogonal auto-routing + typed icons, **but the trust boundaries are gone and edges carry no per-edge
   annotation** (`# connect:` styles a whole reference column, not per-edge).
-- The only path that unifies all four (sparklabx `drawio-ai-kit`) is **imperative JavaScript that must
-  execute** — the exact pattern that got mingrammer `diagrams` disqualified in the T1 bake-off.
+- One path *does* unify all four — sparklabx `drawio-ai-kit` — via imperative JS that the agent runs to
+  emit the diagram. It was first dismissed by analogy to the disqualified mingrammer `diagrams`; that
+  analogy turned out to be wrong on the load-bearing point (see the postscript below) and the real reasons
+  it stays behind D2 are different.
 
 D2 delivers all four from **one declarative, auto-laid-out, parseable source** (`poc/01-d2-structural.png`).
 
@@ -52,3 +54,39 @@ render). The underlying standalone mxGraph library is also EOL since 2020 (only 
 toward icon/boundary fidelity over single-source determinism — and accepts either the CSV per-edge-annotation
 limitation or an imperative generator — draw.io becomes the pick. On today's stated priorities (the
 determinism boundary that drove the whole bake-off), D2 wins.
+
+## Postscript — `drawio-ai-kit` evaluated properly (the analogy was lazy)
+
+The first pass dismissed sparklabx `drawio-ai-kit` in one line as "imperative JS, disqualified like
+mingrammer `diagrams`." On review that was reasoning from *input shape*, not tested. A dedicated
+hands-on evaluation (cloned it, ran its 85 tests, generated a `.drawio`, ran its validator, and did a
+tamper test) plus two opposing verifiers reached consensus:
+
+**The analogy is false where it matters.** mingrammer `diagrams` was disqualified because its *only*
+output is rendered pixels — "not declarative text a parser can validate." `drawio-ai-kit` emits a
+declarative `.drawio` (mxGraph XML): containers = trust boundaries, `resIcon`/`grIcon` = node type, edge
+cells carry `value=` labels + semantic style (`dashed=1`) = typed+annotated edges. It is at least as
+property-checkable as Mermaid — proven: the kit's own `validateDiagram` caught an injected fake stencil id
+(hard error + fuzzy suggestions) and a dangling edge target (warning) **without executing the source**.
+So the eval boundary survives (agent generates content → pinned `renderTree()` auto-lays-out → the
+deterministic layer checks the *emitted artifact*), and `drawio-ai-kit` genuinely delivers all four
+requirements from one source. The det-fit score above (3) was therefore partly understated: it rested on
+"the only all-four path is disqualified imperative execution," and that premise is wrong.
+
+**D2 still stays flagship — but for these reasons, not the analogy:**
+1. **Execution/injection surface** — producing the artifact requires the agent to author and *run*
+   `node build.mjs`. For a tool that ingests untrusted target repos, that's a real
+   prompt-injection→local-code-execution vector that pure-declarative D2/Mermaid (fixed sandboxed
+   renderer) structurally lack. The kit's hardening secures the *kit*, not the agent-generated build script.
+2. **No Chromium-free render tier** — PNG needs the draw.io Electron CLI; `add-offline-render-pipeline`
+   requires a browser-free tier that D2's `d2→svg→resvg` meets. (Independent of `drawio-ai-kit`.)
+3. **Maturity** — MIT, zero-dep, 85 tests, but ~4 weeks old, single-org, GitHub-not-npm; vendor-and-pin,
+   don't hard-depend unpinned.
+
+**Adoptable regardless of the engine choice:** `drawio-ai-kit`'s ground-truth **stencil catalog +
+membership validator (`checkRef`, with fuzzy-match suggestions over the emitted artifact) is exactly the
+T1-05 typed-icon grounding mechanism** `modernize-visual-engine` specifies — the same validation shape
+(membership over emitted facts) ports directly to checking a D2 `icon:` field against a vendored catalog.
+Recommend lifting the mechanism (and optionally the MIT catalog JSONs) into the suite independent of which
+engine wins. And: rewrite any short-form dismissal to cite execution-surface + no-Chromium-free-render +
+maturity, not "un-checkable imperative output."

@@ -50,6 +50,13 @@ the model stated), or a ratio over the model's own source — and every check ad
   explicit `unknown`/`other` type is a first-class *passing* value, so the model is never forced to
   invent a type it cannot justify. The `>10%` untyped → defect / else warning threshold mirrors the
   existing `untyped-edges` fraction check verbatim.
+  - **Concrete implementation reference (engine-independent):** `drawio-ai-kit`'s `checkRef` is a
+    working instance of exactly this check — it asserts every stencil id in the emitted artifact ∈ a
+    ground-truth catalog and returns fuzzy-match suggestions on a miss (a `drawio-ai-kit` evaluation
+    proved it catches a hallucinated id without executing the source; see `DRAWIO-EVAL.md`). The same
+    validation shape (membership over emitted facts + suggestions) ports directly to checking the D2
+    `icon:` token against a vendored catalog. Consider lifting the mechanism (and the MIT catalog JSONs)
+    rather than re-deriving it — the vocabulary/validator is reusable regardless of the flagship engine.
 - **Edge-endpoint integrity (T1-06).** Reference-free by construction: it resolves every edge endpoint
   *within the source the model emitted* (does target `X` name a declared node?) and never against an
   external list. It exists because the D2 POC showed a typo'd edge target silently auto-creates a
@@ -109,13 +116,17 @@ datastore, is that boundary placed right — remains the diagram judge's job (`p
 - **draw.io / diagrams.net (mxGraph).** Evaluated hands-on after the fact (five real headless renders; see
   `docs/research/visual-engine-2026-07/DRAWIO-EVAL.md`). It has the **best icon library tested** (~10k
   official cloud stencils, offline) and **richer nested trust boundaries than D2** — but no single
-  agent-authorable source delivers typed icons + nested boundaries + per-edge annotations + clean
-  auto-layout together: the geometry `.drawio` path forces manual node placement (breaks automatic
-  layout), the declarative CSV path drops boundaries and per-edge annotation labels, and the only
-  all-in-one path (`drawio-ai-kit`) is imperative JS execution — the pattern that disqualified mingrammer
-  `diagrams` in T1. It also has no Chromium-free render tier (needed by `add-offline-render-pipeline`) and
-  rides on the EOL mxGraph core. Kept as a **documented strong alternate**, not the flagship — revisit if
-  priorities reweight from single-source determinism toward icon/boundary fidelity.
+  agent-authorable *declarative-text* source delivers typed icons + nested boundaries + per-edge
+  annotations + clean auto-layout together: the geometry `.drawio` path forces manual node placement
+  (breaks automatic layout), and the declarative CSV path drops boundaries and per-edge annotation labels.
+  One path *does* unify all four — `drawio-ai-kit` — and it is NOT rejected for the reason first given (an
+  "un-checkable imperative output like mingrammer `diagrams`"): its emitted `.drawio` XML is fully
+  property-checkable and its own validator proved so on a tamper test (see DRAWIO-EVAL.md postscript). It
+  stays behind D2 for three *independent* reasons: (1) producing the artifact requires the agent to run
+  authored `node build.mjs` — a prompt-injection→code-execution surface pure-declarative D2/Mermaid lack,
+  material for a tool that ingests untrusted repos; (2) no Chromium-free render tier (needed by
+  `add-offline-render-pipeline`); (3) ~4-week maturity / single-org. Kept as a **documented strong
+  alternate** — revisit if priorities reweight from single-source determinism toward icon/boundary fidelity.
 - **`architecture-beta` for native Mermaid icons.** Rejected: prettier icon syntax but `group`/`service`
   /`edge` keywords with no `-->`/`subgraph`/`classDef` — it would nuke the existing eval. Stay on
   `flowchart` + the `icon` shape.
