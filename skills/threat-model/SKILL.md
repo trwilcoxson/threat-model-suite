@@ -665,7 +665,7 @@ Once the analysis passes have written `recon.json` (Phase 1), `findings.json` (t
 > When the suite is installed as a **plugin**, a `PreToolUse` hook (`hooks/validate_gate.py`) runs this same validator automatically and **denies** the report-analyst spawn on failure — a hard gate enforced by the harness, with the defects fed back as the denial reason. The steps below are what the parent runs itself when the hook isn't present (a manual skill install); both invoke the identical `run.py validate`.
 
 ```bash
-python3 ~/.claude/skills/threat-model/evals/reliability/run.py validate \
+python3 "{refs_dir}/../evals/reliability/run.py" validate \
   --run "{output_dir}" --repo "{project_root}"
 ```
 

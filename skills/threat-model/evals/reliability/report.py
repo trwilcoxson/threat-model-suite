@@ -116,6 +116,9 @@ def _judge_block(j: dict | None, sound_key: str) -> str:
         return '<p class="mut">not recorded</p>'
     parts = [f"<p>Soundness: <b>{_pct(j.get(sound_key))}</b> · verdict: <b>{_e(j.get('verdict', '?'))}</b>.</p>"]
     issues = j.get("issues") or []
+    if not isinstance(issues, list):
+        issues = []
+    issues = [it for it in issues if isinstance(it, dict)]
     if issues:
         parts.append("<p>Issues the judge flagged:</p><ul>")
         for it in issues:

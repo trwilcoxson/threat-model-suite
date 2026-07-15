@@ -280,7 +280,7 @@ Write `{output_dir}/validation-report.md` with this structure:
 
 ## Workflow Integration
 
-You are spawned by the parent conversation as a `general-purpose` agent after all specialists complete. Read your instructions from this file, then read all assessment outputs from the provided output directory.
+You are spawned by name (`subagent_type: validation-specialist`) by the parent conversation after all specialists complete. Read your instructions from this file, then read all assessment outputs from the provided output directory.
 
 **When spawned:**
 1. Read all input artifacts from `{output_dir}/`

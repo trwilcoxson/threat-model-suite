@@ -424,12 +424,12 @@ flowchart LR
     subgraph Agents["Agent Definitions — 9 (7 pipeline + 2 standalone)"]
         direction TB
         SA["<b>security-architect.md</b><br/>Type: security-architect<br/>Phases: 1, 3-6, 8s<br/>Skills: threat-model"]
-        DS["<b>diagram-specialist.md</b><br/>Type: security-architect<br/>Phases: 2, 7<br/>Skills: threat-model"]
+        DS["<b>diagram-specialist.md</b><br/>Type: diagram-specialist<br/>Phases: 2, 7<br/>Skills: threat-model"]
         RA["<b>report-analyst.md</b><br/>Type: report-analyst<br/>Skills: docx, pdf, pptx, frontend-design"]
         CR["<b>code-review-agent.md</b><br/>Type: code-review-agent"]
         PA["<b>privacy-agent.md</b><br/>Type: privacy-agent"]
         GRC["<b>grc-agent.md</b><br/>Type: grc-agent"]
-        VS["<b>validation-specialist.md</b><br/><i>No built-in type</i><br/>Spawned as: general-purpose"]
+        VS["<b>validation-specialist.md</b><br/>Type: validation-specialist<br/>Phases: 6t (team merge)"]
         SR["<b>security-reviewer.md</b><br/>Type: security-reviewer<br/><i>Standalone companion — not in pipeline</i>"]
         CQ["<b>code-quality-reviewer.md</b><br/><i>Standalone companion — not in pipeline</i>"]
     end
@@ -492,7 +492,7 @@ flowchart LR
 │   ├── code-review-agent.md         # Code-level vulnerability analysis
 │   ├── privacy-agent.md             # Privacy impact assessment
 │   ├── grc-agent.md                 # Governance, risk & compliance
-│   ├── validation-specialist.md     # Cross-agent validation (spawned as general-purpose)
+│   ├── validation-specialist.md     # Cross-agent validation (spawned by name)
 │   ├── security-reviewer.md         # Standalone companion (not in pipeline): code security review
 │   └── code-quality-reviewer.md     # Standalone companion (not in pipeline): code-quality review
 │
@@ -552,7 +552,7 @@ flowchart TD
     GRC -->|"compliance-gap-analysis.md"| Join
     CR -->|"code-security-review.md"| Join
 
-    Join --> VS["<b>validation-specialist</b><br/><i>blocking, as general-purpose</i><br/>Dedup, verify IDs,<br/>severity consistency"]
+    Join --> VS["<b>validation-specialist</b><br/><i>blocking</i><br/>Dedup, verify IDs,<br/>severity consistency"]
 
     VS -->|"validation-report.md"| Team_RA["<b>report-analyst</b><br/><i>blocking</i><br/>QA + Consolidate +<br/>Generate 4 formats"]
 
