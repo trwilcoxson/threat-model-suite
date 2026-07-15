@@ -228,6 +228,27 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
         else:
             present.append("sbom")
 
+    # Threat-to-Control coverage matrix — gate: >=1 finding. The defensive dual of the STRIDE matrix.
+    # Detected by its column set (a Control + a Disposition column); presence/projection only — never
+    # whether the listed control is the *correct* remediation. A zero-control finding must show `GAP`.
+    if findings:
+        cm = next((t for t in _md_tables(report_text)
+                   if any("control" in c.lower() for c in t["header"])
+                   and any("disposition" in c.lower() for c in t["header"])), None)
+        if not cm:
+            D("no-control-matrix", "findings exist but no Threat-to-Control Coverage Matrix (table with Control + Disposition columns)")
+        else:
+            present.append("control-matrix")
+            miss = [f["id"] for f in findings if not any(f["id"] in " ".join(r) for r in cm["rows"])]
+            if miss:
+                warnings.append(f"{len(miss)} finding(s) not placed in control matrix: {miss[:5]}")
+            for f in findings:
+                if f.get("controls") or []:
+                    continue  # controlled finding: no GAP expected
+                row = next((r for r in cm["rows"] if f["id"] in " ".join(r)), None)
+                if row and "GAP" not in " ".join(row).upper():
+                    D("control-matrix-gap-missing", f"{f['id']} has no controls but its matrix row shows no GAP cell")
+
     return {"defects": defects, "warnings": warnings,
             "stats": {"analytical_present": present, "kill_chains": len(kill_chains), "roles": len(roles)}}
 

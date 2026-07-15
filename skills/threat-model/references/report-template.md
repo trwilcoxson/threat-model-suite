@@ -6,7 +6,7 @@
 - Section II: System Overview (purpose, scope, tech stack, deployment model)
 - Section III: Architecture Diagram — Structural (rendered diagram, component metadata, trust boundaries, network topology)
 - Section IV: Risk Overlay Diagram (rendered diagram, component risk mapping, critical data flows)
-- Section IV-A: Coverage & Communication Visuals (STRIDE-per-element matrix, L×I heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph — each when applicable)
+- Section IV-A: Coverage & Communication Visuals (STRIDE-per-element matrix, L×I heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph, threat-to-control coverage matrix — each when applicable)
 - Section V: Asset Inventory (data assets, data flow summary)
 - Section VI: Threat Actor Profiles
 - Section VII: Findings (ordered by severity, standardized format)
@@ -118,6 +118,9 @@ one-line reason. Use these exact headings so they render and verify consistently
 - `## MITRE ATT&CK Technique Coverage` — when any finding has a technique (+ Navigator JSON at ≥5).
 - `## Authorization (RBAC) Matrix` — when ≥2 roles (roles × resources, anonymous row).
 - `## SBOM / Dependency Graph` — when external deps are backed by a manifest.
+- `## Threat-to-Control Coverage Matrix` — when ≥1 finding (rows = findings; columns Control(s) /
+  name / framework ref / disposition; a zero-control finding shows an explicit `GAP` cell —
+  `mitigated` / `accepted-risk` / `none`). A faithful projection of `findings.json` `controls[]`.
 - Attack trees + attack flows (per declared kill chain) and the auth sequence diagram, embedded here
   or in Section VII.
 

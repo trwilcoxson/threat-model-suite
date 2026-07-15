@@ -478,11 +478,36 @@ This produces the prioritized threat list used in the final report.
 
 ---
 
+## Control Framework IDs (NIST 800-53 / D3FEND)
+
+When a finding's `controls[]` carries a normalized `framework_ref`, it names a countermeasure in one of
+these vocabularies. This is the **authoritative reference set** for the skill — the defensive analogue of
+the MITRE/CWE tables above. Use an id **only** if it appears here; otherwise leave `framework_ref` null
+and keep the control action in `name` as plain text.
+
+**NIST SP 800-53 Rev 5 — common technical controls** (`family-number`, optional `(enhancement)`):
+- AC-2 Account Management · AC-3 Access Enforcement · AC-4 Information Flow Enforcement · AC-6 Least Privilege · AC-17 Remote Access
+- AU-2 Event Logging · AU-6 Audit Record Review · AU-9 Protection of Audit Information
+- IA-2 Identification & Authentication (Users) · IA-5 Authenticator Management · IA-8 Identification (Non-Org Users)
+- SC-5 Denial-of-Service Protection · SC-7 Boundary Protection · SC-8 Transmission Confidentiality & Integrity · SC-12 Cryptographic Key Establishment · SC-13 Cryptographic Protection · SC-28 Protection of Information at Rest
+- SI-3 Malicious Code Protection · SI-4 System Monitoring · SI-7 Software/Firmware/Information Integrity · SI-10 Information Input Validation
+
+**D3FEND — countermeasure techniques** (`D3-XXX`):
+- D3-MFA Multi-factor Authentication · D3-NTA Network Traffic Analysis · D3-ITF Inbound Traffic Filtering
+- D3-MENCR Message Encryption · D3-DENCR Disk Encryption · D3-RTSD Real-time Service Discovery
+- D3-UAP User Account Permissions · D3-SICA System Init Config Analysis · D3-PSA Process Spawn Analysis
+
+`framework_ref` shape (what the eval format-checks): NIST `^[A-Z]{2}-[0-9]+(\([0-9]+\))?$` (e.g. `SC-7`,
+`AC-3(4)`) or D3FEND `^D3-[A-Z]+$` (e.g. `D3-NTA`). The eval checks the **shape only** — it never asserts
+that the referenced control is the *right* one for the finding; that mapping is verified here, by the agent.
+
+---
+
 ## Framework ID Verification
 
-**When mapping threats to framework IDs (MITRE ATT&CK technique IDs, CWE IDs), adhere to these rules:**
+**When mapping threats to framework IDs (MITRE ATT&CK technique IDs, CWE IDs, NIST 800-53 / D3FEND control IDs), adhere to these rules:**
 
-1. **Only use IDs listed in this reference file.** The MITRE and CWE tables above are the authoritative set for this skill.
-2. **If a threat maps to a technique/CWE not in the tables**, describe the threat in plain text and note "No matching ID in reference set — manual verification recommended."
+1. **Only use IDs listed in this reference file.** The MITRE, CWE, and Control Framework tables above are the authoritative set for this skill.
+2. **If a threat maps to a technique/CWE not in the tables**, describe the threat in plain text and note "No matching ID in reference set — manual verification recommended." **If a control has no matching NIST-800-53 / D3FEND id**, leave `framework_ref` null and keep the control action in the `name` field as plain text — never fabricate a control id.
 3. **Never fabricate or guess framework IDs.** An incorrect ID is worse than no ID — it creates false confidence and misdirects remediation.
-4. **Cross-check before finalizing**: In Phase 6 (False Positive Validation), verify every framework ID in the findings against the tables in this file.
+4. **Cross-check before finalizing**: In Phase 6 (False Positive Validation), verify every framework ID in the findings — MITRE technique IDs, CWE IDs, **and each control's `framework_ref`** — against the tables in this file.

@@ -207,6 +207,75 @@ def t_cvss():
     assert "bad-cvss-vector" in codes({**base, "likelihood": 4, "cvss_vector": "AV:N/AC:L/PR:N"})
 
 
+def t_control():
+    """control coverage: reference-free flag over the finding's OWN facts — presence + disposition
+    consistency + honest abstention. Never asserts a control is the *right* one; never hard-fails."""
+    base = {"id": "TM-001", "title": "t", "stride_lm": ["S"], "likelihood": 3, "impact": 3,
+            "severity": "MEDIUM", "asset_refs": [], "surface_refs": [], "attack_path": "p", "remediation": "r"}
+    ctl = {"id": "CTL-001", "name": "Enforce mTLS", "counters": []}
+
+    def defects(f):
+        return _cvss_defect_codes(f)
+
+    def codes(f):
+        return {d["code"] for d in defects(f)}
+
+    # >=1 control + mitigated -> consistent, covered (no control-layer flag)
+    ok = codes({**base, "controls": [ctl], "control_disposition": "mitigated"})
+    assert "control-disposition-mismatch" not in ok and "uncovered-control" not in ok, ok
+    # controls present but disposition says none -> consistency defect
+    assert "control-disposition-mismatch" in codes({**base, "controls": [ctl], "control_disposition": "none"})
+    # empty controls + accepted-risk + note -> honest abstention passes
+    abst = codes({**base, "controls": [], "control_disposition": "accepted-risk",
+                  "disposition_note": "compensating monitoring in place"})
+    assert "uncovered-control" not in abst and "disposition-without-note" not in abst and "control-disposition-mismatch" not in abst, abst
+    # same abstention WITHOUT a note -> flagged (unknown-needs-a-note)
+    assert "disposition-without-note" in codes({**base, "controls": [], "control_disposition": "accepted-risk"})
+    # no controls, no disposition -> uncovered gap, and it is a FLAG (control layer, not a gate layer)
+    legacy = defects({**base})
+    unc = [d for d in legacy if d["code"] == "uncovered-control"]
+    assert unc and unc[0]["layer"] == "control", "uncovered-control must be a non-gating flag"
+    assert not [d for d in legacy if d["layer"] in ("structure", "consistency", "coverage")
+                and d["code"].startswith(("control", "malformed-control", "malformed-framework"))], \
+        "control checks must never sit in a gating layer"
+    # malformed control id / framework_ref -> flagged on format
+    assert "malformed-control-id" in codes({**base, "controls": [{"id": "CTL-1", "name": "x"}],
+                                            "control_disposition": "mitigated"})
+    assert "malformed-framework-ref" in codes({**base, "controls": [{"id": "CTL-002", "name": "x", "framework_ref": "nist ac three"}],
+                                               "control_disposition": "mitigated"})
+    # well-formed framework_ref with an unknown/other mapping -> NOT flagged by the eval (agent-verified)
+    assert "malformed-framework-ref" not in codes({**base, "controls": [{"id": "CTL-003", "name": "x", "framework_ref": "SC-7"}],
+                                                   "control_disposition": "mitigated"})
+
+
+def t_control_matrix():
+    """Threat-to-Control matrix: detected by Control+Disposition columns; faithful projection; a
+    zero-control finding must show a GAP cell — presence/consistency only, never control correctness."""
+    fdoc = {"findings": [{"id": "TM-001", "controls": [{"id": "CTL-001", "name": "mTLS"}]},
+                         {"id": "TM-002", "controls": []}]}
+    # a faithful matrix: TM-002 (no controls) shows GAP
+    good = ("## Threat-to-Control Coverage Matrix\n"
+            "| Finding | Control(s) | Disposition |\n"
+            "|---------|------------|-------------|\n"
+            "| TM-001 | CTL-001 | mitigated |\n"
+            "| TM-002 | GAP |  |\n")
+    codes = {d["code"] for d in dc.analytical_checks(good, [], _recon(1, 0), fdoc)["defects"]}
+    assert "no-control-matrix" not in codes and "control-matrix-gap-missing" not in codes, codes
+    present = dc.analytical_checks(good, [], _recon(1, 0), fdoc)["stats"]["analytical_present"]
+    assert "control-matrix" in present
+    # zero-control finding with a blank (not GAP) cell -> flagged
+    blank = ("## Threat-to-Control Coverage Matrix\n"
+             "| Finding | Control(s) | Disposition |\n"
+             "|---------|------------|-------------|\n"
+             "| TM-001 | CTL-001 | mitigated |\n"
+             "| TM-002 |  |  |\n")
+    codes = {d["code"] for d in dc.analytical_checks(blank, [], _recon(1, 0), fdoc)["defects"]}
+    assert "control-matrix-gap-missing" in codes
+    # no matrix at all, but findings exist -> flagged, as a diagram-layer flag (never a gate layer)
+    nomatrix = dc.analytical_checks("# r\n", [], _recon(1, 0), fdoc)["defects"]
+    assert any(d["code"] == "no-control-matrix" and d["layer"] == "diagram" for d in nomatrix)
+
+
 def t_schema():
     """Schema conformance: every committed recon/findings manifest still validates."""
     res = schema_checks.check_sample_runs(schema_checks.HERE / "sample-runs")
@@ -217,7 +286,8 @@ def t_schema():
 
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
-             t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_verdict, t_schema]
+             t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
+             t_verdict, t_schema]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

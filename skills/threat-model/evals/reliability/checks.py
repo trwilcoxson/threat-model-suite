@@ -42,6 +42,11 @@ _CVSS_PR = {"N": 0.85, "L": 0.62, "H": 0.27}  # Scope-Unchanged
 _CVSS_UI = {"N": 0.85, "R": 0.62}
 EXPLOIT_MAX = 3.887043  # 8.22 * 0.85 * 0.77 * 0.85 * 0.85 — the fixed maximum sub-score
 _CVSS_VECTOR_RE = re.compile(r"^AV:([NALP])/AC:([LH])/PR:([NLH])/UI:([NR])$")
+# Control id + normalized framework-ref shapes. Format-only (the offline eval never asserts a control
+# is the *right* one — that is agent-verified against frameworks.md). NIST-800-53 (AC-3, SC-7(5)) or
+# D3FEND (D3-NTA); a framework_ref that is present but unshaped is flagged, mirroring malformed-cwe.
+_CTL_ID_RE = re.compile(r"^CTL-[0-9]{3}$")
+_FRAMEWORK_REF_RE = re.compile(r"^([A-Z]{2}-[0-9]+(\([0-9]+\))?|D3-[A-Z]+)$")
 
 
 def exploitability_band(vector: str) -> int:
@@ -185,6 +190,8 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
     counts = {s: 0 for s in SEVERITIES}
     n_findings = 0
     cwe_total = mitre_total = 0
+    control_classes = {"mitigated": 0, "accepted-risk": 0, "none": 0, "uncovered": 0}
+    controls_total = 0
     fids: set[str] = set()
     if findings_doc and _require(findings_doc, ["findings", "summary_counts", "no_issue_surface"], d, "findings"):
         for f in findings_doc["findings"]:
@@ -252,6 +259,47 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                 if not re.fullmatch(r"T\d{4}(\.\d{3})?", m):
                     d.add("consistency", "malformed-mitre", f"{fid}: '{m}'")
 
+            # control coverage (the defensive dual of surface coverage) — reference-free over the
+            # finding's OWN emitted facts. A `control` defect layer, NEVER in the production gate:
+            # zero-control is a FLAG, not an auto-fail, and honest abstention passes. The eval never
+            # asserts a control is the *correct* remediation — that is the agent/coverage-judge's job.
+            controls = f.get("controls") or []
+            controls_total += len(controls)
+            disp = f.get("control_disposition")
+            note = (f.get("disposition_note") or "").strip()
+            has_ctl = len(controls) >= 1
+            # well-formedness (format only; mapping correctness is agent-verified in Phase 6)
+            for c in controls:
+                cid = c.get("id", "") if isinstance(c, dict) else ""
+                if not _CTL_ID_RE.fullmatch(cid):
+                    d.add("control", "malformed-control-id", f"{fid}: control id '{cid}'")
+                fr = c.get("framework_ref") if isinstance(c, dict) else None
+                if fr and not _FRAMEWORK_REF_RE.fullmatch(fr):
+                    d.add("control", "malformed-framework-ref", f"{fid}: framework_ref '{fr}'")
+            # internal consistency + honest abstention + zero-control flag; classify for the profile
+            if has_ctl:
+                cls = "mitigated"
+            elif disp == "accepted-risk":
+                cls = "accepted-risk"
+            elif disp == "none":
+                cls = "none"
+            else:
+                cls = "uncovered"
+            control_classes[cls] += 1
+            if disp is not None:
+                # `mitigated` iff >=1 control (both agent-emitted; recompute one from the other)
+                if (disp == "mitigated") != has_ctl:
+                    d.add("control", "control-disposition-mismatch",
+                          f"{fid}: control_disposition '{disp}' disagrees with {len(controls)} control(s)")
+                # accepted-risk / none are honest abstentions only WITH a note (unknown-needs-a-note rule)
+                if disp in ("accepted-risk", "none") and not note:
+                    d.add("control", "disposition-without-note",
+                          f"{fid}: control_disposition '{disp}' but no disposition_note (why the risk is accepted / no control applies)")
+            elif not has_ctl:
+                # neither controlled nor explicitly dispositioned — a coverage gap, surfaced as a flag
+                d.add("control", "uncovered-control",
+                      f"{fid}: no controls and no control_disposition — control coverage unknown (flag, not a failure)")
+
         # summary counts must match reality
         for s in SEVERITIES:
             declared = findings_doc["summary_counts"].get(s)
@@ -287,6 +335,10 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
 
     scores = _scores(d, grounded, ungrounded, surface_ids, covered, findings_doc)
     scores.update(diag["scores"])
+    # control-coverage profile: counts by class + covered fraction (mitigated / n). A profile signal,
+    # not a gate — uncovered findings are flagged, not failed (same as the coverage-ledger profile).
+    covered_frac = round(control_classes["mitigated"] / n_findings, 3) if n_findings else None
+    scores["control_coverage"] = {"by_class": control_classes, "covered_frac": covered_frac}
     return {
         "defects": d.items,
         "stats": {
@@ -299,6 +351,8 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
             "ungrounded": ungrounded,
             "cwe_ids": cwe_total,
             "mitre_ids": mitre_total,
+            "controls": controls_total,
+            "control_coverage": control_classes,
             "diagram": diag["stats"],
         },
         "scores": scores,

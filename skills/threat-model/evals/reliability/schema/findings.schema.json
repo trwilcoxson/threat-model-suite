@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Findings manifest — machine-readable mirror of the report's findings",
-  "description": "Emitted by the threat-model run alongside the markdown report. The eval validates structure, internal consistency (severity == band(L x I)), grounding (refs resolve to recon), and coverage — none of which need a per-target answer key.",
+  "description": "Emitted by the threat-model run alongside the markdown report. The eval validates structure, internal consistency (severity == band(L x I)), grounding (refs resolve to recon), and coverage — none of which need a per-target answer key. Control-coverage is a reference-free per-finding property (disposition-vs-controls consistency + zero-control flagging with honest abstention), never an answer key that a control is the correct remediation; controls[]/control_disposition/disposition_note are optional and additive so a findings manifest predating them still validates.",
   "type": "object",
   "additionalProperties": false,
   "required": ["findings", "summary_counts", "no_issue_surface"],
@@ -27,7 +27,27 @@
           "asset_refs":   { "type": "array", "items": { "type": "string" }, "description": "recon component/data_store ids this finding concerns" },
           "surface_refs": { "type": "array", "items": { "type": "string" }, "description": "recon entry_point/trust_boundary/external_dep ids this finding covers" },
           "attack_path":  { "type": "string" },
-          "remediation":  { "type": "string" }
+          "remediation":  { "type": "string" },
+          "controls": {
+            "type": "array",
+            "description": "addressable control objects that remediate this finding (the machine-readable promotion of free-text remediation). Optional and additive — a finding predating this field simply has none, and the eval flags it as control-coverage-unknown without failing the run.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "name"],
+              "properties": {
+                "id":   { "type": "string", "pattern": "^CTL-[0-9]{3}$" },
+                "name": { "type": "string", "description": "human control action (the migrated free-text remediation)" },
+                "framework_ref": { "type": ["string", "null"], "pattern": "^([A-Z]{2}-[0-9]+(\\([0-9]+\\))?|D3-[A-Z]+)$",
+                                   "description": "optional normalized NIST-800-53 (e.g. SC-7, AC-3(4)) or D3FEND (e.g. D3-NTA) control id; null or omitted when no normalized id applies (the action stays in name). Format-checked only; mapping correctness is agent-verified against frameworks.md, never asserted by the eval." },
+                "counters": { "type": "array", "items": { "type": "string" },
+                              "description": "RESERVED for the attack-defense-tree change: attack-node ids this control interdicts. Defaults empty; no grounding is enforced on its members here." }
+              }
+            }
+          },
+          "control_disposition": { "enum": ["mitigated", "accepted-risk", "none"],
+                                   "description": "optional. mitigated iff >=1 control is attached; accepted-risk / none are honest abstentions that MUST carry a disposition_note. The eval recomputes this from the finding's own controls[] and flags disagreement (see checks.py)." },
+          "disposition_note": { "type": "string", "description": "required by the eval when control_disposition is accepted-risk / none — the reason the risk is accepted or no control applies (honest-abstention evidence, mirrors the coverage ledger's unknown-needs-a-note rule)." }
         }
       }
     },

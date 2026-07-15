@@ -130,3 +130,43 @@ under the same `## SBOM` / `## Dependency` heading.)
 tolerates a hyphen or a space between words, and the token is accepted either after a `|` field
 separator (`%% Version: ... | Type: SBOM`) or as a bare `%% type: sbom` line. The Version stamp form
 alone is sufficient. Same convention as the companion diagrams in `mermaid-diagrams.md` §5.
+
+---
+
+## §6 Threat-to-Control Coverage Matrix  *(when ≥1 finding)*
+
+The **defensive dual** of the STRIDE-per-element matrix: STRIDE proves every element was *examined*;
+this proves every finding was *addressed* — or that the gap is explicit. Each finding maps to ≥1
+control, or is explicitly dispositioned `accepted-risk` / `none`; a finding with neither is shown as
+an explicit `GAP` cell (the RBAC-matrix convention), never left blank.
+
+- **Rows**: each finding, keyed by its `TM-NNN` id.
+- **Columns**: `Finding | Control(s) | Control Name | Framework Ref | Disposition`.
+- **Cells**: `Control(s)` is the control id(s) `CTL-NNN` (comma-separated), or `GAP` when the finding
+  has no control; `Control Name` is the normalized action (migrated from free-text remediation);
+  `Framework Ref` is the normalized NIST-800-53 / D3FEND id or `—`; `Disposition` is one of
+  `mitigated` / `accepted-risk` / `none` (with a one-line reason for the abstentions). An **uncovered**
+  finding (no control, no disposition) shows `GAP` with an empty disposition — the eval flags it.
+
+```markdown
+## Threat-to-Control Coverage Matrix
+
+| Finding | Control(s) | Control Name | Framework Ref | Disposition |
+|---------|------------|--------------|---------------|-------------|
+| TM-001 | CTL-001 | Enforce mTLS on service-to-service calls | SC-8 | mitigated |
+| TM-004 | GAP | — | — | none (static asset, no runtime control applies) |
+| TM-006 | GAP | — | — |  |
+```
+
+This matrix is a **faithful projection of `findings.json`**: every finding id appears as a row, each
+listed `CTL-NNN` is one the finding declares, and a zero-control finding shows `GAP`. The eval
+(`diagram_checks.analytical_checks`) checks presence + projection only — it detects the table by its
+`Control` + `Disposition` columns and never judges whether the listed control is the *correct*
+remediation (that is the agent's / coverage-judge's call).
+
+**`CTL-NNN` vs `R-NNN` (not duplication).** `CTL-NNN` is the addressable *control object* in
+`findings.json` — what this matrix and, later, attack-defense counter-edges point at. `R-NNN`
+(report Section VIII) is the *remediation-roadmap* sequencing item. They are aligned, not merged: one
+`R-NNN` roadmap item may carry out several `CTL-NNN` controls. Each control's `counters[]` is
+**reserved** for the attack-defense-tree change to attach the attack-node ids it interdicts; it
+defaults empty here and no grounding is enforced on it yet.
