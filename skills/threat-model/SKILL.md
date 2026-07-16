@@ -15,7 +15,7 @@ Define `{output_dir}` as `{project_root}/threat-model-output/` unless the user s
 - **Diagram spec**: [references/mermaid-spec.md](references/mermaid-spec.md) — symbol taxonomy (3 tiers), 8 typed edge types, classDefs, threat annotations, accessibility, ownership markers
 - **Diagram layers**: [references/mermaid-layers.md](references/mermaid-layers.md) — 4-layer separation (L1 Architecture, L2 Trust & Identity, L3 Data, L4 Threat Overlay), scaling rules
 - **Companion diagrams**: [references/mermaid-diagrams.md](references/mermaid-diagrams.md) — attack trees, attack flows, auth sequences, data lifecycle diagrams
-- **Analytical visuals**: [references/analytical-visuals.md](references/analytical-visuals.md) — STRIDE-per-element matrix, L×I risk heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph
+- **Analytical visuals**: [references/analytical-visuals.md](references/analytical-visuals.md) — STRIDE-per-element matrix, boundary-crossing STRIDE-per-interaction matrix, L×I risk heat map, MITRE ATT&CK layer, MITRE ATLAS layer + OWASP-LLM Top-10 checklist (when `has_ai_ml`), RBAC matrix, SBOM/dependency graph
 - **Diagram templates**: [references/mermaid-templates.md](references/mermaid-templates.md) — copy-paste-ready templates (SaaS, Event-Driven, K8s), symbol/edge legends
 - **Diagram review checklist**: [references/mermaid-review-checklist.md](references/mermaid-review-checklist.md) — pre-submission quality gates
 - **Frameworks**: [references/frameworks.md](references/frameworks.md) — STRIDE-LM, PASTA, OWASP Risk Rating, MITRE ATT&CK, CWE groups, LINDDUN
@@ -184,6 +184,7 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
 ### Solo Workflow
 
 1. **Create output directory**: `mkdir -p {project_root}/threat-model-output`
+   - **Render preflight (fail loud at start)**: run `bash {refs_dir}/../scripts/ensure_renderer.sh {refs_dir}` before spawning any agent. It verifies the offline renderer (`d2`, the active tier's rasterizer, vendored icons + font) and prints `TM_RENDER_TIER=primary|fallback` — export that into the run environment so the render seam and the diagram checks see the declared tier (the fallback tier enforces the plain-single-line-label constraint). A nonzero exit names a missing dependency: stop and fix it here, not five agents deep at report generation. (A legacy Mermaid-only run that authors no `.d2` may skip this; any run that will render `.d2` MUST preflight.)
 
 2. **Spawn `security-architect`** (blocking) — Phase 1 only:
    - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-recon"`
@@ -217,6 +218,7 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
 ### Team Workflow
 
 1. **Create output directory**: `mkdir -p {project_root}/threat-model-output`
+   - **Render preflight (fail loud at start)**: run `bash {refs_dir}/../scripts/ensure_renderer.sh {refs_dir}` before spawning any agent. It verifies the offline renderer (`d2`, the active tier's rasterizer, vendored icons + font) and prints `TM_RENDER_TIER=primary|fallback` — export that into the run environment so the render seam and the diagram checks see the declared tier (the fallback tier enforces the plain-single-line-label constraint). A nonzero exit names a missing dependency: stop and fix it here, not five agents deep at report generation. (A legacy Mermaid-only run that authors no `.d2` may skip this; any run that will render `.d2` MUST preflight.)
 
 2. **Spawn `security-architect`** (blocking) — Phase 1 only:
    - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-recon"`
@@ -265,7 +267,7 @@ See [references/agent-prompts.md](references/agent-prompts.md) for all agent spa
 
 ### Post-Assessment Verification
 
-After the report-analyst completes, run the shipped verification script over the output directory — it checks core outputs + manifests exist, the HTML report is structurally sound (PNG embeds present, no Mermaid CDN/runtime, balanced/closed script tags, body/html closed), and each agent left an Execution Log:
+After the report-analyst completes, run the shipped verification script over the output directory — it checks core outputs + manifests exist, the HTML report is structurally sound (a diagram embed present as an `<img>` PNG **or** an inline offline `<svg>`, no Mermaid CDN/runtime, balanced/closed script tags, body/html closed), and each agent left an Execution Log:
 
 ```bash
 bash "{refs_dir}/../scripts/verify_run.sh" "{output_dir}"
@@ -485,6 +487,8 @@ Build a concrete attack path for each threat:
 ### 4.3 Likelihood Scoring (1-5)
 Assign likelihood 1-5 with written justification. See [frameworks.md](references/frameworks.md) for scoring guidance. Justify by referencing the specific threat actor profile and attack path.
 
+Optionally decompose the Likelihood into a **CVSS v3.1 exploitability vector** `AV:_/AC:_/PR:_/UI:_`, drawing the four metric values (Attack Vector, Attack Complexity, Privileges Required, User Interaction) directly from the Phase 4.2 attack path. The 1-5 band stays the user-facing number (avoids CVSS false precision); the vector is the audit trail behind it. See the "Decomposed Likelihood" table in [frameworks.md](references/frameworks.md). This is **optional** — a threat whose Likelihood you did not decompose omits the vector rather than inventing metrics.
+
 ### 4.4 PASTA Stage 7 — Business Impact Analysis
 Assess business impact across financial, operational, reputational, and regulatory dimensions. Reference the Phase 1 Asset Inventory for data sensitivity. See [frameworks.md](references/frameworks.md).
 
@@ -495,7 +499,7 @@ Take the highest dimension score. Justify by identifying the driving dimension. 
 Calculate Risk = Likelihood x Impact. Apply severity bands from [frameworks.md](references/frameworks.md).
 
 ### Output Format
-Produce a scored threat table with all Phase 3 fields plus: Threat Actor, Attack Path Summary, Likelihood (1-5), Impact (1-5), Risk Score, Severity Band.
+Produce a scored threat table with all Phase 3 fields plus: Threat Actor, Attack Path Summary, Likelihood (1-5), CVSS Vector (optional, per row), Impact (1-5), Risk Score, Severity Band.
 
 **File Output**: Save to `{output_dir}/04-risk-quantification.md`.
 
@@ -602,8 +606,11 @@ Now that findings are scored and kill chains declared, produce and verify the ri
 
 **Analytical & communication visuals (conditional — produce each when its precondition holds, else mark NOT APPLICABLE with a one-line reason):**
 - **STRIDE-per-element coverage matrix** — always. Fully populated (every cell a `TM-NNN` / `n/a` / `clean`).
+- **Boundary-crossing STRIDE-per-interaction matrix** — when the DFD has ≥1 edge crossing a trust zone (see analytical-visuals.md §1a). Rows = the crossing edges only (keyed `Edge (src → dst)`); every crossing edge gets exactly one decided row; a single-zone system is marked NOT APPLICABLE.
 - **Likelihood×Impact risk heat map** — when any finding is scored. 5×5 grid, every finding at its own (L,I) cell.
 - **MITRE ATT&CK technique layer** — when any finding carries a MITRE id. Technique table; Navigator JSON layer at ≥5 techniques.
+- **MITRE ATLAS technique layer** — when `has_ai_ml` (see analytical-visuals.md §3a). Reuse the ATT&CK Navigator emitter with `domain: "atlas-atlas"` and `AML.T####` ids; the shown ids are a subset of the findings' own `atlas[]` ids. Not produced on non-AI targets.
+- **OWASP-LLM Top-10 coverage checklist** — when `has_ai_ml` (see analytical-visuals.md §3b). Rendered through the STRIDE-matrix table renderer (rows LLM01–LLM10, cells = `TM-NNN` / `n-a` / `clean`, resolved via the crosswalk); **no second diagram**.
 - **Authorization (RBAC) matrix** — when ≥2 roles (declare them in recon `roles[]`, incl. anonymous). Roles × resources, anonymous row.
 - **SBOM / dependency graph** — when external deps are backed by a manifest (set `manifest` on the recon dep). Rooted graph with `:::externalDep` leaves.
 
@@ -656,7 +663,7 @@ Before writing `findings.json`, verify these invariants yourself — they are ex
 - **Every `kill_chains[].steps` id is a real finding id**, and Likelihood and Impact are each in **1–5**.
 - If a value is genuinely not derivable from the sources, do **not** fabricate it. Leave the optional field `null` or omitted, or record the gap (`no_issue_surface`, coverage `unknown`, or an Open Question). Retrying or guessing is the wrong move when the information is simply absent from the source.
 
-**File Output**: Save the summary to `{output_dir}/08-threat-model-report.md`. Also emit `{output_dir}/findings.json` — the machine-readable mirror of the validated finding list, conforming to [evals/reliability/schema/findings.schema.json](evals/reliability/schema/findings.schema.json): `findings[]` (`id`, `stride_lm`, `likelihood`, `impact`, `severity`, `asset_refs`, `surface_refs`, `attack_path`, `remediation`, optional `cwe`/`mitre`), `summary_counts`, `no_issue_surface[]`, and `kill_chains[]`.
+**File Output**: Save the summary to `{output_dir}/08-threat-model-report.md`. Also emit `{output_dir}/findings.json` — the machine-readable mirror of the validated finding list, conforming to [evals/reliability/schema/findings.schema.json](evals/reliability/schema/findings.schema.json): `findings[]` (`id`, `stride_lm`, `likelihood`, `impact`, `severity`, `asset_refs`, `surface_refs`, `attack_path`, `remediation`, optional `cwe`/`mitre`/`cvss_vector`), `summary_counts`, `no_issue_surface[]`, and `kill_chains[]`.
 
 ## Manifest Validation Gate (deterministic, blocking — before report generation)
 

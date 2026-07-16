@@ -33,6 +33,58 @@ must appear in the matching cell — the matrix is a faithful projection of the 
 
 ---
 
+## §1a STRIDE-per-Interaction (Boundary-Crossing) Coverage Matrix  *(when ≥1 boundary-crossing edge)*
+
+The **interaction-level dual** of §1. STRIDE-per-element under-finds exactly at the *interaction* —
+the tool call, the network hop, the identity handoff where one component hands data or authority to
+another across a trust zone. This matrix proves every such crossing was considered against every
+STRIDE-LM category.
+
+- **Rows**: only the DFD edges whose two endpoints sit in **different trust zones** (a node outside
+  every `subgraph` is the implicit untrusted/external zone, so an external-entity → internal-process
+  edge is a crossing). Each row is keyed `source → destination` by recon ids.
+- **Columns**: the seven STRIDE-LM categories, in order: `S T R I D E LM`.
+- **Cells**: a finding id (`TM-NNN`), `n/a` (category inapplicable to that interaction), or `clean`
+  (examined, no finding). **No blank cells.**
+
+**Scope bound — crossings only.** Enumerate *only* the boundary crossings; **intra-zone edges never
+appear**. Do NOT produce a full STRIDE-per-interaction matrix over every DFD edge — that explodes
+combinatorially with no measured accuracy gain (arXiv 2208.01524), which is why Microsoft
+de-emphasized it. Bounding to crossings keeps the matrix to the handful of hops where agentic and
+cloud threats concentrate, and keeps the coverage check cheap and stable.
+
+```markdown
+## STRIDE-per-Interaction (Boundary-Crossing) Coverage Matrix
+
+| Edge (src → dst) | S | T | R | I | D | E | LM |
+|------------------|---|---|---|---|---|---|----|
+| E1 → C1 API gateway | TM-002 | clean | clean | clean | clean | TM-004 | n/a |
+| C1 API gateway → D1 User DB | n/a | TM-006 | clean | TM-003 | clean | n/a | clean |
+| C1 API gateway → X1 Payments API | clean | clean | clean | clean | clean | clean | clean |
+```
+
+**Distinct heading + first-column key (why it never collides with §1).** Both matrices carry the
+`S T R I D E LM` columns, so the eval tells them apart by the FIRST column: §1 is keyed `Element`,
+this one is keyed `Edge (src → dst)`. Keep the `## STRIDE-per-Interaction (Boundary-Crossing) Coverage
+Matrix` heading and the `Edge (src → dst)` header verbatim so the selector picks the right table.
+
+**NOT APPLICABLE rule.** When the emitted DFD contains **no** boundary-crossing edge (a single-zone
+system, or no declared trust boundaries), emit the heading with a single line —
+`NOT APPLICABLE — single-zone system / no declared boundaries` — and no table. The eval **skips** the
+coverage check in that case; it does not fail it.
+
+**What the eval checks (structure + grounding only).** The deterministic check
+(`diagram_checks.analytical_checks`) enumerates the crossings from the DFD you drew (which node ids
+you placed in which `subgraph`, innermost zone wins) and verifies: every crossing edge has exactly
+one row, every row resolves all seven cells to a terminal state (no blanks), and every `TM-NNN` in a
+cell resolves in `findings.json`. It never judges whether the STRIDE category or the edge is *right*,
+never requires any particular threat, and a fully `clean` / `n/a` row passes (honest abstention).
+Whether the enumerated threats are the *correct* ones for each crossing is left to
+`prompts/diagram-judge.md` — the same structure/validity split §1 uses. (Endpoint ↔ recon-id
+resolution is advisory, matching the sequence-participant posture.)
+
+---
+
 ## §2 Likelihood × Impact Risk Heat Map  *(when ≥1 scored finding)*
 
 A 5×5 grid placing each finding at the cell matching its own likelihood and impact, banded by the
@@ -87,6 +139,80 @@ invented in the layer that no finding maps to.
 
 ---
 
+## §3a MITRE ATLAS Technique Layer  *(when `has_ai_ml`)*
+
+The adversarial-ML counterpart of §3, for AI/ML targets. MITRE ATLAS ships an ATT&CK-Navigator-compatible
+layer schema, so this reuses the **same Navigator JSON emitter** — the only load-bearing differences are
+`domain: "atlas-atlas"` and the `AML.` technique-id prefix. Produced only when `coverage.context.has_ai_ml`
+is true; on a non-AI target it is not emitted and every other artifact (including the §3 ATT&CK layer) is
+unchanged.
+
+```markdown
+## MITRE ATLAS Technique Coverage
+
+| ATLAS Tactic | Technique | ID | Findings |
+|--------------|-----------|----|----------|
+| Execution | LLM Prompt Injection | AML.T0051 | TM-007 |
+| Persistence | Poison Training Data | AML.T0020 | TM-009 |
+| Exfiltration | Exfiltration via ML Inference API | AML.T0024 | TM-011 |
+```
+
+```json
+{
+  "name": "ATLAS layer — ExampleAIApp",
+  "domain": "atlas-atlas",
+  "techniques": [
+    {"techniqueID": "AML.T0051", "score": 20, "comment": "TM-007 (indirect prompt injection)"},
+    {"techniqueID": "AML.T0020", "score": 15, "comment": "TM-009 (RAG poisoning)"}
+  ]
+}
+```
+
+Grounding rule (identical to §3, over the `atlas[]` field): the technique ids shown are a **subset of the
+distinct `atlas[]` ids across the findings** — no technique on the layer that no finding maps to, and every
+sub-technique's parent technique also present. Select ids from the MITRE ATLAS reference table in
+`frameworks.md`. The eval (`diagram_checks.analytical_checks`) detects this layer **only** by
+`domain: "atlas-atlas"` + the `AML.` prefix and never runs the ATT&CK `T####` regex over an ATLAS id.
+
+---
+
+## §3b OWASP-LLM Top-10 Coverage Checklist  *(when `has_ai_ml`)*
+
+A coverage **checklist**, **not a second diagram** — OWASP-LLM content is a subset of ATLAS, so this is a
+projection of the ATLAS layer, rendered through the **same table renderer as the §1 STRIDE matrix**. Fixed
+10-row enum (LLM01–LLM10). Each row resolves to a finding id / `n-a` / `clean` by asking "does any finding's
+own `atlas[]` id fall in this class's crosswalk set?" (the OWASP-LLM→ATLAS crosswalk in `frameworks.md`). A
+row whose crosswalk set matches no finding is a legitimate `n-a` / `clean` — honest abstention.
+
+- **Header**: the first column MUST be labeled `OWASP-LLM` (this is how the eval locates the checklist and
+  scopes the `malformed-owasp-llm` id guardrail to it — a stray OWASP-category cell elsewhere is not
+  mis-read).
+- **Cells**: a finding id (`TM-NNN`), `n-a` (class inapplicable to this system), or `clean` (in scope,
+  examined, no finding). No blank cells.
+
+```markdown
+## OWASP-LLM Top-10 Coverage Checklist
+
+| OWASP-LLM | Class | Coverage |
+|-----------|-------|----------|
+| LLM01:2025 | Prompt Injection | TM-007 |
+| LLM02:2025 | Sensitive Information Disclosure | TM-011 |
+| LLM03:2025 | Supply Chain | clean |
+| LLM04:2025 | Data and Model Poisoning | TM-009 |
+| LLM05:2025 | Improper Output Handling | clean |
+| LLM06:2025 | Excessive Agency | n-a |
+| LLM07:2025 | System Prompt Leakage | clean |
+| LLM08:2025 | Vector and Embedding Weaknesses | TM-009 |
+| LLM09:2025 | Misinformation | n-a |
+| LLM10:2025 | Unbounded Consumption | clean |
+```
+
+Use the verified official `LLM01:2025`–`LLM10:2025` ids from the OWASP-LLM Top-10 table in `frameworks.md`;
+the eval format-checks each id against `^LLM(0[1-9]|10):2025$` and never requires any particular class to be
+covered.
+
+---
+
 ## §4 Authorization (RBAC) Matrix  *(when ≥2 roles/principals)*
 
 Roles × resources, with an explicit `anonymous` / unauthenticated row, marking `allow` / `deny` /
@@ -130,3 +256,43 @@ under the same `## SBOM` / `## Dependency` heading.)
 tolerates a hyphen or a space between words, and the token is accepted either after a `|` field
 separator (`%% Version: ... | Type: SBOM`) or as a bare `%% type: sbom` line. The Version stamp form
 alone is sufficient. Same convention as the companion diagrams in `mermaid-diagrams.md` §5.
+
+---
+
+## §6 Threat-to-Control Coverage Matrix  *(when ≥1 finding)*
+
+The **defensive dual** of the STRIDE-per-element matrix: STRIDE proves every element was *examined*;
+this proves every finding was *addressed* — or that the gap is explicit. Each finding maps to ≥1
+control, or is explicitly dispositioned `accepted-risk` / `none`; a finding with neither is shown as
+an explicit `GAP` cell (the RBAC-matrix convention), never left blank.
+
+- **Rows**: each finding, keyed by its `TM-NNN` id.
+- **Columns**: `Finding | Control(s) | Control Name | Framework Ref | Disposition`.
+- **Cells**: `Control(s)` is the control id(s) `CTL-NNN` (comma-separated), or `GAP` when the finding
+  has no control; `Control Name` is the normalized action (migrated from free-text remediation);
+  `Framework Ref` is the normalized NIST-800-53 / D3FEND id or `—`; `Disposition` is one of
+  `mitigated` / `accepted-risk` / `none` (with a one-line reason for the abstentions). An **uncovered**
+  finding (no control, no disposition) shows `GAP` with an empty disposition — the eval flags it.
+
+```markdown
+## Threat-to-Control Coverage Matrix
+
+| Finding | Control(s) | Control Name | Framework Ref | Disposition |
+|---------|------------|--------------|---------------|-------------|
+| TM-001 | CTL-001 | Enforce mTLS on service-to-service calls | SC-8 | mitigated |
+| TM-004 | GAP | — | — | none (static asset, no runtime control applies) |
+| TM-006 | GAP | — | — |  |
+```
+
+This matrix is a **faithful projection of `findings.json`**: every finding id appears as a row, each
+listed `CTL-NNN` is one the finding declares, and a zero-control finding shows `GAP`. The eval
+(`diagram_checks.analytical_checks`) checks presence + projection only — it detects the table by its
+`Control` + `Disposition` columns and never judges whether the listed control is the *correct*
+remediation (that is the agent's / coverage-judge's call).
+
+**`CTL-NNN` vs `R-NNN` (not duplication).** `CTL-NNN` is the addressable *control object* in
+`findings.json` — what this matrix and, later, attack-defense counter-edges point at. `R-NNN`
+(report Section VIII) is the *remediation-roadmap* sequencing item. They are aligned, not merged: one
+`R-NNN` roadmap item may carry out several `CTL-NNN` controls. Each control's `counters[]` is
+**reserved** for the attack-defense-tree change to attach the attack-node ids it interdicts; it
+defaults empty here and no grounding is enforced on it yet.

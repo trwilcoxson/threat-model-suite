@@ -1,0 +1,96 @@
+@startuml ecs-structural-c4
+' C4-PlantUML re-render of the ECS-fullstack structural threat-model diagram.
+' Renders fully offline server-side via Kroki (C4 + logos sprites bundled in the plantuml jar).
+' Render: curl -X POST https://kroki.io/plantuml/svg --data-binary @structural.puml
+!include <C4/C4_Container>
+!include <logos/aws-ecs>
+!include <logos/aws-dynamodb>
+!include <logos/aws-s3>
+!include <logos/aws-ec2>
+!include <logos/aws-cloudwatch>
+!include <logos/aws-codepipeline>
+!include <logos/aws-codebuild>
+!include <logos/aws-lambda>
+!include <logos/docker>
+!include <logos/nodejs>
+!include <logos/github>
+!include <logos/terraform>
+
+LAYOUT_TOP_DOWN()
+title Structural DFD (L1) — AWS ECS Fullstack — C4-PlantUML + sprites
+
+' Custom trust-boundary tags (colored security zones)
+AddBoundaryTag("vpc",  $bgColor="#eaf2fb", $borderColor="#004085", $fontColor="#004085")
+AddBoundaryTag("cicd", $bgColor="#f3f0fb", $borderColor="#6f42c1", $fontColor="#6f42c1")
+AddBoundaryTag("pub",  $bgColor="#f4f9ff", $borderColor="#3b6ea5", $fontColor="#3b6ea5")
+AddBoundaryTag("priv", $bgColor="#fff8f0", $borderColor="#a5713b", $fontColor="#a5713b")
+
+' ---- external actors & dependencies ----
+Person(R0, "Anonymous Internet User", "browser · no credential")
+Person(R5, "Terraform Operator / Dev", "AWS creds + GitHub PAT")
+System_Ext(X1, "GitHub Repository", "source + PAT [vendor:GitHub]", $sprite="github")
+System_Ext(X4, "Docker Base Images", "bitnami/node, nginx :latest [public-ECR]", $sprite="docker")
+
+' ---- TRUST BOUNDARY: VPC ----
+Boundary(VPC, "VPC 10.120.0.0/16 · AWS Account · 2 AZ", $tags="vpc") {
+  Boundary(PUB, "Public Subnets — ALB tier", $tags="pub") {
+    Container(C4, "Client ALB", "ALB · internet-facing · HTTP:80 [managed]", $sprite="aws-ec2")
+    Container(C5, "Server / API ALB", "ALB · internet-facing · HTTP:80 [managed]", $sprite="aws-ec2")
+  }
+  Boundary(PRIV, "Private Subnets — ECS Fargate task tier", $tags="priv") {
+    Container(C6, "ECS Cluster", "Fargate [managed]", $sprite="aws-ecs")
+    Container(C7, "ECS Service — client task", "Fargate [managed]", $sprite="aws-ecs")
+    Container(C8, "ECS Service — server task", "Fargate [managed]", $sprite="aws-ecs")
+    Container(C1, "Client SPA", "Vue.js 2 · Nginx [self-managed]")
+    Container(C2, "Server API", "Node.js · Express 4 [self-managed]", $sprite="nodejs")
+    Container(C3, "Swagger / API Docs", "/api/docs [self-managed]")
+  }
+}
+
+' ---- TRUST BOUNDARY: CI/CD control plane ----
+Boundary(CICD, "CI/CD Control Plane", $tags="cicd") {
+  Container(C9,  "CodePipeline", "Source/Build/Deploy [managed]", $sprite="aws-codepipeline")
+  Container(C10, "CodeBuild", "standard:4.0 · privileged [managed]", $sprite="aws-codebuild")
+  Container(C11, "CodeDeploy", "blue/green ECS [managed]", $sprite="aws-ec2")
+  Container(C12, "ECS Autoscaling + CloudWatch", "App Auto Scaling [managed]", $sprite="aws-cloudwatch")
+  ContainerQueue(C13, "SNS Topic", "deployment notifications [managed]", $sprite="aws-lambda")
+}
+
+' ---- data stores (AWS-managed) ----
+ContainerDb(D1, "DynamoDB", "product catalog [managed]", $sprite="aws-dynamodb")
+ContainerDb(D2, "S3 assets bucket", "product images [managed]", $sprite="aws-s3")
+ContainerDb(D3, "S3 artifact bucket", "source + build artifacts [managed]", $sprite="aws-s3")
+ContainerDb(D4, "ECR repositories", "server + client · MUTABLE [managed]", $sprite="docker")
+ContainerDb(D5, "CloudWatch Logs", "30-day retention [managed]", $sprite="aws-cloudwatch")
+ContainerDb(D6, "Terraform State", "local file · contains github_token [self-managed]", $sprite="terraform")
+
+' ---- typed data flows (protocol · sensitivity · [ENC|PLAIN]) ----
+Rel(R0, C4, "HTTP · SPA page load", "[PUBLIC] [PLAIN]")
+Rel(C4, C7, "HTTP · fwd to client task", "[INTERNAL] [PLAIN]")
+Rel(C7, C1, "[CTRL] ECS runs SPA container", "[INTERNAL]")
+Rel(R0, C5, "HTTP · GET /api/getAllProducts", "[PUBLIC] [PLAIN]")
+Rel(C5, C8, "HTTP · fwd to server task", "[INTERNAL] [PLAIN]")
+Rel(C8, C2, "[CTRL] ECS runs API container", "[INTERNAL]")
+Rel(C2, C3, "[CTRL] serves /api/docs", "[PUBLIC]")
+Rel(C2, D1, "HTTPS · DocumentClient.scan", "[INTERNAL]")
+Rel(R0, D2, "HTTPS · product image fetch", "[INTERNAL]")
+Rel(C7, D5, "awslogs task logs", "[INTERNAL]")
+Rel(C8, D5, "awslogs task logs", "[INTERNAL]")
+Rel(R5, X1, "[BUILD] git push to main", "[INTERNAL]")
+Rel(R5, D6, "[ADMIN] terraform apply · local state", "[RESTRICTED]")
+Rel(X1, C9, "[BUILD] source poll", "[CONFIDENTIAL]")
+Rel(C9, D3, "[BUILD] store source + artifacts", "[CONFIDENTIAL]")
+Rel(C9, C10, "[BUILD] trigger build", "[INTERNAL]")
+Rel(X4, C10, "[BUILD] pull base image :latest", "[INTERNAL]")
+Rel(C10, D4, "[BUILD] docker build/push", "[CONFIDENTIAL]")
+Rel(C10, D5, "[BUILD] build logs", "[INTERNAL]")
+Rel(C9, C11, "[BUILD] trigger deploy", "[INTERNAL]")
+Rel(C11, C6, "[CTRL] blue/green deploy", "[INTERNAL]")
+Rel(D4, C6, "[CTRL] image pull on task start", "[INTERNAL]")
+Rel(C6, C7, "[CTRL] schedule client tasks", "[INTERNAL]")
+Rel(C6, C8, "[CTRL] schedule server tasks", "[INTERNAL]")
+Rel(C11, C13, "[ASYNC] deploy notifications", "[INTERNAL]")
+Rel(C12, C8, "[CTRL] autoscaling CPU/mem", "[INTERNAL]")
+
+SHOW_LEGEND()
+@enduml

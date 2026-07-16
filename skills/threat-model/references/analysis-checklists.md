@@ -175,6 +175,7 @@ Score each threat identified in Phase 3.
 
 ### Analytical & Communication Visuals (each when applicable, else NOT APPLICABLE with reason)
 - [ ] STRIDE-per-element coverage matrix — fully populated (every cell TM-id / n/a / clean)
+- [ ] Boundary-crossing STRIDE-per-interaction matrix — when the DFD has ≥1 trust-zone-crossing edge; one decided row per crossing edge (keyed `Edge (src → dst)`); intra-zone edges excluded; single-zone system marked NOT APPLICABLE
 - [ ] Likelihood×Impact risk heat map — every scored finding placed at its own (L,I) cell
 - [ ] MITRE ATT&CK technique layer — techniques == distinct finding techniques (+ Navigator JSON at ≥5)
 - [ ] Authorization (RBAC) matrix — when ≥2 roles; includes an anonymous row

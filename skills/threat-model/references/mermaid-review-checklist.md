@@ -1,8 +1,18 @@
-# Mermaid Diagram Review Checklist
+# Diagram Review Checklist
 
-Pre-submission quality gates for all Mermaid diagrams. Run this checklist before rendering to PNG and before including diagrams in the final report.
+Pre-submission quality gates for all diagrams. Run this checklist before rendering and before including
+diagrams in the final report.
 
-**References**: [mermaid-spec.md](mermaid-spec.md) for rules, [mermaid-layers.md](mermaid-layers.md) for layer requirements.
+**Engine-neutral.** The suite is mixed-engine: the structural, L4-overlay, and SBOM diagrams are authored
+in **D2** ([d2-spec.md](d2-spec.md)); sequence diagrams stay **Mermaid** ([mermaid-spec.md](mermaid-spec.md));
+Mermaid remains an accepted input throughout. These checks are **engine-agnostic** — they read the same
+normalized model (blocks, typed edges, boundary containers, node-type tokens, stamps) regardless of engine.
+Where a check names a Mermaid keyword below, its D2 equivalent is the parallel construct: `subgraph` ⇄
+container, `classDef`/`:::` ⇄ `classes`/`class:`, `%% Version:` ⇄ `# Version:`.
+
+**References**: [mermaid-spec.md](mermaid-spec.md) / [d2-spec.md](d2-spec.md) for rules,
+[node-type-icons.md](node-type-icons.md) for the node-type vocabulary,
+[mermaid-layers.md](mermaid-layers.md) for layer requirements.
 
 ---
 

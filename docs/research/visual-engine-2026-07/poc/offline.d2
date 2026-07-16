@@ -1,0 +1,7 @@
+user: Anonymous User { shape: person }
+ecs: ECS Service { icon: ./icons/ecs.svg }
+db: DynamoDB { shape: cylinder; icon: ./icons/dynamodb.svg }
+s3: S3 assets { shape: cylinder; icon: ./icons/s3.svg }
+user -> ecs: "HTTP [PUBLIC]"
+ecs -> db: "scan [INTERNAL]"
+ecs -> s3: "put [INTERNAL]"

@@ -28,6 +28,18 @@ state) and the eval checks structure over that fact — it never infers content 
 | [`refine-pipeline-flow`](changes/refine-pipeline-flow/) | `assessment-flow` | implemented (live verification pending) |
 | [`harden-eval-determinism-boundary`](changes/harden-eval-determinism-boundary/) | `eval-determinism` | implemented + verified |
 | [`correct-reference-data`](changes/correct-reference-data/) | `reference-fidelity` | implemented |
+| [`modernize-visual-engine`](changes/modernize-visual-engine/) | `diagram-rendering`, `diagram-verification` | implemented eval-side (asset/render integration pending) |
+| [`add-offline-render-pipeline`](changes/add-offline-render-pipeline/) | `diagram-rendering` | implemented seam+eval (binary/asset vendoring pending) |
+| [`add-cvss-decomposed-likelihood`](changes/add-cvss-decomposed-likelihood/) | `risk-metrics` | implemented (live verification pending) |
+| [`add-ai-ml-attack-surface`](changes/add-ai-ml-attack-surface/) | `threat-model-visuals`, `eval-determinism`, `reference-fidelity` | implemented (live verification pending) |
+| [`add-boundary-crossing-stride-matrix`](changes/add-boundary-crossing-stride-matrix/) | `boundary-crossing-matrix` | implemented (live verification pending) |
+| [`add-control-coverage-matrix`](changes/add-control-coverage-matrix/) | `control-coverage` | implemented (live verification pending) |
+
+The last six are the **[visual-engine research program](../docs/research/visual-engine-2026-07/ROADMAP.md)**
+(2026-07), now **implemented** on this branch (the four additive changes fully; the visual-engine pair eval-side,
+with D2-binary/icon-asset vendoring + diagram migration tracked in their `tasks.md`). Seven further workstreams
+are deferred and six were dropped — see the roadmap. OTM was evaluated and not adopted; a `recon`+`dataflows[]`
+semantic-source spike is queued (see [OTM-EVAL.md](../docs/research/visual-engine-2026-07/OTM-EVAL.md)).
 
 Each change folder has `proposal.md` (why/what), `specs/<capability>/spec.md` (the
 ADDED/MODIFIED requirement deltas), `design.md` (technical approach + the determinism boundary), and

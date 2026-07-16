@@ -3,7 +3,7 @@
 ## Contents
 - Threat Actor Profiles (selection criteria, capability scoring)
 - STRIDE-LM (7 categories: S, T, R, I, D, E, LM)
-- AI/ML Security Threats (LLM, Agentic AI, RAG, Multi-Modal)
+- AI/ML Security Threats (LLM, Agentic AI, RAG, Multi-Modal; MITRE ATLAS technique reference, OWASP-LLM Top-10 2025, OWASP-LLM→ATLAS crosswalk)
 - Risk Rating — Likelihood × Impact matrix, OWASP-inspired (Likelihood 1-5, Impact 1-5, Risk Matrix, Severity Bands)
 - LINDDUN Privacy Threats (7 categories)
 - MITRE ATT&CK — Key Tactics and Techniques (13 tactics, technique IDs)
@@ -99,6 +99,87 @@ Assess these when the system includes AI/ML components, **in addition to** STRID
 - Audio-based injection
 - Cross-modal confusion
 
+### E. MITRE ATLAS — Adversarial ML Technique Reference
+
+Reference set for the `atlas[]` finding field (adversarial-ML technique ids, `AML.T####`). ATLAS is the
+adversarial-ML counterpart of MITRE ATT&CK; use it **in addition to** ATT&CK when the target has AI/ML
+components (`has_ai_ml`). Select the technique that names the adversary behavior; if none fits, describe
+the threat in plain text with the "No matching ID in reference set — manual verification recommended"
+note (same escape hatch as ATT&CK/CWE). These are guidance, never an answer key.
+
+| ATLAS Tactic | Technique | ID |
+|--------------|-----------|----|
+| Reconnaissance | Discover ML Model Ontology / Family | AML.T0013, AML.T0014 |
+| Resource Development | Acquire Public ML Artifacts | AML.T0002 |
+| Initial Access | ML Supply Chain Compromise | AML.T0010 |
+| Initial Access | Valid Accounts | AML.T0012 |
+| ML Model Access | ML Model Inference API Access | AML.T0040 |
+| ML Model Access | Physical Environment Access | AML.T0041 |
+| Execution | LLM Prompt Injection (·000 Direct, ·001 Indirect) | AML.T0051 |
+| Execution | LLM Plugin Compromise | AML.T0053 |
+| Persistence | Poison Training Data | AML.T0020 |
+| Persistence | Backdoor ML Model | AML.T0018 |
+| Defense Evasion | Evade ML Model | AML.T0015 |
+| Defense Evasion | LLM Jailbreak | AML.T0054 |
+| Discovery | Discover ML Artifacts | AML.T0007 |
+| Collection | LLM Data Leakage | AML.T0057 |
+| ML Attack Staging | Craft Adversarial Data | AML.T0043 |
+| ML Attack Staging | Verify Attack / Create Proxy ML Model | AML.T0042, AML.T0005 |
+| Exfiltration | Exfiltration via ML Inference API (·000 Infer Membership, ·001 Invert Model, ·002 Extract Model) | AML.T0024 |
+| Exfiltration | Exfiltration via Cyber Means | AML.T0025 |
+| Impact | Erode ML Model Integrity | AML.T0031 |
+| Impact | Denial of ML Service | AML.T0029 |
+| Impact | External Harms | AML.T0048 |
+
+**ATLAS id shape** (what the eval format-checks on the `atlas[]` field — shape only, never membership):
+technique `AML.T####` (optional `.###` sub-technique), and the broader namespace tactics `AML.TA####`,
+mitigations `AML.M####`, case studies `AML.CS####`. A malformed id (e.g. `AML.T99999`) is flagged
+`malformed-atlas`; the ATT&CK `T####` regex is **never** run over an `AML.T####` id.
+
+### F. OWASP Top 10 for LLM Applications (2025)
+
+The verified official 2025 identifiers and titles. Rendered as a coverage **checklist** (not a second
+diagram) projected onto the ATLAS layer via the crosswalk below.
+
+| ID | Category |
+|----|----------|
+| LLM01:2025 | Prompt Injection |
+| LLM02:2025 | Sensitive Information Disclosure |
+| LLM03:2025 | Supply Chain |
+| LLM04:2025 | Data and Model Poisoning |
+| LLM05:2025 | Improper Output Handling |
+| LLM06:2025 | Excessive Agency |
+| LLM07:2025 | System Prompt Leakage |
+| LLM08:2025 | Vector and Embedding Weaknesses |
+| LLM09:2025 | Misinformation |
+| LLM10:2025 | Unbounded Consumption |
+
+**OWASP-LLM id shape** (what the eval format-checks on the checklist column — shape only): `LLM01:2025` …
+`LLM10:2025` (regex `^LLM(0[1-9]|10):2025$`). A malformed id (e.g. `LLM99:2025`, or a bare `LLM3`) is
+flagged `malformed-owasp-llm`. The check is keyed on the **OWASP-LLM checklist column**, never guessed
+from a bare token, so an OWASP-Agentic `T1..T15` token can never be read as an ATT&CK technique.
+
+### G. OWASP-LLM → MITRE ATLAS Crosswalk
+
+A **fixed grouping** (each OWASP-LLM class → the set of ATLAS techniques it corresponds to), used to
+project the model's own `atlas[]` ids onto the OWASP-LLM checklist. It is a grouping published by the
+community, **not** a statement about what a given target contains — a checklist row with no matching
+finding is a legitimate `n-a` / `clean` (honest abstention). Stale-tolerant: a renumber mis-groups a
+checklist row (cosmetic), it never fails a run or dictates a finding.
+
+| OWASP-LLM Class | ATLAS techniques |
+|-----------------|------------------|
+| LLM01:2025 Prompt Injection | AML.T0051, AML.T0054 |
+| LLM02:2025 Sensitive Information Disclosure | AML.T0057, AML.T0024 |
+| LLM03:2025 Supply Chain | AML.T0010, AML.T0002 |
+| LLM04:2025 Data and Model Poisoning | AML.T0020, AML.T0018 |
+| LLM05:2025 Improper Output Handling | AML.T0053, AML.T0015 |
+| LLM06:2025 Excessive Agency | AML.T0053, AML.T0012 |
+| LLM07:2025 System Prompt Leakage | AML.T0057 |
+| LLM08:2025 Vector and Embedding Weaknesses | AML.T0020, AML.T0043 |
+| LLM09:2025 Misinformation | AML.T0031, AML.T0048 |
+| LLM10:2025 Unbounded Consumption | AML.T0029 |
+
 ---
 
 ## Risk Rating (Likelihood × Impact matrix, OWASP-inspired)
@@ -122,6 +203,46 @@ Likelihood is derived from PASTA attack simulation (Stages 4-5).
 | **3** | Medium | Achievable with moderate skill and publicly available tools; some preconditions needed |
 | **4** | High | Straightforward with common tools and basic technical knowledge; few preconditions |
 | **5** | Very High | Trivially exploitable, automatable, no special skills or access needed |
+
+### Decomposed Likelihood — CVSS v3.1 exploitability (optional, auditable)
+
+The 1-5 Likelihood above is the user-facing number. Optionally decompose *why* it is what it is by recording a **CVSS v3.1 exploitability vector** behind it — the same judgment Phase 4.2 already exercises (entry point, preconditions, controls to bypass), captured as four metrics: Attack Vector (AV), Attack Complexity (AC), Privileges Required (PR), User Interaction (UI). Emit it as the canonical string `AV:_/AC:_/PR:_/UI:_` (e.g. `AV:N/AC:L/PR:N/UI:R`). It is **optional** — a threat whose Likelihood was not decomposed omits it rather than inventing metrics.
+
+**Scoping (two decisions, stated explicitly):**
+- Only the CVSS **exploitability** sub-score is adopted to inform Likelihood. The CVSS **impact** sub-score is **not** adopted — Impact stays on the PASTA-derived 1-5 axis below.
+- Because the suite does **not** adopt the CVSS **Scope** metric, Privileges Required uses the **Scope-Unchanged** weights, pinned below.
+
+**Frozen metric weights** (FIRST.org CVSS v3.1 spec):
+
+| Metric | Value → weight |
+|--------|----------------|
+| **AV** Attack Vector | Network `N`=0.85, Adjacent `A`=0.62, Local `L`=0.55, Physical `P`=0.20 |
+| **AC** Attack Complexity | Low `L`=0.77, High `H`=0.44 |
+| **PR** Privileges Required (Scope-Unchanged) | None `N`=0.85, Low `L`=0.62, High `H`=0.27 |
+| **UI** User Interaction | None `N`=0.85, Required `R`=0.62 |
+
+**Exploitability sub-score** = `8.22 × AV × AC × PR × UI`. The fixed maximum is `8.22 × 0.85 × 0.77 × 0.85 × 0.85 = 3.887043` (the normalizer).
+
+**Exploitability → 1-5 band** (normalized quintiles; `frac = sub-score ÷ 3.887043`, `band = min(5, ⌊frac × 5⌋ + 1)`):
+
+| Normalized fraction | Likelihood band |
+|---------------------|-----------------|
+| 0.0 – 0.2 | **1** |
+| 0.2 – 0.4 | **2** |
+| 0.4 – 0.6 | **3** |
+| 0.6 – 0.8 | **4** |
+| 0.8 – 1.0 | **5** |
+
+Worked examples (the eval locks these against drift):
+
+| Vector | sub-score | frac | band |
+|--------|-----------|------|------|
+| `AV:N/AC:L/PR:N/UI:N` | 3.887 | 1.00 | **5** (trivially exploitable) |
+| `AV:N/AC:L/PR:N/UI:R` | 2.835 | 0.73 | **4** |
+| `AV:N/AC:H/PR:L/UI:N` | 1.620 | 0.42 | **3** |
+| `AV:L/AC:H/PR:H/UI:R` | 0.333 | 0.09 | **1** |
+
+This is the **single source** the reference-free eval implements (`evals/reliability/checks.py` `exploitability_band()`); when a finding carries a `cvss_vector`, the eval recomputes the sub-score over that vector and flags a `cvss-likelihood` defect if it does not band to the finding's own stated Likelihood. It is a **consistency relation, not an answer key** — change the vector and the required band changes with it; it never asserts which Likelihood is "correct". The thresholds are **v1 and tunable** — a recalibration is a one-line edit to the table above, which the eval reads as its source of truth.
 
 ### Impact Scoring (1-5)
 
@@ -438,11 +559,36 @@ This produces the prioritized threat list used in the final report.
 
 ---
 
+## Control Framework IDs (NIST 800-53 / D3FEND)
+
+When a finding's `controls[]` carries a normalized `framework_ref`, it names a countermeasure in one of
+these vocabularies. This is the **authoritative reference set** for the skill — the defensive analogue of
+the MITRE/CWE tables above. Use an id **only** if it appears here; otherwise leave `framework_ref` null
+and keep the control action in `name` as plain text.
+
+**NIST SP 800-53 Rev 5 — common technical controls** (`family-number`, optional `(enhancement)`):
+- AC-2 Account Management · AC-3 Access Enforcement · AC-4 Information Flow Enforcement · AC-6 Least Privilege · AC-17 Remote Access
+- AU-2 Event Logging · AU-6 Audit Record Review · AU-9 Protection of Audit Information
+- IA-2 Identification & Authentication (Users) · IA-5 Authenticator Management · IA-8 Identification (Non-Org Users)
+- SC-5 Denial-of-Service Protection · SC-7 Boundary Protection · SC-8 Transmission Confidentiality & Integrity · SC-12 Cryptographic Key Establishment · SC-13 Cryptographic Protection · SC-28 Protection of Information at Rest
+- SI-3 Malicious Code Protection · SI-4 System Monitoring · SI-7 Software/Firmware/Information Integrity · SI-10 Information Input Validation
+
+**D3FEND — countermeasure techniques** (`D3-XXX`):
+- D3-MFA Multi-factor Authentication · D3-NTA Network Traffic Analysis · D3-ITF Inbound Traffic Filtering
+- D3-MENCR Message Encryption · D3-DENCR Disk Encryption · D3-RTSD Real-time Service Discovery
+- D3-UAP User Account Permissions · D3-SICA System Init Config Analysis · D3-PSA Process Spawn Analysis
+
+`framework_ref` shape (what the eval format-checks): NIST `^[A-Z]{2}-[0-9]+(\([0-9]+\))?$` (e.g. `SC-7`,
+`AC-3(4)`) or D3FEND `^D3-[A-Z]+$` (e.g. `D3-NTA`). The eval checks the **shape only** — it never asserts
+that the referenced control is the *right* one for the finding; that mapping is verified here, by the agent.
+
+---
+
 ## Framework ID Verification
 
-**When mapping threats to framework IDs (MITRE ATT&CK technique IDs, CWE IDs), adhere to these rules:**
+**When mapping threats to framework IDs (MITRE ATT&CK technique IDs, CWE IDs, MITRE ATLAS `AML.T####` ids, OWASP-LLM Top-10 ids, NIST 800-53 / D3FEND control IDs), adhere to these rules:**
 
-1. **Only use IDs listed in this reference file.** The MITRE and CWE tables above are the authoritative set for this skill.
-2. **If a threat maps to a technique/CWE not in the tables**, describe the threat in plain text and note "No matching ID in reference set — manual verification recommended."
-3. **Never fabricate or guess framework IDs.** An incorrect ID is worse than no ID — it creates false confidence and misdirects remediation.
-4. **Cross-check before finalizing**: In Phase 6 (False Positive Validation), verify every framework ID in the findings against the tables in this file.
+1. **Only use IDs listed in this reference file.** The MITRE ATT&CK, CWE, MITRE ATLAS, OWASP-LLM Top-10, and Control Framework tables above are the authoritative set for this skill. Use an ATLAS id (the `atlas[]` field) only for AI/ML targets (`has_ai_ml`), and an OWASP-LLM id only on the OWASP-LLM checklist.
+2. **If a threat maps to a technique/CWE/ATLAS/OWASP-LLM class not in the tables**, describe the threat in plain text and note "No matching ID in reference set — manual verification recommended." **If a control has no matching NIST-800-53 / D3FEND id**, leave `framework_ref` null and keep the control action in the `name` field as plain text — never fabricate a control id.
+3. **Never fabricate or guess framework IDs.** An incorrect ID is worse than no ID — it creates false confidence and misdirects remediation. Keep the namespaces distinct: an `AML.T####` ATLAS id is never written as a bare ATT&CK `T####`, and an OWASP-LLM `LLM0x:2025` id is never confused with an ATT&CK technique.
+4. **Cross-check before finalizing**: In Phase 6 (False Positive Validation), verify every framework ID in the findings — MITRE ATT&CK technique IDs, CWE IDs, **every `atlas[]` ATLAS id, every OWASP-LLM checklist id,** **and each control's `framework_ref`** — against the tables in this file.

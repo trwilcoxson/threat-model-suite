@@ -32,6 +32,42 @@ def band(score: int) -> str:
     return "CRITICAL"
 
 
+# CVSS v3.1 exploitability sub-score = 8.22 * AV * AC * PR * UI (FIRST.org v3.1 spec). Frozen metric
+# weights; PR uses the Scope-Unchanged column because the suite does not adopt CVSS Scope. These weights,
+# the normalizer, and the exploitability->1-5 thresholds are published as one table in
+# references/frameworks.md — this is the single implementation of that table, no second scheme.
+_CVSS_AV = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.20}
+_CVSS_AC = {"L": 0.77, "H": 0.44}
+_CVSS_PR = {"N": 0.85, "L": 0.62, "H": 0.27}  # Scope-Unchanged
+_CVSS_UI = {"N": 0.85, "R": 0.62}
+EXPLOIT_MAX = 3.887043  # 8.22 * 0.85 * 0.77 * 0.85 * 0.85 — the fixed maximum sub-score
+_CVSS_VECTOR_RE = re.compile(r"^AV:([NALP])/AC:([LH])/PR:([NLH])/UI:([NR])$")
+# Control id + normalized framework-ref shapes. Format-only (the offline eval never asserts a control
+# is the *right* one — that is agent-verified against frameworks.md). NIST-800-53 (AC-3, SC-7(5)) or
+# D3FEND (D3-NTA); a framework_ref that is present but unshaped is flagged, mirroring malformed-cwe.
+_CTL_ID_RE = re.compile(r"^CTL-[0-9]{3}$")
+_FRAMEWORK_REF_RE = re.compile(r"^([A-Z]{2}-[0-9]+(\([0-9]+\))?|D3-[A-Z]+)$")
+# OWASP-LLM Top-10 id vocabulary (LLM01:2025 .. LLM10:2025). The loose shape captures an authored id in
+# the checklist table (the DECLARED framework field); the strict shape validates it. The distinctive LLM
+# prefix cannot collide with ATT&CK T#### / ATLAS AML.T#### ids, so the guardrail is keyed on the
+# framework unambiguously — a bare `T3` OWASP-Agentic token is never read as an ATT&CK technique.
+_OWASP_LLM_LOOSE = re.compile(r"LLM\d+(?::\d+)?")
+_OWASP_LLM_STRICT = re.compile(r"LLM(0[1-9]|10):2025")
+
+
+def exploitability_band(vector: str) -> int:
+    """Map a CVSS v3.1 exploitability vector to a 1-5 Likelihood band via normalized quintiles.
+    Raises ValueError on an unparseable vector.
+    # ponytail: v1 uniform quintile split; upgrade path = recalibrate the five thresholds in
+    # frameworks.md from a corpus of scored runs (a data edit, not a code change)."""
+    m = _CVSS_VECTOR_RE.match((vector or "").strip())
+    if not m:
+        raise ValueError(f"unparseable CVSS exploitability vector {vector!r}")
+    av, ac, pr, ui = m.groups()
+    sub = 8.22 * _CVSS_AV[av] * _CVSS_AC[ac] * _CVSS_PR[pr] * _CVSS_UI[ui]
+    return min(5, int(sub / EXPLOIT_MAX * 5) + 1)
+
+
 class Defects:
     def __init__(self) -> None:
         self.items: list[dict[str, str]] = []
@@ -159,7 +195,9 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
     covered: set[str] = set()
     counts = {s: 0 for s in SEVERITIES}
     n_findings = 0
-    cwe_total = mitre_total = 0
+    cwe_total = mitre_total = atlas_total = 0
+    control_classes = {"mitigated": 0, "accepted-risk": 0, "none": 0, "uncovered": 0}
+    controls_total = 0
     fids: set[str] = set()
     if findings_doc and _require(findings_doc, ["findings", "summary_counts", "no_issue_surface"], d, "findings"):
         for f in findings_doc["findings"]:
@@ -191,6 +229,26 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                               f"{fid}: severity {f['severity']} != band(L{L} x I{I})={expect}")
             except (ValueError, TypeError):
                 d.add("structure", "bad-LxI", f"{fid}: non-integer likelihood/impact")
+            # consistency: an optional CVSS exploitability vector must band to the finding's OWN
+            # likelihood. Reference-free — recompute 8.22*AV*AC*PR*UI over the finding's own vector
+            # and compare the derived band to its own stated likelihood (same recompute-over-emitted-
+            # facts family as severity-formula). Fires only when the field is present; an unparseable
+            # vector that slipped past the schema is a structure defect, never a silent pass.
+            vec = f.get("cvss_vector")
+            if vec:
+                try:
+                    derived = exploitability_band(vec)
+                except ValueError:
+                    d.add("structure", "bad-cvss-vector",
+                          f"{fid}: cvss_vector {vec!r} is not a legal AV:_/AC:_/PR:_/UI:_ vector")
+                else:
+                    try:
+                        stated = int(f["likelihood"])
+                    except (ValueError, TypeError):
+                        stated = None  # a non-integer likelihood is already flagged as bad-LxI above
+                    if stated is not None and stated != derived:
+                        d.add("consistency", "cvss-likelihood",
+                              f"{fid}: stated likelihood {stated} != derived band {derived} from cvss_vector {vec}")
             # grounding: refs must resolve to recon ids
             for ref in f.get("asset_refs", []) + f.get("surface_refs", []):
                 if recon_ids and ref not in recon_ids:
@@ -206,6 +264,56 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                 mitre_total += 1
                 if not re.fullmatch(r"T\d{4}(\.\d{3})?", m):
                     d.add("consistency", "malformed-mitre", f"{fid}: '{m}'")
+            # AI/ML controlled-vocabulary guardrail — keyed on the DECLARED framework field (the
+            # atlas[] field -> the ATLAS regex), never guessed from the bare token, so an AML.T####
+            # id is never run through the ATT&CK T\d{4} regex. Shape-only, mirroring malformed-mitre;
+            # a missing/null atlas[] is never flagged. Broader ATLAS namespace than the schema's
+            # technique-only field: tactics TA, techniques T, mitigations M, case-studies CS.
+            for a in (f.get("atlas") or []):
+                atlas_total += 1
+                if not re.fullmatch(r"AML\.(TA\d{4}|T\d{4}(\.\d{3})?|M\d{4}|CS\d{4})", a):
+                    d.add("consistency", "malformed-atlas", f"{fid}: '{a}'")
+
+            # control coverage (the defensive dual of surface coverage) — reference-free over the
+            # finding's OWN emitted facts. A `control` defect layer, NEVER in the production gate:
+            # zero-control is a FLAG, not an auto-fail, and honest abstention passes. The eval never
+            # asserts a control is the *correct* remediation — that is the agent/coverage-judge's job.
+            controls = f.get("controls") or []
+            controls_total += len(controls)
+            disp = f.get("control_disposition")
+            note = (f.get("disposition_note") or "").strip()
+            has_ctl = len(controls) >= 1
+            # well-formedness (format only; mapping correctness is agent-verified in Phase 6)
+            for c in controls:
+                cid = c.get("id", "") if isinstance(c, dict) else ""
+                if not _CTL_ID_RE.fullmatch(cid):
+                    d.add("control", "malformed-control-id", f"{fid}: control id '{cid}'")
+                fr = c.get("framework_ref") if isinstance(c, dict) else None
+                if fr and not _FRAMEWORK_REF_RE.fullmatch(fr):
+                    d.add("control", "malformed-framework-ref", f"{fid}: framework_ref '{fr}'")
+            # internal consistency + honest abstention + zero-control flag; classify for the profile
+            if has_ctl:
+                cls = "mitigated"
+            elif disp == "accepted-risk":
+                cls = "accepted-risk"
+            elif disp == "none":
+                cls = "none"
+            else:
+                cls = "uncovered"
+            control_classes[cls] += 1
+            if disp is not None:
+                # `mitigated` iff >=1 control (both agent-emitted; recompute one from the other)
+                if (disp == "mitigated") != has_ctl:
+                    d.add("control", "control-disposition-mismatch",
+                          f"{fid}: control_disposition '{disp}' disagrees with {len(controls)} control(s)")
+                # accepted-risk / none are honest abstentions only WITH a note (unknown-needs-a-note rule)
+                if disp in ("accepted-risk", "none") and not note:
+                    d.add("control", "disposition-without-note",
+                          f"{fid}: control_disposition '{disp}' but no disposition_note (why the risk is accepted / no control applies)")
+            elif not has_ctl:
+                # neither controlled nor explicitly dispositioned — a coverage gap, surfaced as a flag
+                d.add("control", "uncovered-control",
+                      f"{fid}: no controls and no control_disposition — control coverage unknown (flag, not a failure)")
 
         # summary counts must match reality
         for s in SEVERITIES:
@@ -236,12 +344,38 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                     d.add("consistency", "killchain-dangling-step",
                           f"{kid}: step '{step}' is not a finding id in findings.json")
 
-    # diagram verification (its own defect layer)
-    diag = diagram_checks.check(raw_report, recon, findings_doc)
+    # AI/ML controlled-vocabulary guardrail (OWASP-LLM) — keyed on the DECLARED framework field: the
+    # OWASP-LLM Top-10 checklist table, identified by an "OWASP-LLM" header cell (never any table that
+    # merely mentions an LLM class in prose, so a finding's OWASP-category cell is not mis-read). Every
+    # LLM-prefixed id in that checklist is validated against the fixed vocabulary, shape only, mirroring
+    # malformed-mitre/atlas. Never requires a particular class to be present.
+    if raw_report:
+        for tbl in diagram_checks._md_tables(raw_report):
+            if not any(re.search(r"owasp[-\s]?llm", c, re.I) for c in tbl["header"]):
+                continue
+            for row in tbl["rows"]:
+                for cell in row:
+                    for tok in _OWASP_LLM_LOOSE.findall(cell):
+                        if not _OWASP_LLM_STRICT.fullmatch(tok):
+                            d.add("consistency", "malformed-owasp-llm", f"OWASP-LLM checklist id '{tok}'")
+
+    # diagram verification (its own defect layer). Coverage carries the has_ai_ml gate for the ATLAS
+    # layer block; loaded softly (coverage has its own checker in coverage_checks) so an absent
+    # coverage.json never adds a defect here.
+    cov_path = run_dir / "coverage.json"
+    try:
+        coverage = json.loads(cov_path.read_text()) if cov_path.exists() else None
+    except (OSError, ValueError):
+        coverage = None
+    diag = diagram_checks.check(raw_report, recon, findings_doc, coverage)
     d.items.extend(diag["defects"])
 
     scores = _scores(d, grounded, ungrounded, surface_ids, covered, findings_doc)
     scores.update(diag["scores"])
+    # control-coverage profile: counts by class + covered fraction (mitigated / n). A profile signal,
+    # not a gate — uncovered findings are flagged, not failed (same as the coverage-ledger profile).
+    covered_frac = round(control_classes["mitigated"] / n_findings, 3) if n_findings else None
+    scores["control_coverage"] = {"by_class": control_classes, "covered_frac": covered_frac}
     return {
         "defects": d.items,
         "stats": {
@@ -254,6 +388,9 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
             "ungrounded": ungrounded,
             "cwe_ids": cwe_total,
             "mitre_ids": mitre_total,
+            "atlas_ids": atlas_total,
+            "controls": controls_total,
+            "control_coverage": control_classes,
             "diagram": diag["stats"],
         },
         "scores": scores,
