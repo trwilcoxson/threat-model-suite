@@ -33,6 +33,58 @@ must appear in the matching cell — the matrix is a faithful projection of the 
 
 ---
 
+## §1a STRIDE-per-Interaction (Boundary-Crossing) Coverage Matrix  *(when ≥1 boundary-crossing edge)*
+
+The **interaction-level dual** of §1. STRIDE-per-element under-finds exactly at the *interaction* —
+the tool call, the network hop, the identity handoff where one component hands data or authority to
+another across a trust zone. This matrix proves every such crossing was considered against every
+STRIDE-LM category.
+
+- **Rows**: only the DFD edges whose two endpoints sit in **different trust zones** (a node outside
+  every `subgraph` is the implicit untrusted/external zone, so an external-entity → internal-process
+  edge is a crossing). Each row is keyed `source → destination` by recon ids.
+- **Columns**: the seven STRIDE-LM categories, in order: `S T R I D E LM`.
+- **Cells**: a finding id (`TM-NNN`), `n/a` (category inapplicable to that interaction), or `clean`
+  (examined, no finding). **No blank cells.**
+
+**Scope bound — crossings only.** Enumerate *only* the boundary crossings; **intra-zone edges never
+appear**. Do NOT produce a full STRIDE-per-interaction matrix over every DFD edge — that explodes
+combinatorially with no measured accuracy gain (arXiv 2208.01524), which is why Microsoft
+de-emphasized it. Bounding to crossings keeps the matrix to the handful of hops where agentic and
+cloud threats concentrate, and keeps the coverage check cheap and stable.
+
+```markdown
+## STRIDE-per-Interaction (Boundary-Crossing) Coverage Matrix
+
+| Edge (src → dst) | S | T | R | I | D | E | LM |
+|------------------|---|---|---|---|---|---|----|
+| E1 → C1 API gateway | TM-002 | clean | clean | clean | clean | TM-004 | n/a |
+| C1 API gateway → D1 User DB | n/a | TM-006 | clean | TM-003 | clean | n/a | clean |
+| C1 API gateway → X1 Payments API | clean | clean | clean | clean | clean | clean | clean |
+```
+
+**Distinct heading + first-column key (why it never collides with §1).** Both matrices carry the
+`S T R I D E LM` columns, so the eval tells them apart by the FIRST column: §1 is keyed `Element`,
+this one is keyed `Edge (src → dst)`. Keep the `## STRIDE-per-Interaction (Boundary-Crossing) Coverage
+Matrix` heading and the `Edge (src → dst)` header verbatim so the selector picks the right table.
+
+**NOT APPLICABLE rule.** When the emitted DFD contains **no** boundary-crossing edge (a single-zone
+system, or no declared trust boundaries), emit the heading with a single line —
+`NOT APPLICABLE — single-zone system / no declared boundaries` — and no table. The eval **skips** the
+coverage check in that case; it does not fail it.
+
+**What the eval checks (structure + grounding only).** The deterministic check
+(`diagram_checks.analytical_checks`) enumerates the crossings from the DFD you drew (which node ids
+you placed in which `subgraph`, innermost zone wins) and verifies: every crossing edge has exactly
+one row, every row resolves all seven cells to a terminal state (no blanks), and every `TM-NNN` in a
+cell resolves in `findings.json`. It never judges whether the STRIDE category or the edge is *right*,
+never requires any particular threat, and a fully `clean` / `n/a` row passes (honest abstention).
+Whether the enumerated threats are the *correct* ones for each crossing is left to
+`prompts/diagram-judge.md` — the same structure/validity split §1 uses. (Endpoint ↔ recon-id
+resolution is advisory, matching the sequence-participant posture.)
+
+---
+
 ## §2 Likelihood × Impact Risk Heat Map  *(when ≥1 scored finding)*
 
 A 5×5 grid placing each finding at the cell matching its own likelihood and impact, banded by the

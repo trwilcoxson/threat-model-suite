@@ -5,6 +5,12 @@ threat model must have: the required layers (L1-L4 per scaling), fully annotated
 trust-boundary subgraphs, component metadata (ownership markers), and an L4 risk layer that
 links to the findings (TM-NNN). Maps to the five diagram requirements; semantic correctness
 (are boundaries placed right, are annotations accurate) is left to prompts/diagram-judge.md.
+
+The analytical-visuals block (`analytical_checks`) also enforces coverage PROPERTIES over the
+model's own emitted facts — reference-free, no answer key. The per-element STRIDE matrix and the
+boundary-crossing STRIDE matrix each prove exhaustive consideration (every element / every
+trust-boundary-crossing edge reaches a decided, grounded row); which threats are *correct* stays
+with the diagram judge.
 """
 from __future__ import annotations
 
@@ -65,6 +71,51 @@ def _nodes(block: str) -> list[str]:
     return out
 
 
+def _edge_endpoints(line: str) -> tuple[str, str] | None:
+    """(source_id, dest_id) for a real edge line, else None. Endpoints are the bare node ids the DFDs
+    use on edge lines (`R0 -->|"HTTP [PLAIN]"| C4`). Quoted label text is stripped first (same guard as
+    `_edges`) so a glyph or `|` inside a label is never read as the operator or a second endpoint."""
+    bare = re.sub(r'"[^"]*"', "", line)  # drop quoted label text before finding endpoints
+    m = re.search(r"([A-Za-z_]\w*)\s*" + EDGE_OPS + r"\s*(?:\|[^|]*\|)?\s*([A-Za-z_]\w*)", bare)
+    return (m.group(1), m.group(2)) if m else None
+
+
+def _node_zones(block: str) -> dict[str, str | None]:
+    """Map each node id to its INNERMOST enclosing `subgraph` — the most specific trust zone it is
+    drawn in — or None when it sits outside every subgraph (the implicit untrusted/external zone).
+    Nested subgraphs are handled with a stack, so `id[label]` and bare `id` defs alike keep the
+    tightest zone. A structural read of the DFD the agent drew; it never decides where a zone *belongs*."""
+    zones: dict[str, str | None] = {}
+    stack: list[str] = []
+    for line in block.splitlines():
+        s = line.strip()
+        sg = re.match(r'subgraph\s+(?:"([^"]+)"|([A-Za-z_]\w*))', s)
+        if sg:
+            stack.append(sg.group(1) or sg.group(2))
+            continue
+        if s == "end" or s.startswith("end "):
+            if stack:
+                stack.pop()
+            continue
+        nd = re.match(r"([A-Za-z_]\w*)\s*(?:\(\[|\[\(|\[\[|\{\{|\[/|\[|\(|\{)", s)  # id + a shape opener
+        if nd:
+            zones[nd.group(1)] = stack[-1] if stack else None
+    return zones
+
+
+def _crossing_edges(block: str) -> list[tuple[str, str]]:
+    """Edges whose two endpoints sit in different trust zones — the boundary crossings. A node in no
+    subgraph is the implicit external zone, so an external-entity -> internal-process edge counts as a
+    crossing, not just an inter-subgraph one. Derived from the emitted DFD only (design decision 2)."""
+    zones = _node_zones(block)
+    out = []
+    for line in block.splitlines():
+        ep = _edge_endpoints(line)
+        if ep and zones.get(ep[0]) != zones.get(ep[1]):
+            out.append(ep)
+    return out
+
+
 def _md_tables(text: str) -> list[dict]:
     """Extract GitHub-flavored markdown tables as {header:[...], rows:[[...]]}."""
     out, lines, i = [], text.splitlines(), 0
@@ -81,6 +132,15 @@ def _md_tables(text: str) -> list[dict]:
         else:
             i += 1
     return out
+
+
+def _edge_keyed(header: list[str]) -> bool:
+    """True when a table's first column keys rows by an edge/interaction (the boundary-crossing STRIDE
+    matrix), not by a single element (the per-element STRIDE matrix). Both matrices share the S…LM
+    columns, so the two are told apart by their FIRST-column header — analytical-visuals.md §1a,
+    design decision 4 (asserted in the tasks to avoid a selector collision)."""
+    h = header[0].lower() if header else ""
+    return any(k in h for k in ("edge", "interaction", "src", "→", "->"))
 
 
 def _section(text: str, *keywords: str) -> str:
@@ -176,9 +236,11 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
             if recon_ids and parts and all(p not in recon_ids for p in parts):
                 warnings.append("sequence participants do not map to recon ids")
 
-    # STRIDE-per-element coverage matrix — gate: always
+    # STRIDE-per-element coverage matrix — gate: always. Selected by its S…LM columns AND a
+    # non-edge-keyed first column, so the boundary-crossing matrix below (same columns) is never grabbed.
     stride = {"S", "T", "R", "I", "D", "E", "LM"}
-    matrix = next((t for t in _md_tables(report_text) if stride.issubset({c.strip().upper() for c in t["header"]})), None)
+    matrix = next((t for t in _md_tables(report_text)
+                   if stride.issubset({c.strip().upper() for c in t["header"]}) and not _edge_keyed(t["header"])), None)
     if not matrix:
         D("no-stride-matrix", "no STRIDE-per-element coverage matrix (table with S,T,R,I,D,E,LM columns)")
     else:
@@ -190,6 +252,45 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
         miss = [f["id"] for f in findings if f["id"] not in body]
         if miss:
             warnings.append(f"{len(miss)} finding(s) not placed in STRIDE matrix: {miss[:5]}")
+
+    # Boundary-crossing STRIDE-LM interaction matrix — gate: >=1 edge crossing a trust zone in the
+    # emitted DFD layers (analytical-visuals.md §1a). The interaction-level dual of the per-element matrix.
+    # STRUCTURE + GROUNDING ONLY (determinism boundary): every crossing edge the agent DREW has exactly
+    # one decided row, no blank cells, and every TM-NNN placed in a cell resolves in findings.json. The
+    # check never asserts a threat exists or that the STRIDE category/edge is "right" (diagram judge), so a
+    # fully clean/n-a row passes. Endpoint->recon grounding is a WARNING, matching the sequence-participant
+    # posture above (DFD node ids vs recon ids are WARN, not a gate — brief constraint 4). No crossing edge
+    # => the visual is NOT APPLICABLE and the whole block is skipped, not failed (declared-fact gate).
+    crossings = {e: True for b in blocks if _layer_of(b) for e in _crossing_edges(b)}
+    if crossings:
+        bcm = next((t for t in _md_tables(report_text)
+                    if stride.issubset({c.strip().upper() for c in t["header"]}) and _edge_keyed(t["header"])), None)
+        if not bcm:
+            D("no-boundary-crossing-matrix",
+              f"{len(crossings)} boundary-crossing edge(s) in the DFD but no boundary-crossing STRIDE-LM "
+              "matrix (table with an Edge/Interaction/src→dst first column + S,T,R,I,D,E,LM columns)")
+        else:
+            present.append("boundary-crossing-matrix")
+            blanks = sum(1 for r in bcm["rows"] for c in r[1:] if not c.strip())
+            if blanks:
+                D("crossing-matrix-blanks",
+                  f"boundary-crossing matrix has {blanks} blank cell(s); every cell must be TM-id / n-a / clean")
+            keys = [r[0] for r in bcm["rows"]]
+            for src, dst in crossings:
+                covering = sum(1 for k in keys
+                               if re.search(rf"\b{re.escape(src)}\b", k) and re.search(rf"\b{re.escape(dst)}\b", k))
+                if covering == 0:
+                    D("missing-crossing-row", f"crossing edge {src} -> {dst} has no row in the boundary-crossing matrix")
+                elif covering > 1:
+                    D("duplicate-crossing-row", f"crossing edge {src} -> {dst} has {covering} rows (expected exactly one)")
+            placed_tm = {t for r in bcm["rows"] for c in r[1:] for t in re.findall(r"TM-\d{3}", c)}
+            ungrounded = placed_tm - {f["id"] for f in findings}
+            if ungrounded:
+                D("crossing-matrix-ungrounded-finding",
+                  f"boundary-crossing matrix cites finding id(s) absent from findings.json: {sorted(ungrounded)[:5]}")
+            ungrounded_ep = sorted({f"{s}->{d}" for s, d in crossings if s not in recon_ids or d not in recon_ids})
+            if ungrounded_ep:  # WARN, not a defect — matches the sequence-participant recon posture
+                warnings.append(f"boundary-crossing edge endpoint(s) do not map to recon ids: {ungrounded_ep[:5]}")
 
     # L×I risk heat map — gate: >=1 scored finding
     scored = [f for f in findings if isinstance(f.get("likelihood"), int) and isinstance(f.get("impact"), int)]

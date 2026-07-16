@@ -276,6 +276,101 @@ def t_control_matrix():
     assert any(d["code"] == "no-control-matrix" and d["layer"] == "diagram" for d in nomatrix)
 
 
+def t_boundary_crossing_matrix():
+    """Boundary-crossing STRIDE matrix (add-boundary-crossing-stride-matrix): coverage + grounding over
+    the crossings the DFD draws — structure only. A crossing = endpoints in different trust zones (a node
+    in no subgraph = external); every crossing needs exactly one decided, grounded row; intra-zone edges
+    don't; nested subgraphs assign the innermost zone; no crossing => the whole check is skipped."""
+    dfd = ("flowchart TD\n"
+           "    %% Version: x | Layer: L1\n"
+           '    R0["User"]:::external\n'
+           '    subgraph Z1["Public"]\n        C4(["ALB"])\n    end\n'
+           '    subgraph Z2["Private"]\n        C7(["Task"])\n        C1(["SPA"])\n    end\n'
+           '    R0 -->|"HTTP [PUBLIC]"| C4\n'
+           '    C4 -->|"HTTP [INTERNAL]"| C7\n'
+           '    C7 -.->|"[CTRL]"| C1\n')
+    # structural read: two crossings (R0->C4 external->public, C4->public->C7 private); C7->C1 is intra-zone
+    assert set(dc._crossing_edges(dfd)) == {("R0", "C4"), ("C4", "C7")}, dc._crossing_edges(dfd)
+
+    recon = {"components": [{"id": "C4"}, {"id": "C7"}, {"id": "C1"}], "entry_points": [{"id": "R0"}],
+             "data_stores": [], "trust_boundaries": [], "external_deps": []}
+    fdoc = {"findings": [{"id": "TM-001"}]}
+    hdr = ("## STRIDE-per-Interaction (Boundary-Crossing) Coverage Matrix\n"
+           "| Edge (src → dst) | S | T | R | I | D | E | LM |\n"
+           "|---|---|---|---|---|---|---|----|\n")
+
+    def run(report, blocks=None, fd=fdoc):
+        return dc.analytical_checks(report, blocks if blocks is not None else [dfd], recon, fd)
+
+    # 1. both crossings covered, cells filled, TM grounded -> passes; visual present; intra-zone C7->C1
+    #    is NOT demanded as a row (it never appears yet the matrix passes)
+    good = hdr + ("| R0 → C4 | TM-001 | clean | clean | clean | clean | n-a | clean |\n"
+                  "| C4 → C7 | clean | clean | clean | clean | clean | clean | clean |\n")
+    res = run(good)
+    codes = {d["code"] for d in res["defects"]}
+    assert not (codes & {"no-boundary-crossing-matrix", "missing-crossing-row", "duplicate-crossing-row",
+                         "crossing-matrix-blanks", "crossing-matrix-ungrounded-finding"}), codes
+    assert "boundary-crossing-matrix" in res["stats"]["analytical_present"]
+
+    # 2. a crossing edge with no row -> missing-crossing-row (C4->C7 left uncovered)
+    missing = hdr + "| R0 → C4 | TM-001 | clean | clean | clean | clean | n-a | clean |\n"
+    assert "missing-crossing-row" in {d["code"] for d in run(missing)["defects"]}
+
+    # 3. crossings exist but no matrix -> no-boundary-crossing-matrix, as a diagram-layer (advisory) flag
+    nomx = dc.analytical_checks("# r\n", [dfd], recon, fdoc)["defects"]
+    assert any(d["code"] == "no-boundary-crossing-matrix" and d["layer"] == "diagram" for d in nomx)
+
+    # 4. a fully clean/n-a row is honest coverage — passes with no finding required
+    clean = hdr + ("| R0 → C4 | clean | clean | clean | clean | clean | n-a | clean |\n"
+                   "| C4 → C7 | clean | n-a | clean | clean | clean | clean | clean |\n")
+    assert "missing-crossing-row" not in {d["code"] for d in run(clean, fd={"findings": []})["defects"]}
+
+    # 5. a blank cell -> crossing-matrix-blanks
+    blank = hdr + ("| R0 → C4 | TM-001 | clean | clean |  | clean | n-a | clean |\n"
+                   "| C4 → C7 | clean | clean | clean | clean | clean | clean | clean |\n")
+    assert "crossing-matrix-blanks" in {d["code"] for d in run(blank)["defects"]}
+
+    # 6. a cell TM-NNN absent from findings -> crossing-matrix-ungrounded-finding (finding-id grounding is
+    #    a real defect; endpoint->recon grounding is only a warning — see below)
+    ungr = hdr + ("| R0 → C4 | TM-999 | clean | clean | clean | clean | n-a | clean |\n"
+                  "| C4 → C7 | clean | clean | clean | clean | clean | clean | clean |\n")
+    assert "crossing-matrix-ungrounded-finding" in {d["code"] for d in run(ungr)["defects"]}
+
+    # 6b. an endpoint absent from recon warns, never a defect (matches the sequence-participant posture)
+    thin_recon = {"components": [{"id": "C4"}], "entry_points": [], "data_stores": [],
+                  "trust_boundaries": [], "external_deps": []}
+    wres = dc.analytical_checks(good, [dfd], thin_recon, fdoc)
+    assert "crossing-row-ungrounded" not in {d["code"] for d in wres["defects"]}
+    assert any("do not map to recon ids" in w for w in wres["warnings"]), wres["warnings"]
+
+    # 7. single-zone DFD (no crossing) -> whole check skipped, not failed, even with no matrix
+    one_zone = ("flowchart TD\n    %% Version: x | Layer: L1\n"
+                '    subgraph Z["Zone"]\n        A(["A"])\n        B(["B"])\n    end\n    A -->|"x"| B\n')
+    sz = dc.analytical_checks("# r\n", [one_zone], recon, fdoc)
+    assert "no-boundary-crossing-matrix" not in {d["code"] for d in sz["defects"]}
+    assert "boundary-crossing-matrix" not in sz["stats"]["analytical_present"]
+
+    # 8. nested subgraphs: innermost zone wins — deeply-nested siblings share a zone (no crossing),
+    #    an inner-vs-outer pair crosses
+    nested = ("flowchart TD\n    %% Version: x | Layer: L1\n"
+              '    subgraph VPC["VPC"]\n'
+              '        subgraph PRIV["Private"]\n            A(["A"])\n            B(["B"])\n        end\n'
+              '        C(["C"])\n    end\n    A -->|"x"| B\n    A -->|"x"| C\n')
+    assert dc._node_zones(nested) == {"A": "PRIV", "B": "PRIV", "C": "VPC"}, dc._node_zones(nested)
+    assert set(dc._crossing_edges(nested)) == {("A", "C")}, dc._crossing_edges(nested)
+
+    # 9. selector collision (design decision 4): a report with BOTH S…LM matrices -> per-element grabs the
+    #    Element table, boundary-crossing grabs the Edge table; both register present, neither "missing" fires
+    per_elem = ("## STRIDE-per-Element Coverage Matrix\n"
+                "| Element | S | T | R | I | D | E | LM |\n"
+                "|---|---|---|---|---|---|---|----|\n"
+                "| C4 ALB | TM-001 | clean | clean | clean | clean | n-a | clean |\n")
+    bres = dc.analytical_checks(per_elem + "\n" + good, [dfd], recon, fdoc)
+    bcodes = {d["code"] for d in bres["defects"]}
+    assert "no-stride-matrix" not in bcodes and "no-boundary-crossing-matrix" not in bcodes, bcodes
+    assert {"stride-matrix", "boundary-crossing-matrix"} <= set(bres["stats"]["analytical_present"])
+
+
 def _atlas_layer(*ids):
     """A minimal ATLAS Navigator layer (domain atlas-atlas) showing the given technique ids."""
     techs = ", ".join('{"techniqueID": "%s", "score": 10}' % i for i in ids)
@@ -398,7 +493,7 @@ def t_schema():
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
-             t_atlas_layer, t_atlas_vocab, t_atlas_schema, t_verdict, t_schema]
+             t_boundary_crossing_matrix, t_atlas_layer, t_atlas_vocab, t_atlas_schema, t_verdict, t_schema]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

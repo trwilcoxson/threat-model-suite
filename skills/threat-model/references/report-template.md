@@ -6,7 +6,7 @@
 - Section II: System Overview (purpose, scope, tech stack, deployment model)
 - Section III: Architecture Diagram — Structural (rendered diagram, component metadata, trust boundaries, network topology)
 - Section IV: Risk Overlay Diagram (rendered diagram, component risk mapping, critical data flows)
-- Section IV-A: Coverage & Communication Visuals (STRIDE-per-element matrix, L×I heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph, threat-to-control coverage matrix — each when applicable)
+- Section IV-A: Coverage & Communication Visuals (STRIDE-per-element matrix, boundary-crossing STRIDE-per-interaction matrix, L×I heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph, threat-to-control coverage matrix — each when applicable)
 - Section V: Asset Inventory (data assets, data flow summary)
 - Section VI: Threat Actor Profiles
 - Section VII: Findings (ordered by severity, standardized format)
@@ -114,6 +114,9 @@ and [mermaid-diagrams.md](mermaid-diagrams.md)); mark any inapplicable one NOT A
 one-line reason. Use these exact headings so they render and verify consistently:
 
 - `## STRIDE-per-Element Coverage Matrix` — always (fully populated; cells `TM-NNN`/`n/a`/`clean`).
+- `## STRIDE-per-Interaction (Boundary-Crossing) Coverage Matrix` — when the DFD has ≥1 edge crossing a
+  trust zone (rows = crossing edges keyed `Edge (src → dst)`; cells `TM-NNN`/`n/a`/`clean`). Mark
+  NOT APPLICABLE for a single-zone system. See analytical-visuals.md §1a.
 - `## Risk Heat Map (Likelihood × Impact)` — when any finding is scored (5×5, every finding placed).
 - `## MITRE ATT&CK Technique Coverage` — when any finding has a technique (+ Navigator JSON at ≥5).
 - `## Authorization (RBAC) Matrix` — when ≥2 roles (roles × resources, anonymous row).
