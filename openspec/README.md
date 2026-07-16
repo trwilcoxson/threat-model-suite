@@ -34,12 +34,15 @@ state) and the eval checks structure over that fact — it never infers content 
 | [`add-ai-ml-attack-surface`](changes/add-ai-ml-attack-surface/) | `threat-model-visuals`, `eval-determinism`, `reference-fidelity` | implemented (live verification pending) |
 | [`add-boundary-crossing-stride-matrix`](changes/add-boundary-crossing-stride-matrix/) | `boundary-crossing-matrix` | implemented (live verification pending) |
 | [`add-control-coverage-matrix`](changes/add-control-coverage-matrix/) | `control-coverage` | implemented (live verification pending) |
+| [`add-semantic-source-diagram`](changes/add-semantic-source-diagram/) | `semantic-diagram-source` | implemented (spike proven; adoption pilot pending) |
 
 The last six are the **[visual-engine research program](../docs/research/visual-engine-2026-07/ROADMAP.md)**
 (2026-07), now **implemented** on this branch (the four additive changes fully; the visual-engine pair eval-side,
 with D2-binary/icon-asset vendoring + diagram migration tracked in their `tasks.md`). Seven further workstreams
-are deferred and six were dropped — see the roadmap. OTM was evaluated and not adopted; a `recon`+`dataflows[]`
-semantic-source spike is queued (see [OTM-EVAL.md](../docs/research/visual-engine-2026-07/OTM-EVAL.md)).
+are deferred and six were dropped — see the roadmap. OTM was evaluated and not adopted ([OTM-EVAL.md](../docs/research/visual-engine-2026-07/OTM-EVAL.md)); the
+`recon`+`dataflows[]` semantic-source approach it pointed to was spiked, **proved out** (rendered offline via
+`recon_to_d2.py`, see [SEMANTIC-SOURCE-SPIKE.md](../docs/research/visual-engine-2026-07/SEMANTIC-SOURCE-SPIKE.md)),
+and formalized as `add-semantic-source-diagram` (adoption pilot pending).
 
 Each change folder has `proposal.md` (why/what), `specs/<capability>/spec.md` (the
 ADDED/MODIFIED requirement deltas), `design.md` (technical approach + the determinism boundary), and
