@@ -15,7 +15,7 @@
 
 ## 3. Two-tier offline PNG
 - [x] 3.1 Renderer primary tier: `d2 in.d2 out.png` via the one-time-warmed, cached headless browser (offline after warm-up) — seam logic complete; running it needs a warmed browser cache
-- [x] 3.2 Renderer fallback tier: `d2 → svg → resvg → png`, browser-free — seam logic complete; running it needs the `resvg` binary
+- [x] 3.2 Renderer fallback tier: `d2 → svg → (rsvg-convert|resvg) → png`, browser-free — seam accepts librsvg's `rsvg-convert` (installed) or `resvg`; VERIFIED live: real `.d2` → d2 SVG → `rsvg-convert` PNG (2858×5203, 722KB non-blank) with no browser/network, non-blank guard passes, tier ledger records `fallback/rsvg-convert/plain-labels`
 - [x] 3.3 Record per-PNG engine + tier + fidelity mode in `report-generation-log.md` (seam writes `{output_dir}/.render-tiers`; the report-analyst prompt folds it into the generation log)
 - [x] 3.4 Keep PNG for docx/pdf/pptx embeds (Office formats need raster)
 
@@ -25,18 +25,18 @@
 - [x] 4.3 diagram-specialist prompt: state the plain-single-line-label constraint when the fallback tier is declared active
 
 ## 5. Fail-loud air-gap preflight
-- [x] 5.1 Add `skills/threat-model/scripts/ensure_renderer.sh`: verify `d2`, `resvg`, vendored icons + font present; exit nonzero naming any missing dependency
-- [x] 5.2 Preflight verifies the warmed browser cache for the primary tier; if absent but resvg deps present, declare the fallback tier active (which enforces §4)
+- [x] 5.1 Add `skills/threat-model/scripts/ensure_renderer.sh`: verify `d2`, the fallback rasterizer (`rsvg-convert` or `resvg`), vendored icons + font present; exit nonzero naming any missing dependency
+- [x] 5.2 Preflight verifies the warmed browser cache for the primary tier; if absent but a browser-free rasterizer (`rsvg-convert`/`resvg`) is present, declare the fallback tier active (which enforces §4) — *verified: preflight declares `TM_RENDER_TIER=fallback` via `rsvg-convert`*
 - [x] 5.3 SKILL.md: run the preflight at pipeline start (fail loud early, not at Step 2.5)
 
 ## 6. Hermetic deterministic config
-- [ ] 6.1 Vendor the local icon set + Source Sans Pro under the plugin; reference icons by local file path — ASSET VENDORING (binary/asset packaging); the preflight already fails loud when they are absent and d2-spec.md documents local-path usage
+- [ ] 6.1 Vendor the local icon set + Source Sans Pro under the plugin; reference icons by local file path — *icon set DONE: 15 SVGs under `references/icons/` (MDI Apache-2.0, `references/icons/LICENSE`), referenced by local path and embedded offline. Source Sans Pro font still NOT vendored (a binary asset out of this pass's scope) — the preflight still fails loud on the absent font, so this stays open until the font lands*
 - [x] 6.2 Reject remote `icon:` URLs at preflight/render (network + air-gap failure, silent-broken-icon trap) — seam rejects `icon: http(s)://` and fails loud (verified)
 - [x] 6.3 Pin a free offline deterministic layout (dagre or ELK); forbid TALA — seam uses `--layout ${D2_LAYOUT:-elk}`, never TALA; engine-version pin rides on the vendored binary (task 7.1)
 
 ## 7. Packaging
-- [ ] 7.1 `.claude-plugin/`: vendor the `d2` + `resvg` static binaries (or the install-on-preflight path) and, for air-gap, a pre-warmed browser cache — BINARY PACKAGING (environment-dependent)
-- [ ] 7.2 Update plugin.json / marketplace.json descriptions if the render toolchain becomes a declared dependency — follows 7.1
+- [ ] 7.1 `.claude-plugin/`: vendor the `d2` + `resvg` static binaries (or the install-on-preflight path) and, for air-gap, a pre-warmed browser cache — *install-on-preflight path CHOSEN + documented (plugin.json `renderToolchain`: pinned `d2`/`rsvg-convert`/`resvg`/mermaid-cli + install commands, enforced by the fail-loud `ensure_renderer.sh`). Static-binary vendoring + the pre-warmed browser cache are intentionally NOT done — environment-dependent, and the browser cache belongs to the blocked primary tier*
+- [x] 7.2 Update plugin.json / marketplace.json descriptions if the render toolchain becomes a declared dependency — *both manifests now declare the offline render toolchain: the shipped scripts (`skills/threat-model/scripts/`) + vendored icons (`references/icons/`), and the pinned non-committed binaries with install story + fail-loud preflight*
 
 ## 8. Incremental migration behind the parser
 - [x] 8.1 Keep `.mmd` an accepted seam input indefinitely (committed worked-examples never break) — seam dispatches `.mmd` unchanged; spec requirement asserts it
@@ -46,5 +46,5 @@
 ## 9. Verify
 - [x] 9.1 `openspec validate add-offline-render-pipeline --strict` → exit 0
 - [x] 9.2 Fresh-host preflight fails loud with a clear missing-dependency message (verified: names missing icons/font/resvg tier and exits 1)
-- [ ] 9.3 Air-gap render smoke: network blocked, resvg tier produces non-blank PNGs and the plain-label constraint holds — SVG-offline + fallback-fail-loud verified; the resvg non-blank-PNG leg needs the `resvg` binary installed
+- [x] 9.3 Air-gap render smoke: network blocked, fallback tier produces non-blank PNGs and the plain-label constraint holds — *VERIFIED: real `.d2` → d2 SVG → `rsvg-convert` PNG with no browser/network; PNG non-blank (722KB, magic-byte + size-floor guard passes); the no-rasterizer case still fails loud; the fallback tier declares the plain-single-line-label constraint*
 - [ ] 9.4 A re-run produces `report.html` with an inline `<svg>` diagram, no Mermaid CDN, and `verify_run.sh` passes — `verify_run.sh` acceptance verified in isolation (inline-SVG-only report PASSes, CDN ref still FAILs); a full pipeline re-run needs the agents + binaries

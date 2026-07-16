@@ -383,9 +383,16 @@ Output a structured summary listing all components discovered, data assets, acto
 
 ## Phase 2 — Structural Diagram
 
-Produce Mermaid flowchart Data Flow Diagrams that accurately represent the architecture BEFORE any risk analysis. Do NOT apply risk colors or threat annotations — those come in Phase 7.
+Produce structural Data Flow Diagrams (Mermaid **or** D2) that accurately represent the architecture BEFORE any risk analysis. Do NOT apply risk colors or threat annotations — those come in Phase 7.
 
 Consult [references/mermaid-spec.md](references/mermaid-spec.md) for symbol taxonomy (§3), typed edges (§4), design principles (§1), rendering config (§2), ownership markers (§7), and classDef reference (§8). Consult [references/mermaid-layers.md](references/mermaid-layers.md) for layer definitions. Use [references/mermaid-templates.md](references/mermaid-templates.md) as starting points for common architecture patterns.
+
+**Engine — Mermaid or D2 (both accepted, one vocabulary).** Every diagram, in either engine, draws from the single node-type vocabulary in [references/node-type-icons.md](references/node-type-icons.md) and renders through the offline seam. Pick per diagram:
+- **Mermaid** (`.mmd`) — the incumbent; author per `mermaid-spec.md` as above. Stays accepted indefinitely; committed worked-examples never break.
+- **D2** (`.d2`) — author per [references/d2-spec.md](references/d2-spec.md): symbol/icon taxonomy (§2), container = trust boundary (§3), typed+annotated edges (§4), the version/layer stamp (§6), and the eval-facing subset (§7). Bind each type's **vendored local icon** through the `classes` block (`icon: <rel>/references/icons/<type>.svg` — local paths only, never a remote URL; d2 embeds them offline as data URIs).
+- **Deterministic D2 from recon (optional, recommended when recon is typed).** When the Phase 1 recon (`01-reconnaissance.md` / its `recon.json`) carries typed elements (`element.type`, `element.zone`) and `dataflows[]`, generate the L1 structural D2 mechanically: `python3 {refs_dir}/../scripts/recon_to_d2.py <recon.json> {output_dir}/{name}-L1-architecture.d2`. The agent authors only *meaning* (types + edges + containment); the script owns 100% of layout, shape, icon binding, and nesting, byte-deterministically (re-running yields identical output). See [references/d2-spec.md](references/d2-spec.md).
+
+**Render** every diagram source in the output dir with `bash {refs_dir}/../scripts/render_diagrams.sh {output_dir}` — it dispatches by extension (`.mmd`→mermaid-cli, `.d2`→d2 SVG for the HTML report + PNG for Office), verifies each raster is non-blank, and fails loud on a missing renderer or a source in an extension no engine handles.
 
 1. Read the completed visual completeness checklist from `{output_dir}/visual-completeness-checklist.md`.
 2. **Determine layer strategy** per [mermaid-layers.md](references/mermaid-layers.md) §6: ≤5 components → 2-layer (L1+L4); 6-20 → full 4-layer; >20 → 4-layer + sub-diagrams.
@@ -396,7 +403,7 @@ Consult [references/mermaid-spec.md](references/mermaid-spec.md) for symbol taxo
 7. Add component metadata in enriched node labels (Name + Tech + Security Features). Do NOT add threat annotation data yet.
 8. Include the structural legend, version stamp, and validate against [references/mermaid-review-checklist.md](references/mermaid-review-checklist.md).
 
-Output each layer diagram in a fenced code block with `mermaid` language tag. Use filename convention: `{name}-L{N}-{layer}.mmd`.
+Output each layer diagram in a fenced code block tagged for its engine (`mermaid` or `d2`). Filename convention: `{name}-L{N}-{layer}.mmd` (Mermaid) or `{name}-L{N}-{layer}.d2` (D2). Both render through `scripts/render_diagrams.sh`.
 
 ### Structural acceptance gate (blocking, Phase 2)
 Do NOT finalize the structural diagrams until every item holds — a diagram that misses these is incomplete, not a stylistic choice. Re-do it before moving on. This gate covers only what Phase 2 produces (the L1-L3 structural layers); the **risk overlay (L4) and the analytical/communication visuals are produced and gated in Phase 7**, once findings are scored and kill chains are declared — do not attempt them here (Phase 2 forbids risk content).
@@ -580,6 +587,8 @@ Apply risk analysis results to the structural diagram from Phase 2. Produce the 
 
 Consult [references/mermaid-spec.md](references/mermaid-spec.md) §5-6 for threat annotations and accessibility. Consult [references/mermaid-layers.md](references/mermaid-layers.md) §5 for L4 conventions. Use [references/mermaid-review-checklist.md](references/mermaid-review-checklist.md) for pre-submission validation.
 
+**Engine.** Author the L4 overlay and the SBOM/dependency diagram in whichever engine you used in Phase 2. For **D2**, consult [references/d2-spec.md](references/d2-spec.md) §5 (risk styling `classes` + threat annotations) and §6 (the `| Type: SBOM` stamp for the dependency diagram). The machine-parseable threat-annotation format (`⚠ {STRIDE} · {L}×{I}={Score} {BAND}`, `TM-NNN`, MITRE/CWE) and the L4↔findings linkage are identical across engines — the eval's annotation regexes read them from the label verbatim on either path. Render all sources with `bash {refs_dir}/../scripts/render_diagrams.sh {output_dir}` (dispatches `.mmd`/`.d2`).
+
 1. **Start from the Phase 2 structural diagrams**. Read back `{output_dir}/02-structural-diagram.md` if needed.
 
 2. **Read the visual completeness checklist** from `{output_dir}/visual-completeness-checklist.md`. Verify ALL applicable categories are represented. For any gaps, add missing visual elements using conventions from [references/mermaid-spec.md](references/mermaid-spec.md) §3.
@@ -598,7 +607,7 @@ Consult [references/mermaid-spec.md](references/mermaid-spec.md) §5-6 for threa
 
 9. **Update the visual completeness checklist** with completion status for the risk overlay pass. Save the updated checklist back to `{output_dir}/visual-completeness-checklist.md`.
 
-Produce the L4 diagram in a fenced code block. Save as `{name}-L4-threat.mmd`.
+Produce the L4 diagram in a fenced code block (tagged `mermaid` or `d2`). Save as `{name}-L4-threat.mmd` or `{name}-L4-threat.d2`.
 
 ### Risk & analytical acceptance gate (blocking, Phase 7)
 Now that findings are scored and kill chains declared, produce and verify the risk overlay and the analytical/communication visuals. Consult [references/analytical-visuals.md](references/analytical-visuals.md) for the formats and [references/analysis-checklists.md](references/analysis-checklists.md) (Phase 7 checklist). Do NOT finalize until every applicable item holds:

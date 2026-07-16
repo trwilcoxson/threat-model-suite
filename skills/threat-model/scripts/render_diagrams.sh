@@ -33,6 +33,14 @@ need() {
     die "'$1' not found on PATH — offline renderer missing. Install it, or run scripts/ensure_renderer.sh at pipeline start so this surfaces as a startup error instead."
 }
 
+# The fallback tier's browser-free SVG->PNG rasterizer: librsvg's rsvg-convert or resvg — either
+# satisfies the tier (both pure/offline, no headless browser). Echoes the tool name; empty if neither.
+fallback_rasterizer() {
+  if command -v rsvg-convert >/dev/null 2>&1; then echo rsvg-convert
+  elif command -v resvg >/dev/null 2>&1; then echo resvg
+  fi
+}
+
 # A rasterized PNG must be a real, non-degenerate image — never embed a silent blank.
 verify_png_nonblank() {
   local png="$1"
@@ -74,10 +82,10 @@ render_d2() {
   if [ -z "$tier" ]; then
     if [ -n "${TM_BROWSER_CACHE:-}" ] && [ -e "${TM_BROWSER_CACHE}" ]; then
       tier="primary"
-    elif command -v resvg >/dev/null 2>&1; then
+    elif [ -n "$(fallback_rasterizer)" ]; then
       tier="fallback"
     else
-      die "no PNG tier available for $d2 — need a warmed headless-browser cache (TM_BROWSER_CACHE, primary tier) or the 'resvg' binary (browser-free fallback tier)."
+      die "no PNG tier available for $d2 — need a warmed headless-browser cache (TM_BROWSER_CACHE, primary tier) or a browser-free rasterizer ('rsvg-convert' or 'resvg', fallback tier)."
     fi
   fi
   case "$tier" in
@@ -86,12 +94,16 @@ render_d2() {
       d2 --layout "$LAYOUT" --theme 0 "$d2" "$png" || die "d2 PNG (primary tier) failed on $d2"
       verify_png_nonblank "$png"
       printf '%s | d2 | %s | primary/browser/full-fidelity\n' "$(basename "$d2")" "$(basename "$png")" >> "$TIERS" ;;
-    fallback)  # browser-free d2 -> svg -> resvg -> png; plain single-line labels only
-      need resvg
-      log "d2 -> svg -> resvg -> png (fallback / browser-free): $d2"
-      resvg "$svg" "$png" || die "resvg failed on $svg"
+    fallback)  # browser-free d2 -> svg -> (rsvg-convert|resvg) -> png; plain single-line labels only
+      local raster; raster="$(fallback_rasterizer)"
+      [ -n "$raster" ] || die "fallback tier requested for $d2 but no browser-free rasterizer on PATH (install 'rsvg-convert' or 'resvg')."
+      log "d2 -> svg -> $raster -> png (fallback / browser-free): $d2"
+      case "$raster" in
+        rsvg-convert) rsvg-convert "$svg" -o "$png" || die "rsvg-convert failed on $svg" ;;
+        resvg)        resvg "$svg" "$png"           || die "resvg failed on $svg" ;;
+      esac
       verify_png_nonblank "$png"
-      printf '%s | d2 | %s | fallback/resvg/plain-labels\n' "$(basename "$d2")" "$(basename "$png")" >> "$TIERS" ;;
+      printf '%s | d2 | %s | fallback/%s/plain-labels\n' "$(basename "$d2")" "$(basename "$png")" "$raster" >> "$TIERS" ;;
     *) die "unknown TM_RENDER_TIER='$tier' (want primary|fallback)" ;;
   esac
 }

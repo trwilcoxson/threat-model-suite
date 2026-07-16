@@ -5,8 +5,11 @@ One runnable check per non-trivial fix — each fails loudly if the logic regres
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
+import shutil
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -14,6 +17,12 @@ import checks
 import diagram_checks as dc
 import report
 import schema_checks
+
+# The deterministic recon->D2 transform lives next to the skill scripts, not on the eval path.
+_R2D2 = Path(__file__).resolve().parent.parent.parent / "scripts" / "recon_to_d2.py"
+_spec = importlib.util.spec_from_file_location("recon_to_d2", _R2D2)
+recon_to_d2 = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(recon_to_d2)
 
 
 def t_attackflow():
@@ -648,12 +657,100 @@ def t_plain_label_fallback():
     assert dc._fallback_tier_active() is False
 
 
+def t_recon_dataflow_integrity():
+    """Semantic-source spike: dataflow endpoint integrity is a JSON id set-membership (replaces the
+    diagram-text 'boundary-crossing endpoint(s) do not map to recon ids' regex). A dangling endpoint
+    is a HARD (consistency) defect; endpoints that resolve to declared element OR role ids pass."""
+    base = {"components": [{"id": "C1", "name": "svc", "evidence": ["a"]}],
+            "data_stores": [{"id": "D1", "name": "db", "evidence": ["b"]}],
+            "roles": [{"id": "R0", "name": "anon"}]}
+    valid = {**base, "dataflows": [{"id": "F1", "source": "R0", "destination": "C1", "type": "data",
+                                    "evidence": ["x"]},
+                                   {"id": "F2", "source": "C1", "destination": "D1", "type": "data",
+                                    "evidence": ["y"]}]}
+    assert not [d for d in checks.recon_semantic_checks(valid)
+                if d["code"] == "dataflow-endpoint-integrity"], "valid endpoints (incl. a role) must pass"
+
+    dangling = {**base, "dataflows": [{"id": "F9", "source": "C1", "destination": "C404", "type": "data",
+                                       "evidence": ["z"]}]}
+    hits = [d for d in checks.recon_semantic_checks(dangling) if d["code"] == "dataflow-endpoint-integrity"]
+    assert hits and hits[0]["layer"] == "consistency" and "C404" in hits[0]["detail"], hits
+
+
+def t_recon_node_type_membership():
+    """Semantic-source spike: component.type membership is a JSON check over the SAME catalog the
+    diagram check uses (replaces 'node-type-unknown-token' scraped from the picture). A bad token is
+    flagged with a fuzzy suggestion; a valid vocabulary token (incl. an alias) passes."""
+    valid = {"components": [{"id": "C1", "name": "a", "evidence": ["e"], "type": "datastore"},
+                            {"id": "C2", "name": "b", "evidence": ["e"], "type": "svc"}]}  # alias of service
+    assert not [d for d in checks.recon_semantic_checks(valid)
+                if d["code"] == "recon-node-type-unknown"], "vocabulary token + alias must pass"
+
+    bad = {"components": [{"id": "C1", "name": "a", "evidence": ["e"], "type": "datastoer"}]}
+    hits = [d for d in checks.recon_semantic_checks(bad) if d["code"] == "recon-node-type-unknown"]
+    assert hits and "datastore" in hits[0]["detail"], f"bad token needs a fuzzy suggestion: {hits}"
+    assert hits[0]["layer"] == "recon", "node-type membership is advisory (recon layer), not gated"
+
+
+def t_recon_semantic_backcompat():
+    """Back-compat: a recon with NO dataflows and NO component.type yields zero semantic defects — the
+    checks are inert, so every committed recon is unaffected and the production gate is unchanged."""
+    plain = {"components": [{"id": "C1", "name": "a", "evidence": ["e"]}],
+             "data_stores": [], "entry_points": [], "trust_boundaries": [], "external_deps": []}
+    assert checks.recon_semantic_checks(plain) == [], "no dataflows/type -> no defects"
+    assert checks.recon_semantic_checks(None) == [] and checks.recon_semantic_checks({}) == []
+    # the real flagship recon (committed, no dataflows) must also stay inert
+    flagship = json.loads((Path(__file__).resolve().parents[4]
+                           / "docs/examples/amazon-ecs-fullstack-app-terraform/recon.json").read_text())
+    assert checks.recon_semantic_checks(flagship) == [], "committed flagship recon must be inert"
+
+
+def t_recon_to_d2_smoke():
+    """The deterministic transform emits VALID D2: `d2` parses/renders it (rc 0), it is byte-stable
+    across runs, and endpoints resolve to full nested dotted paths (no phantom top-level node)."""
+    recon = {"system_name": "Tiny",
+             "components": [{"id": "C1", "name": "API", "evidence": ["e"], "type": "service", "zone": "TB1"}],
+             "data_stores": [{"id": "D1", "name": "DB", "evidence": ["e"]}],
+             "trust_boundaries": [{"id": "TB1", "name": "VPC", "kind": "network", "evidence": ["e"]}],
+             "external_deps": [], "entry_points": [],
+             "roles": [{"id": "R0", "name": "user"}],
+             "dataflows": [{"id": "F1", "source": "R0", "destination": "C1", "type": "data",
+                            "protocol": "HTTPS", "sensitivity": "PUBLIC", "enc": "ENC", "label": "login"},
+                           {"id": "F2", "source": "C1", "destination": "D1", "type": "control"}]}
+    d2 = recon_to_d2.build(recon)
+    assert recon_to_d2.build(recon) == d2, "transform must be deterministic (byte-stable)"
+    assert "TB1.C1" in d2, "a nested node's edge endpoint must use its full dotted path"
+    assert "[PUBLIC] [ENC]" in d2 and "[CTRL]" in d2, "typed/annotated edge labels expected"
+
+    if not shutil.which("d2"):
+        return  # d2 absent in this env -> skip the render-parse leg (still covered by the assertions above)
+    with tempfile.TemporaryDirectory() as td:
+        src, svg = Path(td) / "t.d2", Path(td) / "t.svg"
+        src.write_text(d2)
+        r = subprocess.run(["d2", "--layout", "elk", str(src), str(svg)], capture_output=True, text=True)
+        assert r.returncode == 0, f"d2 failed to parse the emitted D2:\n{r.stderr}"
+        assert svg.exists() and svg.stat().st_size > 0
+        # icon wiring: with the vendored set present, every used type binds its LOCAL icon and d2 must
+        # bundle it (a missing local icon makes d2 fail loud, so a green render + a data: URI in the SVG
+        # proves the paths resolve and embed offline — no remote fetch).
+        if recon_to_d2.ICONS_DIR.is_dir():
+            iconed = recon_to_d2.build(recon, recon_to_d2._icon_base(src))
+            assert "icon: " in iconed, "each used type should bind its vendored local icon"
+            src.write_text(iconed)
+            isvg = Path(td) / "i.svg"
+            ri = subprocess.run(["d2", "--layout", "elk", str(src), str(isvg)], capture_output=True, text=True)
+            assert ri.returncode == 0, f"d2 failed to bundle the vendored local icons:\n{ri.stderr}"
+            assert "data:image/svg" in isvg.read_text(), "vendored icons must embed offline as data URIs"
+
+
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
              t_boundary_crossing_matrix, t_atlas_layer, t_atlas_vocab, t_atlas_schema, t_verdict, t_schema,
              t_mermaid_extractor_identity, t_d2_extractor_parity, t_node_type_vocab,
-             t_plain_label_fallback]
+             t_plain_label_fallback,
+             t_recon_dataflow_integrity, t_recon_node_type_membership, t_recon_semantic_backcompat,
+             t_recon_to_d2_smoke]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

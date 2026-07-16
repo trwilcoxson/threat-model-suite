@@ -1,0 +1,76 @@
+# Version: generated | Phase: 2 | System: AWS ECS Fullstack App (Terraform Demo) | Layer: L1
+# Deterministic render of recon.json by scripts/recon_to_d2.py — DO NOT hand-edit.
+vars: { d2-config: { layout-engine: elk } }
+
+classes: {
+  datastore: { shape: cylinder; icon: ../../../../skills/threat-model/references/icons/datastore.svg; style: { fill: "#e2e3e5"; stroke: "#383d41" } }
+  external-actor: { shape: person; icon: ../../../../skills/threat-model/references/icons/external-actor.svg; style: { fill: "#cce5ff"; stroke: "#004085" } }
+  external-dep: { shape: package; icon: ../../../../skills/threat-model/references/icons/external-dep.svg; style: { fill: "#f5f5f5"; stroke: "#333333"; stroke-dash: 3 } }
+  pipeline: { shape: parallelogram; icon: ../../../../skills/threat-model/references/icons/pipeline.svg; style: { fill: "#d5dbdb"; stroke: "#7f8c8d" } }
+  queue: { shape: queue; icon: ../../../../skills/threat-model/references/icons/queue.svg; style: { fill: "#d5dbdb"; stroke: "#7f8c8d" } }
+  service: { shape: rectangle; icon: ../../../../skills/threat-model/references/icons/service.svg; style: { fill: "#f5f5f5"; stroke: "#666666" } }
+}
+
+D1: "DynamoDB products/assets table\nAmazon DynamoDB, PAY_PER_REQUEST, hash_key=id(N)" { class: datastore }
+D2: "S3 assets bucket (app images)\nAmazon S3, acl=private, force_destroy=true" { class: datastore }
+D3: "S3 CodePipeline artifact bucket\nAmazon S3, acl=private, force_destroy=true" { class: datastore }
+D4: "ECR repositories (server + client images)\nAmazon ECR, image_tag_mutability=MUTABLE, no scan-on-push" { class: datastore }
+D5: "CloudWatch Logs (ECS task + CodeBuild logs)\nCloudWatch Logs, awslogs driver, 30-day retention" { class: datastore }
+D6: "Terraform state (local, contains github_token)\nLocal terraform.tfstate on operator machine" { class: datastore }
+R0: "anonymous (unauthenticated Internet user)" { class: external-actor }
+R5: "Terraform operator / deployer (human with AWS credentials + GitHub PAT)" { class: external-actor }
+X1: "GitHub source repository + OAuth personal access token\nGitHub v1 source, PAT" { class: external-dep }
+X4: "Docker base images (public.ecr.aws bitnami/node:latest, nginx:latest)\nPublic ECR container base images" { class: external-dep }
+
+CICD: "CI/CD Control Plane" {
+  style: { fill: "#eaf2fb"; stroke: "#004085"; stroke-dash: 4; border-radius: 8 }
+  C9: "CodePipeline (Source/Build/Deploy)\nAWS CodePipeline, GitHub v1 source" { class: pipeline }
+  C10: "CodeBuild projects (server + client)\nAWS CodeBuild, standard:4.0, privileged_mode" { class: pipeline }
+  C11: "CodeDeploy applications (blue/green ECS)\nAWS CodeDeploy CodeDeployDefault.ECSAllAtOnce" { class: pipeline }
+  C12: "ECS Autoscaling + CloudWatch alarms\nApplication Auto Scaling (CPU/memory target tracking)" { class: service }
+  C13: "SNS deployment-notifications topic\nAmazon SNS" { class: queue }
+}
+VPC: "VPC 10.120.0.0/16 · AWS Account · 2 AZ" {
+  style: { fill: "#fff8f0"; stroke: "#a5713b"; stroke-dash: 4; border-radius: 8 }
+  PRIV: "Private Subnets — ECS Fargate task tier" {
+    style: { fill: "#f3f0fb"; stroke: "#6f42c1"; stroke-dash: 4; border-radius: 8 }
+    C1: "Client SPA (Vue.js served by Nginx)\nVue.js 2, bootstrap-vue, axios, Nginx" { class: service }
+    C2: "Server API (Node.js/Express)\nNode.js, Express 4, aws-sdk v2, cors" { class: service }
+    C3: "Swagger / API docs endpoint\nswagger-jsdoc, swagger-ui-express" { class: service }
+    C6: "ECS Cluster (Fargate)\nAmazon ECS on Fargate" { class: service }
+    C7: "ECS Service - client task\nECS Fargate service, awsvpc, private subnets" { class: service }
+    C8: "ECS Service - server task\nECS Fargate service, awsvpc, private subnets" { class: service }
+  }
+  PUB: "Public Subnets — ALB tier" {
+    style: { fill: "#eef7ee"; stroke: "#2f7d32"; stroke-dash: 4; border-radius: 8 }
+    C4: "Client ALB (internet-facing, HTTP:80)\nAWS Application Load Balancer" { class: service }
+    C5: "Server/API ALB (internet-facing, HTTP:80)\nAWS Application Load Balancer" { class: service }
+  }
+}
+
+R0 -> VPC.PUB.C4: "HTTP · SPA page load [PUBLIC] [PLAIN]"
+VPC.PUB.C4 -> VPC.PRIV.C7: "HTTP · forward to client task [INTERNAL] [PLAIN]"
+VPC.PRIV.C7 -> VPC.PRIV.C1: "[CTRL] ECS runs SPA container [INTERNAL]" { style: { stroke-dash: 3 } }
+R0 -> VPC.PUB.C5: "HTTP · GET /api/getAllProducts,/status [PUBLIC] [PLAIN]"
+VPC.PUB.C5 -> VPC.PRIV.C8: "HTTP · forward to server task [INTERNAL] [PLAIN]"
+VPC.PRIV.C8 -> VPC.PRIV.C2: "[CTRL] ECS runs API container [INTERNAL]" { style: { stroke-dash: 3 } }
+VPC.PRIV.C2 -> VPC.PRIV.C3: "[CTRL] serves /api/docs [PUBLIC]" { style: { stroke-dash: 3 } }
+VPC.PRIV.C2 -> D1: "HTTPS · DocumentClient.scan catalog [INTERNAL] [ENC]"
+R0 -> D2: "HTTPS · product image fetch [INTERNAL] [ENC]"
+VPC.PRIV.C7 -> D5: "HTTP · awslogs task logs [INTERNAL]"
+VPC.PRIV.C8 -> D5: "HTTP · awslogs task logs [INTERNAL]"
+R5 -> X1: "[BUILD] git push to main [INTERNAL]" { style: { stroke: "#f39c12"; stroke-width: 2 } }
+R5 -> D6: "[ADMIN] terraform apply · local state [RESTRICTED]" { style: { stroke: "#cc0000"; stroke-width: 2; stroke-dash: 3 } }
+X1 -> CICD.C9: "[BUILD] source poll PollForSourceChanges [CONFIDENTIAL]" { style: { stroke: "#f39c12"; stroke-width: 2 } }
+CICD.C9 -> D3: "[BUILD] store source + artifacts [CONFIDENTIAL]" { style: { stroke: "#f39c12"; stroke-width: 2 } }
+CICD.C9 -> CICD.C10: "[BUILD] trigger build stage [INTERNAL]" { style: { stroke: "#f39c12"; stroke-width: 2 } }
+X4 -> CICD.C10: "[BUILD] pull base image :latest [INTERNAL]" { style: { stroke: "#f39c12"; stroke-width: 2 } }
+CICD.C10 -> D4: "[BUILD] docker build/push [CONFIDENTIAL]" { style: { stroke: "#f39c12"; stroke-width: 2 } }
+CICD.C10 -> D5: "[BUILD] build logs [INTERNAL]" { style: { stroke: "#f39c12"; stroke-width: 2 } }
+CICD.C9 -> CICD.C11: "[BUILD] trigger deploy stage [INTERNAL]" { style: { stroke: "#f39c12"; stroke-width: 2 } }
+CICD.C11 -> VPC.PRIV.C6: "[CTRL] blue/green deploy [INTERNAL]" { style: { stroke-dash: 3 } }
+D4 -> VPC.PRIV.C6: "[CTRL] image pull on task start [INTERNAL]" { style: { stroke-dash: 3 } }
+VPC.PRIV.C6 -> VPC.PRIV.C7: "[CTRL] schedule client tasks [INTERNAL]" { style: { stroke-dash: 3 } }
+VPC.PRIV.C6 -> VPC.PRIV.C8: "[CTRL] schedule server tasks [INTERNAL]" { style: { stroke-dash: 3 } }
+CICD.C11 -> CICD.C13: "[ASYNC] deploy notifications [INTERNAL]" { style: { stroke: "#27ae60"; stroke-width: 2 } }
+CICD.C12 -> VPC.PRIV.C8: "[CTRL] autoscaling CPU/mem [INTERNAL]" { style: { stroke-dash: 3 } }

@@ -6,13 +6,13 @@
 #   - d2 binary + a free deterministic layout   (SVG for HTML + PNG for Office)
 #   - the tier's rasterizer:
 #       * warmed headless-browser cache          -> PRIMARY tier (full label fidelity), OR
-#       * resvg                                  -> FALLBACK tier (browser-free, plain single-line labels)
+#       * rsvg-convert (librsvg) or resvg         -> FALLBACK tier (browser-free, plain single-line labels)
 #   - vendored local icon set + font            (hermetic, no remote fetch)
 #
-# When the warmed browser cache is absent but resvg is present, the FALLBACK tier is declared active,
-# which in turn enforces the plain-single-line-label constraint on the diagram source (the diagram
-# check reads TM_RENDER_TIER=fallback and rejects |md|/multi-line/foreignObject labels that resvg
-# would silently blank).
+# When the warmed browser cache is absent but a browser-free rasterizer (rsvg-convert or resvg) is
+# present, the FALLBACK tier is declared active, which in turn enforces the plain-single-line-label
+# constraint on the diagram source (the diagram check reads TM_RENDER_TIER=fallback and rejects
+# |md|/multi-line/foreignObject labels that a browser-free rasterizer would silently blank).
 #
 # Usage: ensure_renderer.sh [refs_dir]
 # Output (stdout, on success): `TM_RENDER_TIER=primary|fallback` — the orchestrator exports it into
@@ -35,14 +35,15 @@ have d2 || bad "'d2' binary not found — the D2 render toolchain is not install
 [ -d "$ICONS" ] || bad "vendored icon set absent ($ICONS) — icons must be local files; a remote icon breaks air-gap and renders broken while exiting 0"
 [ -f "$FONT" ]  || bad "vendored font absent ($FONT) — a pinned local font keeps layout metrics deterministic"
 
-# --- PNG tier: primary (warmed browser) if its cache is present; else the browser-free resvg fallback
+# --- PNG tier: primary (warmed browser) if its cache is present; else a browser-free rasterizer
+#     (librsvg's rsvg-convert or resvg) drives the fallback tier.
 tier=""
 if [ -n "${TM_BROWSER_CACHE:-}" ] && [ -e "${TM_BROWSER_CACHE}" ]; then
   tier="primary"
-elif have resvg; then
+elif have rsvg-convert || have resvg; then
   tier="fallback"
 else
-  bad "no PNG tier available — provide a warmed headless-browser cache (set TM_BROWSER_CACHE for the primary tier) or install 'resvg' (browser-free fallback tier)"
+  bad "no PNG tier available — provide a warmed headless-browser cache (set TM_BROWSER_CACHE for the primary tier) or install a browser-free rasterizer ('rsvg-convert' or 'resvg', fallback tier)"
 fi
 
 if [ "$fail" -ne 0 ]; then

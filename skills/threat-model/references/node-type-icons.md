@@ -24,8 +24,10 @@ checks every node's declared type token against it, with fuzzy-match suggestions
 
 ## §2 The vocabulary
 
-Permissive/generic types (engine- and cloud-agnostic). Icon ids are permissive Iconify-style names
-(`mdi:*`); **no AWS/Azure/GCP brand icons live in the core** (a licensing decision — see §5).
+Permissive/generic types (engine- and cloud-agnostic). The **Icon id** column below is the upstream
+MDI source glyph (`mdi:*`); each is vendored locally as `icons/<type>.svg` — that local path is what
+`node-type-icons.json` now carries and what both engines reference (§5). **No AWS/Azure/GCP brand
+icons live in the core** (a licensing decision — see §5).
 
 | Type | Icon id | Aliases (folded onto the type) | Meaning |
 |------|---------|--------------------------------|---------|
@@ -74,18 +76,20 @@ Reference-free, ADVISORY (diagram layer), abstains when no type token is present
 | `icon-inconsistency` | same type token → one icon across the report | two icons for one type → defect |
 | legend coverage | every used type appears in the legend | warning only |
 
-## §5 Remaining — SVG asset vendoring (NOT done in this change)
+## §5 SVG asset vendoring (DONE)
 
-This change defines the **catalog + the reference + the validator**. It does **not** vendor the actual
-SVG files. To finish T1-05:
+The permissive SVG set is now vendored under [`references/icons/`](./icons/) — one `<type>.svg` per
+vocabulary member (15 files), sourced from **Material Design Icons** (Pictogrammers `@mdi/svg`,
+**Apache-2.0**; see [`icons/LICENSE`](./icons/LICENSE) for attribution + the type→MDI-name mapping).
+Each `icon` field in `node-type-icons.json` is now the **local path** `icons/<type>.svg` (relative to
+this `references/` dir); **no remote URLs, no AWS/Azure/GCP brand icons**.
 
-1. Choose the permissive icon source and pin it — Iconify `mdi`/`logos` (MIT-ish) is the default;
-   Terrastruct's own set is an option. **Do not vendor AWS Architecture Icons into the core** without a
-   redistribution-terms review (they carry a trademark caveat).
-2. Download the SVGs to a local `references/icons/` directory and replace each `icon` id in
-   `node-type-icons.json` with its **local file path**.
-3. Optionally add a per-cloud-provider logo layer (RDS/KMS/SQS) as a *separate, opt-in* vendored set —
-   it improves fidelity but grows the licensing surface, so it stays out of the generic core.
+- **D2 path** binds each type's local icon into the `classes` block — `scripts/recon_to_d2.py` emits
+  `icon: <rel-path>/<type>.svg` per used type, resolved relative to the output `.d2` (d2 resolves
+  `icon:` against the `.d2` file, not the CWD) and embedded as a base64 data URI at render time (fully
+  offline). A missing local icon makes `d2` fail loud (`failed to bundle local images`), so a broken
+  path can never silently render blank — unlike a remote URL.
+- **Mermaid path** references the same `icons/<type>.svg` via `@{shape: icon}` (mermaid-spec.md §3).
 
-Until then, the ids are logical names: the vocabulary, membership validator, and consistency checks are
-fully live; only the pixel assets are pending.
+Still optional / not vendored: a per-cloud-provider logo layer (RDS/KMS/SQS) as a *separate, opt-in*
+set — it improves fidelity but grows the licensing surface, so it stays out of the generic core.

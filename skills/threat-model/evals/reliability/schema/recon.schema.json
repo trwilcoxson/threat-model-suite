@@ -23,6 +23,11 @@
       "description": "distinct roles/principals the LLM identified (incl. anonymous/unauthenticated). Lets the RBAC-matrix precondition gate on a declared fact.",
       "items": { "type": "object", "additionalProperties": false, "required": ["id", "name"],
         "properties": { "id": { "type": "string" }, "name": { "type": "string" } } }
+    },
+    "dataflows": {
+      "type": "array",
+      "description": "OPTIONAL typed edges between declared elements — the structured-semantic-source spike (docs/research/visual-engine-2026-07/SEMANTIC-SOURCE-SPIKE.md). Every committed recon.json omits this and stays conformant. When present, the deterministic recon_to_d2.py render owns 100% of layout/aesthetics, and the edge checks become JSON reference/membership checks (checks.py::recon_semantic_checks) instead of regex over diagram text. source/destination are element ids (cross-reference integrity is a checks.py check, not expressible in JSON-Schema).",
+      "items": { "$ref": "#/$defs/dataflow" }
     }
   },
   "$defs": {
@@ -33,6 +38,8 @@
       "properties": {
         "id":   { "type": "string", "description": "stable local id, e.g. C1 / D1 / E1 / TB1 / X1" },
         "name": { "type": "string" },
+        "type": { "type": ["string", "null"], "description": "OPTIONAL node-type token from the vocabulary catalog (references/node-type-icons.json) — primarily for components; the recon_to_d2.py render binds it to a shape/icon, and checks.py::recon_semantic_checks validates membership (fuzzy suggestion on a miss). Omitted/null on every committed recon; the render infers a per-array default when absent." },
+        "zone": { "type": ["string", "null"], "description": "OPTIONAL containment hint: the trust_boundary id (or parent boundary id) that encloses this element — the deterministic recon_to_d2.py render nests it inside that container. A trust_boundary whose zone points at another boundary nests inside it. Omitted/null on every committed recon (elements render at top level)." },
         "tech": { "type": ["string", "null"], "description": "optional technology/stack note for this element — a declared fact, not eval-inferred; null/omitted when not determinable" },
         "evidence": {
           "type": "array", "minItems": 1,
@@ -45,6 +52,22 @@
         },
         "manifest": { "type": ["string", "null"], "description": "external_dep only: path to the dependency manifest/lockfile in evidence (enables the SBOM precondition); null/omitted when the dep has no manifest in the repo" },
         "risk": { "type": ["string", "null"], "description": "external_dep only: free-text risk note the LLM set (e.g. EOL, known-CVE) — a declared fact, not eval-inferred; null/omitted when none observed" }
+      }
+    },
+    "dataflow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "source", "destination", "type"],
+      "properties": {
+        "id":          { "type": "string", "description": "stable local id, e.g. F1" },
+        "source":      { "type": "string", "description": "id of the declared element/role the edge starts at (integrity checked in checks.py)" },
+        "destination": { "type": "string", "description": "id of the declared element/role the edge ends at (integrity checked in checks.py)" },
+        "type":        { "enum": ["data", "control", "build", "async", "admin"], "description": "edge class — drives color/style in the deterministic render and replaces the diagram-text typed-prefix regex" },
+        "protocol":    { "type": ["string", "null"], "description": "optional wire protocol, e.g. HTTP / HTTPS / gRPC" },
+        "sensitivity": { "enum": ["PUBLIC", "INTERNAL", "CONFIDENTIAL", "RESTRICTED", null], "description": "optional data-sensitivity band carried on the edge label" },
+        "enc":         { "enum": ["ENC", "PLAIN", null], "description": "optional encryption-in-transit state carried on the edge label" },
+        "label":       { "type": ["string", "null"], "description": "optional short human description of the flow" },
+        "evidence":    { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "optional repo-relative paths/strings that ground the flow (shape-checked, advisory, in checks.py)" }
       }
     }
   }
