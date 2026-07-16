@@ -11,8 +11,11 @@ Usage:  recon_to_d2.py <recon.json> [out.d2]   # writes out.d2 (or stdout with '
 Node typing:  element.type (a token from references/node-type-icons.json) when present, else a
 per-array default is INFERRED (components->service, data_stores->datastore, external_deps->
 external-dep, entry_points->gateway, trust_boundaries->trust-boundary, roles->external-actor).
-Each type binds to a built-in D2 SHAPE (offline, no vendored SVGs yet — see node-type-icons.md
-§5; a vendored `icon:` path drops into the classes block once the SVG set lands).
+Each type binds to a built-in D2 SHAPE plus its VENDORED local `icon:` (references/icons/<type>.svg,
+MDI Apache-2.0). The icon path is emitted RELATIVE to the output .d2's own directory — d2 resolves
+`icon:` paths against the .d2 file (not the CWD), so the path is portable and CWD-independent, and
+d2 embeds the SVG as a base64 data URI (fully offline). A missing local icon makes d2 fail loud, so
+if the vendored set is absent at generation time the icon binding is simply omitted (shape-only).
 
 Only elements that PARTICIPATE in a dataflow are drawn (matches the flow graph the agent authored,
 no floating nodes); if a recon carries no dataflows, every element is drawn instead. A trust
@@ -22,12 +25,18 @@ crossing-only boundaries never render as empty boxes.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 from pathlib import Path
 
+# The vendored icon set (references/icons/<type>.svg, MDI Apache-2.0) — its path is resolved relative
+# to the output .d2 so the emitted binding is deterministic (repo-layout-relative, machine-independent).
+ICONS_DIR = Path(__file__).resolve().parent.parent / "references" / "icons"
+
 # type token -> built-in D2 shape + fill/stroke. Shapes are the OFFLINE typed glyphs (cylinder,
-# person, package, ...); a vendored SVG `icon:` per type slots in here later (node-type-icons.md §5).
+# person, package, ...); the vendored SVG `icon:` per type is bound alongside the shape (references/
+# icons/<type>.svg) so every node of a type inherits its typed glyph deterministically.
 TYPE_SPEC = {
     "service":        {"shape": "rectangle",     "fill": "#f5f5f5", "stroke": "#666666"},
     "process":        {"shape": "rectangle",     "fill": "#f5f5f5", "stroke": "#666666"},
@@ -84,7 +93,7 @@ def _class_of(type_token: str) -> str:
     return type_token if type_token in TYPE_SPEC else "neutral"
 
 
-def build(recon: dict) -> str:
+def build(recon: dict, icon_base: str = "") -> str:
     boundaries = {b["id"]: b for b in recon.get("trust_boundaries", []) if "id" in b}
     # leaves = every drawable non-boundary element/role, keyed by id, with its source array.
     leaves: dict[str, tuple[str, dict]] = {}
@@ -122,15 +131,18 @@ def build(recon: dict) -> str:
     out.append("vars: { d2-config: { layout-engine: elk } }")
     out.append("")
 
-    # classes: one per type actually used by a drawn leaf (sorted). Vendored `icon:` slots in here.
+    # classes: one per type actually used by a drawn leaf (sorted). Each type binds its VENDORED
+    # icon (icon_base/<type>.svg) alongside the shape when the SVG is present; a missing asset degrades
+    # to shape-only rather than making d2 fail loud on a bundle error.
     used_types = sorted({_class_of(_type_of(leaves[lid][1], leaves[lid][0])) for lid in drawn if lid in leaves})
     out.append("classes: {")
     for t in used_types:
         spec = TYPE_SPEC.get(t, TYPE_SPEC["neutral"])
+        icon = f"icon: {icon_base}/{t}.svg; " if icon_base and (ICONS_DIR / f"{t}.svg").exists() else ""
         style = f'fill: "{spec["fill"]}"; stroke: "{spec["stroke"]}"'
         if spec.get("dash"):
             style += f'; stroke-dash: {spec["dash"]}'
-        out.append(f'  {t}: {{ shape: {spec["shape"]}; style: {{ {style} }} }}')
+        out.append(f'  {t}: {{ shape: {spec["shape"]}; {icon}style: {{ {style} }} }}')
     out.append("}")
     out.append("")
 
@@ -198,14 +210,23 @@ def _edge_style(f: dict) -> str:
     return f" {{ style: {{ {body} }} }}"
 
 
+def _icon_base(out: Path | None) -> str:
+    """Relative path from the .d2's directory (where d2 resolves `icon:` paths — NOT the CWD) to the
+    vendored icon set. Repo-layout-relative, so byte-identical across machines. For stdout the output
+    location is unknown, so anchor to the CWD as a best-effort fallback (prefer the file form)."""
+    base = out.resolve().parent if out else Path.cwd()
+    return os.path.relpath(ICONS_DIR, base)
+
+
 def main() -> None:
     if len(sys.argv) < 2:
         sys.exit("usage: recon_to_d2.py <recon.json> [out.d2|-]")
     recon = json.loads(Path(sys.argv[1]).read_text())
-    d2 = build(recon)
-    if len(sys.argv) >= 3 and sys.argv[2] != "-":
-        Path(sys.argv[2]).write_text(d2)
-        print(f"wrote {sys.argv[2]} ({d2.count(chr(10))} lines)")
+    out = Path(sys.argv[2]) if len(sys.argv) >= 3 and sys.argv[2] != "-" else None
+    d2 = build(recon, _icon_base(out))
+    if out is not None:
+        out.write_text(d2)
+        print(f"wrote {out} ({d2.count(chr(10))} lines)")
     else:
         sys.stdout.write(d2)
 

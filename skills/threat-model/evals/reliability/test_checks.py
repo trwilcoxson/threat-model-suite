@@ -730,6 +730,17 @@ def t_recon_to_d2_smoke():
         r = subprocess.run(["d2", "--layout", "elk", str(src), str(svg)], capture_output=True, text=True)
         assert r.returncode == 0, f"d2 failed to parse the emitted D2:\n{r.stderr}"
         assert svg.exists() and svg.stat().st_size > 0
+        # icon wiring: with the vendored set present, every used type binds its LOCAL icon and d2 must
+        # bundle it (a missing local icon makes d2 fail loud, so a green render + a data: URI in the SVG
+        # proves the paths resolve and embed offline — no remote fetch).
+        if recon_to_d2.ICONS_DIR.is_dir():
+            iconed = recon_to_d2.build(recon, recon_to_d2._icon_base(src))
+            assert "icon: " in iconed, "each used type should bind its vendored local icon"
+            src.write_text(iconed)
+            isvg = Path(td) / "i.svg"
+            ri = subprocess.run(["d2", "--layout", "elk", str(src), str(isvg)], capture_output=True, text=True)
+            assert ri.returncode == 0, f"d2 failed to bundle the vendored local icons:\n{ri.stderr}"
+            assert "data:image/svg" in isvg.read_text(), "vendored icons must embed offline as data URIs"
 
 
 def main():

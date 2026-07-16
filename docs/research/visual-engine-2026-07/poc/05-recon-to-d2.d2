@@ -3,12 +3,12 @@
 vars: { d2-config: { layout-engine: elk } }
 
 classes: {
-  datastore: { shape: cylinder; style: { fill: "#e2e3e5"; stroke: "#383d41" } }
-  external-actor: { shape: person; style: { fill: "#cce5ff"; stroke: "#004085" } }
-  external-dep: { shape: package; style: { fill: "#f5f5f5"; stroke: "#333333"; stroke-dash: 3 } }
-  pipeline: { shape: parallelogram; style: { fill: "#d5dbdb"; stroke: "#7f8c8d" } }
-  queue: { shape: queue; style: { fill: "#d5dbdb"; stroke: "#7f8c8d" } }
-  service: { shape: rectangle; style: { fill: "#f5f5f5"; stroke: "#666666" } }
+  datastore: { shape: cylinder; icon: ../../../../skills/threat-model/references/icons/datastore.svg; style: { fill: "#e2e3e5"; stroke: "#383d41" } }
+  external-actor: { shape: person; icon: ../../../../skills/threat-model/references/icons/external-actor.svg; style: { fill: "#cce5ff"; stroke: "#004085" } }
+  external-dep: { shape: package; icon: ../../../../skills/threat-model/references/icons/external-dep.svg; style: { fill: "#f5f5f5"; stroke: "#333333"; stroke-dash: 3 } }
+  pipeline: { shape: parallelogram; icon: ../../../../skills/threat-model/references/icons/pipeline.svg; style: { fill: "#d5dbdb"; stroke: "#7f8c8d" } }
+  queue: { shape: queue; icon: ../../../../skills/threat-model/references/icons/queue.svg; style: { fill: "#d5dbdb"; stroke: "#7f8c8d" } }
+  service: { shape: rectangle; icon: ../../../../skills/threat-model/references/icons/service.svg; style: { fill: "#f5f5f5"; stroke: "#666666" } }
 }
 
 D1: "DynamoDB products/assets table\nAmazon DynamoDB, PAY_PER_REQUEST, hash_key=id(N)" { class: datastore }
