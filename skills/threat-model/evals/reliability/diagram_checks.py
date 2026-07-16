@@ -11,10 +11,23 @@ model's own emitted facts — reference-free, no answer key. The per-element STR
 boundary-crossing STRIDE matrix each prove exhaustive consideration (every element / every
 trust-boundary-crossing edge reaches a decided, grounded row); which threats are *correct* stays
 with the diagram judge.
+
+Verification stays REFERENCE-FREE ACROSS ENGINES. A per-engine extractor (chosen from the declared
+```mermaid / ```d2 fence, never sniffed) turns each diagram's source into one normalized model;
+the property assertions run over that model, so no check compares a diagram to a golden/reference
+diagram and no check changes meaning between Mermaid and D2. Every verdict rests only on the
+model's own well-formedness, id resolution within its own source, vocabulary membership, or
+arithmetic recomputed from values the model stated — and honest abstention (`unknown`/`other`
+types, `n/a`/`clean` cells, a check skipped because its precondition is false) stays a passing
+outcome on every check.
 """
 from __future__ import annotations
 
+import difflib
+import functools
+import json as _json
 import re
+from pathlib import Path
 from typing import Any
 
 # Technique-id regexes. ATTACK_TID matches an ATT&CK T#### only when it is NOT preceded by a letter or
@@ -170,7 +183,350 @@ def _typed(blocks: list[str], *types: str) -> list[str]:
     return [b for b in blocks if any(re.search(p, b.lower()) for p in pats)]
 
 
-def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, findings_doc: dict | None,
+# ===========================================================================================
+# Per-engine extractor seam (T5-05 / T1-06)
+#
+# The property assertions in check()/analytical_checks() are ENGINE-AGNOSTIC; only EXTRACTION
+# (source text -> normalized model) is engine-specific. An extractor turns one diagram block's
+# source into the primitives the assertions consume: the declared layer stamp, typed edges (line
+# + label), boundary containers, component nodes (for ownership), node-type tokens (for the
+# vocabulary check), and styling presence. The engine is chosen from the DECLARED fence
+# (``` ```mermaid ``` vs ``` ```d2 ```), never sniffed from syntax — matching the existing rule
+# that _layer_of reads a declared `Layer: L{N}` stamp and never infers from prose.
+#
+# The Mermaid extractor DELEGATES to the byte-identical module functions above, so the Mermaid
+# path has ZERO behavior change (regression-locked in test_checks.t_mermaid_extractor_identity).
+# The D2 extractor parses D2's container/edge/class grammar onto the SAME normalized model, so no
+# property assertion changes meaning across engines (parity-locked in t_d2_extractor_parity).
+# ===========================================================================================
+
+
+class Block:
+    """One declared diagram block: its engine (from the fence) + its raw source."""
+    __slots__ = ("engine", "src")
+
+    def __init__(self, engine: str, src: str):
+        self.engine = engine
+        self.src = src
+
+
+def _engine_blocks(report_text: str) -> list[Block]:
+    """Every ```mermaid / ```d2 fenced block, tagged with its DECLARED engine (a declared fact)."""
+    return [Block(m.group(1), m.group(2))
+            for m in re.finditer(r"```(mermaid|d2)\s(.*?)```", report_text, re.DOTALL)]
+
+
+def _src(b: Any) -> str:
+    """Source of a block. A bare str is legacy Mermaid input (tests pass raw strings) -> Mermaid."""
+    return b.src if isinstance(b, Block) else b
+
+
+def _ex(b: Any):
+    return _D2 if (isinstance(b, Block) and b.engine == "d2") else _MERMAID
+
+
+class _MermaidExtractor:
+    """The Mermaid extractor is the current regex logic, verbatim (delegates to the module funcs)."""
+    engine = "mermaid"
+
+    def layer_of(self, src): return _layer_of(src)
+    def edges(self, src): return _edges(src)
+    def crossing_edges(self, src): return _crossing_edges(src)
+    def has_version_stamp(self, src): return bool(re.search(r"%%\s*Version:", src))
+    def has_class_defs(self, src): return bool(re.search(r"classDef", src))
+    def boundary_count(self, src): return len(re.findall(r"\bsubgraph\b", src))
+    def has_risk_styling(self, src): return bool(re.search(RISK_CLASS, src))
+
+    def component_nodes(self, src):
+        # process ([..]) / data store [(..)] nodes — the shapes the ownership check inspects.
+        return [n for n in _nodes(src) if re.search(r"\(\[|\[\(", n)]
+
+    def node_type_tokens(self, src):
+        """(node_id, type_token|None, icon|None) for each drawn node. The type token is the
+        `:::class` assignment; classical Mermaid nodes carry no per-node icon (icon comes from the
+        classDef), so icon is None and the icon-consistency check abstains on the Mermaid path.
+        `_nodes` also returns edge lines whose labels contain `[` (e.g. `A -->|"x [PUBLIC]"| B`);
+        those are excluded here with the same quoted-label-stripped edge-op guard `_edges` uses, so
+        an edge is never miscounted as an untyped node."""
+        out = []
+        for n in _nodes(src):
+            if re.search(EDGE_OPS, re.sub(r'"[^"]*"', "", n)):   # an edge line, not a node def
+                continue
+            idm = re.match(r"([A-Za-z_]\w*)", n)
+            if not idm:
+                continue
+            tok = re.search(r":::(\w+)", n)
+            out.append((idm.group(1), tok.group(1) if tok else None, None))
+        return out
+
+
+def _d2_defs(src: str) -> list[dict]:
+    """Parse a D2 block into node/container definitions on the normalized model.
+
+    Returns one record per declared id: {id, path(=enclosing container ids), label, cls, icon}.
+    A record whose id appears in another record's `path` is a container (a trust boundary); leaf
+    records are the drawn nodes. Documented D2 subset (see references/d2-spec.md): one statement
+    per line; `#` line comments; trust-boundary containers open with a trailing `{` and close with
+    a `}` on its own line; leaf nodes carry an inline single-line `{ class: T; icon: P }` body;
+    `classes:`/`vars:`/`style:` bodies are skipped. A naive line parser — it does not follow D2's
+    full grammar (imperative overrides, glob selectors); it covers the eval-facing subset.
+    ponytail: line/brace parser, upgrade to a real D2 grammar only if authored diagrams need it.
+    """
+    ATTR = {"class", "icon", "shape", "label", "near", "tooltip", "link", "width", "height",
+            "direction", "constraint", "source-arrowhead", "target-arrowhead"}
+    SKIP_KEYS = {"classes", "vars", "style"}
+    defs: dict[str, dict] = {}
+    order: list[str] = []
+    cstack: list[str] = []   # open container ids, outermost first
+    skip = 0                 # brace depth of a classes/vars/style region we are ignoring
+    for raw in src.splitlines():
+        s = raw.strip()
+        if not s or s.startswith("#"):
+            continue
+        net = s.count("{") - s.count("}")
+        if skip > 0:                                  # inside an ignored classes/vars/style body
+            skip = max(0, skip + net)
+            continue
+        if "->" in s or "<->" in s:                   # an edge, not a node
+            continue
+        if s.startswith("}"):                         # close the innermost open container
+            if cstack:
+                cstack.pop()
+            continue
+        m = re.match(r"^([A-Za-z_][\w-]*)\s*:\s*(.*)$", s)
+        if not m:
+            continue
+        key, rest = m.group(1), m.group(2).strip()
+        if key in SKIP_KEYS:
+            if net > 0:
+                skip = net
+            continue
+        if key in ATTR:                               # attribute of the current container
+            if cstack and cstack[-1] in defs:
+                host = defs[cstack[-1]]
+                if key == "class" and rest:
+                    host["cls"] = rest.strip("{} ").split()[0]
+                elif key == "icon" and rest:
+                    host["icon"] = rest
+            if net > 0:
+                skip = net
+            continue
+        # node / container definition
+        inline_body = ""
+        if "{" in rest and rest.rstrip().endswith("}"):       # single-line leaf body
+            inline_body = rest[rest.index("{") + 1:rest.rindex("}")]
+            label = rest[:rest.index("{")]
+        elif rest.endswith("{"):                              # opens a multi-line container
+            label = rest[:-1]
+        else:
+            label = rest
+        label = label.strip().strip('"')
+        rec = defs.setdefault(key, {"id": key, "path": tuple(cstack),
+                                    "label": "", "cls": None, "icon": None})
+        if label and not rec["label"]:
+            rec["label"] = label
+        if inline_body:
+            cm = re.search(r"class\s*:\s*([A-Za-z_][\w-]*)", inline_body)
+            if cm:
+                rec["cls"] = cm.group(1)
+            im = re.search(r"icon\s*:\s*(\S+)", inline_body)
+            if im:
+                rec["icon"] = im.group(1)
+        order.append(key)
+        if net > 0 and not inline_body:
+            cstack.append(key)
+    return [defs[k] for k in dict.fromkeys(order)]
+
+
+def _d2_edge_paths(line: str) -> tuple[str, str] | None:
+    """(source_path, dest_path) for a D2 edge line — dotted paths kept intact, trailing style
+    block and label stripped. `VPC.PUB.C4 -> VPC.PRIV.C7: "label" { style }` -> (VPC.PUB.C4, VPC.PRIV.C7)."""
+    body = re.sub(r"\{[^{}]*\}\s*$", "", line).strip()      # drop a trailing style block
+    m = re.match(r"(.+?)\s*-+>\s*(.+)", body)
+    if not m:
+        return None
+    lhs = m.group(1).strip()
+    rhs = m.group(2).strip()
+    rhs = rhs.split(":", 1)[0].strip()                      # drop the edge label
+    src_id = lhs.split()[-1] if lhs else ""
+    dst_id = rhs.split()[0] if rhs else ""
+    if not src_id or not dst_id:
+        return None
+    return (src_id, dst_id)
+
+
+class _D2Extractor:
+    """Parses the D2 container/edge/class grammar onto the same normalized model as Mermaid."""
+    engine = "d2"
+
+    def layer_of(self, src):
+        # Same DECLARED `Layer: L{N}` stamp; in D2 it rides a `#`-comment stamp line.
+        m = re.search(r"Layer:\s*(L[1-4])", src)
+        return m.group(1) if m else None
+
+    def has_version_stamp(self, src):
+        return bool(re.search(r"#.*\bVersion:", src))
+
+    def has_class_defs(self, src):
+        return bool(re.search(r"\bclasses\s*:", src))
+
+    def boundary_count(self, src):
+        # A container = an id that encloses >=1 child node (appears in some record's path).
+        recs = _d2_defs(src)
+        return len({p for r in recs for p in r["path"]})
+
+    def has_risk_styling(self, src):
+        return bool(re.search(r"(?:critical|high|med|medium|low)Risk", src))
+
+    def edges(self, src):
+        out = []
+        for line in src.splitlines():
+            s = line.strip()
+            if s.startswith("#") or "->" not in s:
+                continue
+            body = re.sub(r"\{[^{}]*\}\s*$", "", s).strip()
+            lbl = re.search(r":\s*\"?(.*?)\"?\s*$", body.split("->", 1)[1]) if "->" in body else None
+            out.append((s, lbl.group(1) if lbl and lbl.group(1) else None))
+        return out
+
+    def crossing_edges(self, src):
+        """Edges whose endpoints sit in different trust zones. In D2 the zone is encoded by the
+        dotted path: `VPC.PRIV.C7` -> innermost container `PRIV`; a bare id -> the external zone
+        (None). Structural read of the DFD the agent drew; never decides where a zone belongs."""
+        out = []
+        for line in src.splitlines():
+            s = line.strip()
+            if s.startswith("#") or "->" not in s:
+                continue
+            ep = _d2_edge_paths(s)
+            if not ep:
+                continue
+            z1 = ep[0].split(".")[-2] if "." in ep[0] else None
+            z2 = ep[1].split(".")[-2] if "." in ep[1] else None
+            if z1 != z2:
+                out.append((ep[0].split(".")[-1], ep[1].split(".")[-1]))
+        return out
+
+    def component_nodes(self, src):
+        COMP = {"svc", "service", "store", "datastore", "pipe", "pipeline", "queue", "process"}
+        return [r["label"] for r in _d2_defs(src) if (r["cls"] or "").lower() in COMP]
+
+    def node_type_tokens(self, src):
+        recs = _d2_defs(src)
+        parents = {p for r in recs for p in r["path"]}       # container ids are not drawn nodes
+        return [(r["id"], r["cls"], r["icon"]) for r in recs if r["id"] not in parents]
+
+
+_MERMAID = _MermaidExtractor()
+_D2 = _D2Extractor()
+
+
+# ---- Node-type -> icon vocabulary (T1-05) --------------------------------------------------
+# A ground-truth catalog of valid node-type/icon tokens + a membership validator with fuzzy-match
+# suggestions on a miss — the drawio-ai-kit `checkRef` shape (membership over emitted facts +
+# suggestions), engine-independent. The catalog is a permissive/generic set (no vendored AWS-brand
+# icons in the core); `unknown`/`other` is an explicit passing member so typing is never coerced.
+_VOCAB_JSON = Path(__file__).resolve().parent.parent.parent / "references" / "node-type-icons.json"
+
+# Embedded fallback mirrors the vendored JSON, so the check never crashes if the file moves.
+_VOCAB_FALLBACK = {
+    "types": {
+        "service": {"aliases": ["svc"]}, "process": {"aliases": []},
+        "datastore": {"aliases": ["store", "datastores"]}, "queue": {"aliases": []},
+        "external-actor": {"aliases": ["actor", "external", "external-entity"]},
+        "external-dep": {"aliases": ["extdep", "externaldep", "external-dependency"]},
+        "identity": {"aliases": ["iam"]}, "secret": {"aliases": ["secrets", "kms"]},
+        "control": {"aliases": []}, "pipeline": {"aliases": ["pipe"]},
+        "trust-boundary": {"aliases": ["boundary"]}, "gateway": {"aliases": ["decision"]},
+        "neutral": {"aliases": []}, "unknown": {"aliases": []}, "other": {"aliases": []},
+    },
+    "styling_classes": ["highRisk", "criticalRisk", "medRisk", "mediumRisk", "lowRisk",
+                        "noFindings", "attackPath", "outOfScope"],
+}
+
+
+@functools.lru_cache(maxsize=1)
+def _load_vocab() -> tuple[frozenset, dict]:
+    """Return (members, icons). members = every accepted token (types + aliases + styling +
+    unknown/other), lowercased; icons = token -> canonical icon id where one is defined."""
+    data = _VOCAB_FALLBACK
+    try:
+        if _VOCAB_JSON.exists():
+            data = _json.loads(_VOCAB_JSON.read_text())
+    except (OSError, ValueError):
+        data = _VOCAB_FALLBACK
+    members: set[str] = set()
+    icons: dict[str, str] = {}
+    for t, meta in (data.get("types") or {}).items():
+        members.add(t.lower())
+        icon = (meta or {}).get("icon")
+        if icon:
+            icons[t.lower()] = icon
+        for a in (meta or {}).get("aliases", []) or []:
+            members.add(a.lower())
+            if icon:
+                icons[a.lower()] = icon
+    for c in data.get("styling_classes") or []:
+        members.add(c.lower())
+    return frozenset(members), icons
+
+
+def _node_type_checks(eblocks: list[Block], report_text: str) -> tuple[list[tuple[str, str]], list[str]]:
+    """T4-01 / T1-05 node-type vocabulary compliance — a GROUNDING + CONSISTENCY check, ADVISORY
+    (diagram layer). It counts typed-vs-untyped nodes and vocabulary membership only; it never
+    asserts WHICH type a node ought to be. `unknown`/`other` counts as typed and passes. Degrades
+    gracefully: when NO node carries a type token the vocabulary is simply not in use on this
+    report, so the whole check is skipped (an honest abstention, mirroring the precondition gates
+    elsewhere) — it therefore cannot flip a diagram that carries no type tokens yet."""
+    members, _icons = _load_vocab()
+    defects: list[tuple[str, str]] = []
+    warnings: list[str] = []
+
+    triples = [t for b in eblocks for t in _ex(b).node_type_tokens(_src(b))]
+    tokens = [tok for (_id, tok, _icon) in triples]
+    typed = [t for t in tokens if t]
+    if not typed:                      # vocabulary not in use -> abstain (do not gate)
+        return defects, warnings
+
+    total = len(tokens)
+    untyped = total - len(typed)
+    if total and untyped / total > 0.10:      # mirror the untyped-edges ratio threshold
+        defects.append(("node-type-untyped",
+                        f"{untyped}/{total} drawn nodes carry no type token (>10%)"))
+    elif untyped:
+        warnings.append(f"{untyped}/{total} drawn nodes carry no type token")
+
+    # membership: every type token in the controlled catalog; fuzzy suggestion on a miss
+    for t in sorted(set(typed)):
+        if t.lower() in members:
+            continue
+        sugg = difflib.get_close_matches(t.lower(), sorted(members), n=1)
+        hint = f" (did you mean '{sugg[0]}'?)" if sugg else ""
+        defects.append(("node-type-unknown-token",
+                        f"node type '{t}' is not in the controlled node-type vocabulary{hint}"))
+
+    # consistency: the same type token -> one icon across the whole report
+    per_type: dict[str, set] = {}
+    for (_id, tok, icon) in triples:
+        if tok and icon:
+            per_type.setdefault(tok.lower(), set()).add(icon)
+    for tok, icons in per_type.items():
+        if len(icons) > 1:
+            defects.append(("icon-inconsistency",
+                            f"type '{tok}' maps to {len(icons)} different icons: {sorted(icons)[:3]}"))
+
+    # legend coverage (warning only): every used type token appears in the legend region
+    if "legend" in report_text.lower():
+        legend = _section(report_text, "legend") or report_text
+        low = legend.lower()
+        missing = sorted({t for t in set(typed) if t.lower() not in low})
+        if missing:
+            warnings.append(f"legend does not mention type(s): {missing[:5]}")
+
+    return defects, warnings
+
+
+def analytical_checks(report_text: str, blocks: list, recon: dict | None, findings_doc: dict | None,
                       coverage: dict | None = None) -> dict[str, Any]:
     """Presence/shape/consistency of the analytical & communication visuals.
 
@@ -183,6 +539,12 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
 
     def D(code: str, detail: str) -> None:
         defects.append({"layer": "diagram", "code": code, "detail": detail})
+
+    # Normalize block access across engines: a bare-str block (legacy Mermaid, as tests pass) is
+    # the Mermaid engine; a Block carries its declared engine. The Mermaid-syntax visual detectors
+    # below (AND/OR gates, sequenceDiagram) run over the source of whatever engine drew the block —
+    # D2 structural blocks legitimately match none of them, which is correct.
+    srcs = [_src(b) for b in blocks]
 
     recon = recon or {}
     findings_doc = findings_doc or {}
@@ -197,7 +559,7 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
 
     # attack tree + attack-flow — gate: >=3 declared kill chains
     if len(kill_chains) >= 3:
-        trees = [b for b in blocks if re.search(r"\{\s*(AND|OR)\s*\}", b)] + _typed(blocks, "attack-tree")
+        trees = [x for x in srcs if re.search(r"\{\s*(AND|OR)\s*\}", x)] + _typed(srcs, "attack-tree")
         trees = list(dict.fromkeys(trees))
         if not trees:
             D("no-attack-tree", f"{len(kill_chains)} kill chains declared but no attack tree (flowchart with AND/OR gates)")
@@ -208,7 +570,7 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
                 warnings.append(f"attack tree references techniques absent from findings: {sorted(extra)[:5]}")
             if len(trees) < min(len(kill_chains), 5):
                 warnings.append(f"{len(trees)} attack tree(s) for {len(kill_chains)} declared kill chains")
-        flows = _typed(blocks, "attack-flow", "kill-chain")
+        flows = _typed(srcs, "attack-flow", "kill-chain")
         if not flows:
             D("no-attack-flow", f"{len(kill_chains)} kill chains declared but no attack-flow / kill-chain graph")
         else:
@@ -219,7 +581,7 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
     # sequenceDiagram (determinism boundary: gate on skill-declared facts, never inferred content).
     auth_finding = any("S" in f.get("stride_lm", []) or "E" in f.get("stride_lm", []) for f in findings)
     if auth_finding or roles:
-        seqs = [b for b in blocks if "sequencediagram" in b.lower()]
+        seqs = [x for x in srcs if "sequencediagram" in x.lower()]
         if not seqs:
             D("no-auth-sequence", "auth surface present but no sequenceDiagram rendered")
         else:
@@ -261,7 +623,7 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
     # fully clean/n-a row passes. Endpoint->recon grounding is a WARNING, matching the sequence-participant
     # posture above (DFD node ids vs recon ids are WARN, not a gate — brief constraint 4). No crossing edge
     # => the visual is NOT APPLICABLE and the whole block is skipped, not failed (declared-fact gate).
-    crossings = {e: True for b in blocks if _layer_of(b) for e in _crossing_edges(b)}
+    crossings = {e: True for b in blocks if _ex(b).layer_of(_src(b)) for e in _ex(b).crossing_edges(_src(b))}
     if crossings:
         bcm = next((t for t in _md_tables(report_text)
                     if stride.issubset({c.strip().upper() for c in t["header"]}) and _edge_keyed(t["header"])), None)
@@ -364,7 +726,7 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
 
     # SBOM / dependency graph — gate: external deps backed by a manifest
     if deps and any(e.get("manifest") for e in deps):
-        sbom = _typed(blocks, "sbom", "dependency")
+        sbom = _typed(srcs, "sbom", "dependency")
         sec = _section(report_text, "sbom", "dependency", "software bill")
         if not sbom and not (sec and "externaldep" in sec.lower()):
             D("no-sbom-graph", "external dependencies with a manifest but no SBOM / dependency graph")
@@ -407,14 +769,18 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None,
     def warn(detail: str) -> None:
         warnings.append(detail)
 
-    blocks = _blocks(report_text)
-    if not blocks:
-        add("no-diagram", "report.md contains no ```mermaid diagram blocks")
+    # Route every fenced block through its DECLARED engine's extractor. On a Mermaid-only report
+    # (every committed example + every self-check) each block dispatches to the Mermaid extractor,
+    # whose primitives delegate to the module functions verbatim — so every assertion below returns
+    # the IDENTICAL verdict it did before the per-engine split (behavior-preserving refactor).
+    eblocks = _engine_blocks(report_text)
+    if not eblocks:
+        add("no-diagram", "report.md contains no ```mermaid / ```d2 diagram blocks")
         return {"defects": defects, "stats": {"blocks": 0}, "scores": {"diagram_pass": False}}
 
-    layers = {}
-    for b in blocks:
-        L = _layer_of(b)
+    layers: dict[str, list] = {}
+    for b in eblocks:
+        L = _ex(b).layer_of(_src(b))
         if L:
             layers.setdefault(L, []).append(b)
 
@@ -428,15 +794,15 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None,
     if missing:
         add("missing-layers", f"system size {size} needs {sorted(required)}; missing {missing} "
                               f"(present: {sorted(present) or 'none-tagged'})")
-    if not re.search(r"%%\s*Version:", "\n".join(blocks)):
-        add("no-version-stamp", "no `%% Version:` stamp on any diagram (spec §6)")
+    if not any(_ex(b).has_version_stamp(_src(b)) for b in eblocks):
+        add("no-version-stamp", "no `%% Version:` / `# Version:` stamp on any diagram (spec §6)")
     if "legend" not in report_text.lower():
         add("no-legend", "no legend subgraph found (spec §6 requires a legend)")
-    if not re.search(r"classDef", "\n".join(blocks)):
-        add("no-classdefs", "no classDef block (spec §8) — risk/role styling absent")
+    if not any(_ex(b).has_class_defs(_src(b)) for b in eblocks):
+        add("no-classdefs", "no classDef / classes block (spec §8) — risk/role styling absent")
 
     # ---- requirement 2: fully annotated / typed flows
-    all_edges = [e for b in blocks for e in _edges(b)]
+    all_edges = [e for b in eblocks for e in _ex(b).edges(_src(b))]
     n_edges = len(all_edges)
     unlabeled = [e for e in all_edges if not e[1]]
     annotated = [e for e in all_edges if e[1] and (re.search(SENSITIVITY, e[1]) or re.search(TYPED_PREFIX, e[1]))]
@@ -449,17 +815,17 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None,
         add("under-annotated-flows", f"only {int(ann_frac*100)}% of edges carry a sensitivity/type "
                                      f"annotation ([CONFIDENTIAL]/[AUTH]/etc.); spec §4 wants every flow annotated")
 
-    # ---- requirement 3: trust boundaries
-    subgraphs = len(re.findall(r"\bsubgraph\b", "\n".join(blocks)))
+    # ---- requirement 3: trust boundaries (Mermaid subgraph zones / D2 containers)
+    subgraphs = sum(_ex(b).boundary_count(_src(b)) for b in eblocks)
     n_tb = len(recon.get("trust_boundaries", [])) if recon else 0
     if size > 5 and "L2" in present and subgraphs == 0:
-        add("no-trust-boundary-subgraphs", "L2 present but no subgraph trust-boundary zones drawn")
+        add("no-trust-boundary-subgraphs", "L2 present but no subgraph/container trust-boundary zones drawn")
     if n_tb and subgraphs < min(n_tb, 2):
-        add("few-trust-boundaries", f"recon lists {n_tb} trust boundaries but the diagram has {subgraphs} subgraph zone(s)")
+        add("few-trust-boundaries", f"recon lists {n_tb} trust boundaries but the diagram has {subgraphs} boundary zone(s)")
 
     # ---- requirement 4: component metadata / ownership markers (on L1 process/data-store nodes)
-    l1_text = "\n".join(layers.get("L1") or blocks[:1])
-    comp_nodes = [n for n in _nodes(l1_text) if re.search(r"\(\[|\[\(", n)]  # process ([..]) / data store [(..)]
+    l1_blocks = layers.get("L1") or eblocks[:1]
+    comp_nodes = [n for b in l1_blocks for n in _ex(b).component_nodes(_src(b))]  # process/data-store nodes
     owned = [n for n in comp_nodes if re.search(OWNERSHIP, n)]
     own_frac = round(len(owned) / len(comp_nodes), 3) if comp_nodes else None
     if own_frac is not None and own_frac < 0.1:
@@ -468,11 +834,12 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None,
         warn(f"only {int(own_frac*100)}% of L1 components carry ownership markers ([team:]/[vendor:]/[managed]); spec §7 wants more")
 
     # ---- requirement 5: risk layering linked to findings (matched by TM-NNN, the shared id scheme)
-    l4 = "\n".join(layers.get("L4", []))
+    l4_blocks = layers.get("L4", [])
+    l4 = "\n".join(_src(b) for b in l4_blocks)   # threat annotations / TM-NNN ids are engine-agnostic label text
     hi_tm = [f["id"] for f in (findings_doc.get("findings", []) if findings_doc else [])
              if f.get("severity") in ("HIGH", "CRITICAL")]
     if "L4" in present:
-        if not re.search(RISK_CLASS, l4):
+        if not any(_ex(b).has_risk_styling(_src(b)) for b in l4_blocks):
             add("no-risk-coloring", "L4 overlay has no risk-class styling (highRisk/criticalRisk)")
         if not re.search(THREAT_ANNOT, l4):
             add("no-threat-annotations", "L4 overlay nodes carry no threat annotations (⚠ / L×I=score / BAND); spec §5")
@@ -487,15 +854,24 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None,
             elif len(covered_hi) < len(hi_tm):
                 warn(f"{len(hi_tm) - len(covered_hi)}/{len(hi_tm)} HIGH+ findings not annotated in L4 overlay")
 
+    # node-type -> icon vocabulary compliance (T4-01 / T1-05). Grounding+consistency, ADVISORY:
+    # every drawn node typed from the controlled set, tokens ∈ catalog (fuzzy suggestion on a miss),
+    # same type -> same icon, legend covers used types. It NEVER asserts which type a node is, and it
+    # abstains entirely when no node carries a type token (so it cannot flip a not-yet-typed diagram).
+    vt_defects, vt_warnings = _node_type_checks(eblocks, report_text)
+    for code, detail in vt_defects:
+        add(code, detail)
+    warnings.extend(vt_warnings)
+
     # analytical & communication visuals (gated by skill-declared facts; structure-only)
-    an = analytical_checks(report_text, blocks, recon, findings_doc, coverage)
+    an = analytical_checks(report_text, eblocks, recon, findings_doc, coverage)
     defects.extend(an["defects"])
     warnings.extend(an["warnings"])
 
     diag_defect = bool(defects)
     return {
         "defects": defects,
-        "stats": {"blocks": len(blocks), "layers": sorted(present), "size": size,
+        "stats": {"blocks": len(eblocks), "layers": sorted(present), "size": size,
                   "edges": n_edges, "edges_annotated_frac": ann_frac,
                   "components": len(comp_nodes), "ownership_frac": own_frac,
                   "subgraphs": subgraphs, "l4_links_findings": bool(re.search(r"TM-\d{3}", l4)),

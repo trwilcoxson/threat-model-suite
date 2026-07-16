@@ -75,6 +75,33 @@ Symbols are organized in three tiers. **Core** symbols MUST appear in every base
 
 **These are the only shapes allowed in baseline diagrams.**
 
+> **This taxonomy IS the controlled node-type→icon vocabulary.** Each `classDef` below is a member of
+> the closed vocabulary in [`node-type-icons.md`](./node-type-icons.md): the shape+`classDef` on the
+> Mermaid path and the `class:` on the D2 path are two spellings of the same node type. `external`,
+> `dataStore`, `identity`, `secrets`, `control`, `pipeline`, `externalDep`, `outOfScope`, and `neutral`
+> are the type tokens; `unknown`/`other` is the abstention member. The eval's vocabulary check verifies
+> every node carries a token *from this set* and that the same token renders the same icon everywhere —
+> it never dictates *which* type a node is.
+
+### Adding icons — the `@{shape: icon}` + ELK phase-1 path
+
+To give each node type a real icon **with zero eval change**, use the `flowchart` icon-shape node form
+and ELK layout, keeping `flowchart` / `-->` / `subgraph` / `classDef` / `:::` **verbatim**:
+
+```mermaid
+%%{init: {"layout": "elk"}}%%
+flowchart TD
+    D1@{ shape: icon, icon: "mdi:database", label: "Product Catalog\nDynamoDB [managed]" }:::dataStore
+```
+
+- Adopt ELK via `@mermaid-js/layout-elk`; mirror the icon JSON pack **locally once** so offline renders
+  resolve icons without a network fetch (never a remote icon URL).
+- Every `-->`, `subgraph`, `classDef`, and `:::` token the eval parses stays present, so the eval verdict
+  is unchanged from the equivalent pre-icon diagram.
+- **`architecture-beta` is FORBIDDEN.** Its `group`/`service`/`edge` syntax omits the `-->` / `subgraph`
+  / `classDef` tokens the eval and this spec require — it would nuke the eval. Stay on `flowchart` + the
+  `icon` shape. For a richer icon/boundary treatment, author the diagram in D2 (`d2-spec.md`).
+
 ### Tier 1 — Core (MUST)
 
 | Symbol | Shape | Mermaid Syntax | Meaning | Required Labels | classDef |

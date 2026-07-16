@@ -6,6 +6,7 @@ One runnable check per non-trivial fix — each fails loudly if the logic regres
 from __future__ import annotations
 
 import json
+import re
 import tempfile
 from pathlib import Path
 
@@ -490,10 +491,130 @@ def t_schema():
     assert res["conform"] >= 32, f"expected >=32 conforming manifests, got {res['conform']}"
 
 
+def t_mermaid_extractor_identity():
+    """Per-engine extractor (T5-05): the Mermaid extractor is a behavior-preserving delegate — its
+    primitives return byte-identical results to the module functions, so the Mermaid path is
+    zero-change after the split. Engine is read from the DECLARED fence, never sniffed."""
+    src = ("flowchart TD\n    %% Version: x | Layer: L2\n"
+           '    subgraph Z["Z"]\n        A(["a [managed]"]):::neutral\n    end\n'
+           '    A -->|"HTTP [PUBLIC]"| B\n'
+           "    classDef neutral fill:#eee\n")
+    ex = dc._MERMAID
+    assert ex.layer_of(src) == dc._layer_of(src) == "L2"
+    assert ex.edges(src) == dc._edges(src)
+    assert ex.crossing_edges(src) == dc._crossing_edges(src) == [("A", "B")]
+    assert ex.component_nodes(src) == [n for n in dc._nodes(src) if re.search(r"\(\[|\[\(", n)]
+    assert ex.boundary_count(src) == 1
+    assert ex.has_version_stamp(src) and ex.has_class_defs(src)
+    # fence dispatch: the engine is the DECLARED ```mermaid / ```d2 fence, not the syntax inside
+    rep = "```mermaid\n" + src + "```\n```d2\n# Layer: L1\nX: \"x\" { class: svc }\n```\n"
+    assert [b.engine for b in dc._engine_blocks(rep)] == ["mermaid", "d2"]
+
+
+# One threat model, authored once in each engine, used to prove the property assertions produce
+# the SAME verdict shape regardless of engine (cross-engine parity, tasks 1.4 / 9.2).
+_PARITY_MERMAID = """## Structural
+```mermaid
+flowchart TD
+    %% Version: 2026-07-15 | Phase: 2 | System: Demo | Layer: L1
+    R0["User"]:::external
+    subgraph Z1["Public"]
+        C4(["ALB [managed]"]):::neutral
+    end
+    subgraph Z2["Private"]
+        C7(["Task [self-managed]"]):::neutral
+        D1[("DB [managed]")]:::dataStore
+    end
+    R0 -->|"HTTP [PUBLIC]"| C4
+    C4 -->|"HTTP [INTERNAL]"| C7
+    C7 -->|"HTTPS [CONFIDENTIAL]"| D1
+    classDef external fill:#cce5ff
+    classDef neutral fill:#f5f5f5
+    classDef dataStore fill:#e2e3e5
+```
+"""
+
+_PARITY_D2 = """## Structural
+```d2
+# Version: 2026-07-15 | Phase: 2 | System: Demo | Layer: L1
+classes: {
+  external: { style: { fill: "#cce5ff" } }
+  svc: { style: { fill: "#f5f5f5" } }
+  store: { shape: cylinder }
+}
+R0: "User" { class: external }
+Z1: "Public" {
+  C4: "ALB [managed]" { class: svc }
+}
+Z2: "Private" {
+  C7: "Task [self-managed]" { class: svc }
+  D1: "DB [managed]" { class: store }
+}
+R0 -> Z1.C4: "HTTP [PUBLIC]"
+Z1.C4 -> Z2.C7: "HTTP [INTERNAL]"
+Z2.C7 -> Z2.D1: "HTTPS [CONFIDENTIAL]"
+```
+"""
+
+
+def t_d2_extractor_parity():
+    """Per-engine extractor (T5-05 / T1-06): the D2 extractor maps D2's container/edge/class grammar
+    onto the same normalized model, so the SAME reference-free property assertions produce the same
+    verdict on the equivalent D2 diagram — no property check changes meaning across engines."""
+    recon = {"components": [{"id": "C4"}, {"id": "C7"}], "data_stores": [{"id": "D1"}],
+             "entry_points": [{"id": "R0"}], "trust_boundaries": [{"id": "t1"}, {"id": "t2"}],
+             "external_deps": []}
+    fdoc = {"findings": []}
+    rm = dc.check(_PARITY_MERMAID, recon, fdoc)
+    rd = dc.check(_PARITY_D2, recon, fdoc)
+    codes_m = sorted(d["code"] for d in rm["defects"])
+    codes_d = sorted(d["code"] for d in rd["defects"])
+    assert codes_m == codes_d, f"engine verdicts diverge: mermaid={codes_m} d2={codes_d}"
+    for k in ("layers", "edges", "edges_annotated_frac", "components", "ownership_frac", "subgraphs"):
+        assert rm["stats"][k] == rd["stats"][k], f"stat {k} differs: {rm['stats'][k]} vs {rd['stats'][k]}"
+    # the D2 extractor read the structure correctly (not vacuously equal)
+    assert rd["stats"]["subgraphs"] == 2 and rd["stats"]["edges"] == 3 and rd["stats"]["layers"] == ["L1"]
+
+
+def t_node_type_vocab():
+    """Node-type vocabulary compliance (T4-01 / T1-05): membership over a ground-truth catalog with
+    fuzzy suggestions; `unknown`/`other` passes; ADVISORY and abstains when no type token is present
+    (so it never flips a not-yet-typed diagram). It counts typed-vs-untyped, never WHICH type."""
+    def run(body):
+        return dc._node_type_checks([dc.Block("mermaid", body)], "legend: service datastore")
+
+    # valid tokens -> in catalog, all typed -> no membership/ratio defect
+    valid = 'flowchart TD\n  A(["x"]):::service\n  B(["y"]):::datastore\n  A --> B\n'
+    d, w = run(valid)
+    assert not any(c == "node-type-unknown-token" for c, _ in d), d
+    assert not any(c == "node-type-untyped" for c, _ in d), d
+
+    # hallucinated token -> flagged with a fuzzy-match suggestion (drawio-ai-kit checkRef shape)
+    bad = 'flowchart TD\n  A(["x"]):::servise\n  B(["y"]):::datastore\n  A --> B\n'
+    d, w = run(bad)
+    hits = [detail for c, detail in d if c == "node-type-unknown-token"]
+    assert hits and "servise" in hits[0] and "did you mean 'service'" in hits[0], (d, w)
+
+    # no type tokens at all -> the vocabulary is not in use -> whole check abstains (advisory/skip)
+    d, w = run("flowchart TD\n  A --> B\n  C --> D\n")
+    assert d == [] and w == [], (d, w)
+
+    # unknown / other are first-class PASSING members (typing is never coerced)
+    d, w = run('flowchart TD\n  A(["x"]):::unknown\n  B(["y"]):::other\n  A --> B\n')
+    assert not any(c == "node-type-unknown-token" for c, _ in d), d
+
+    # D2 icon-consistency: same type -> same icon; a type bound to two icons is flagged
+    inconsistent = ('X1: "a" { class: store; icon: iconA }\n'
+                    'X2: "b" { class: store; icon: iconB }\n')
+    d, w = dc._node_type_checks([dc.Block("d2", inconsistent)], "")
+    assert any(c == "icon-inconsistency" for c, _ in d), (d, w)
+
+
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
-             t_boundary_crossing_matrix, t_atlas_layer, t_atlas_vocab, t_atlas_schema, t_verdict, t_schema]
+             t_boundary_crossing_matrix, t_atlas_layer, t_atlas_vocab, t_atlas_schema, t_verdict, t_schema,
+             t_mermaid_extractor_identity, t_d2_extractor_parity, t_node_type_vocab]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

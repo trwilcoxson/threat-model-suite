@@ -2,7 +2,14 @@
 
 Defines diagram types that complement the primary DFD layers: attack trees, authentication sequences, and data lifecycle diagrams. Each has a specific producing phase, consuming phases, and output filename convention.
 
-**Prerequisite**: Read [mermaid-spec.md](mermaid-spec.md) for symbol taxonomy (§3) and classDef reference (§8).
+**Engine-neutral.** The primary DFD (structural / L4 / SBOM) is authored in **D2** ([d2-spec.md](d2-spec.md));
+the node-type taxonomy is the controlled vocabulary in [node-type-icons.md](node-type-icons.md). Companion
+diagrams pick the engine that fits: **attack trees / SBOM** can be D2 or Mermaid `flowchart`; **auth
+sequences** stay Mermaid `sequenceDiagram` (it has the `alt`/`opt` fragments D2 lacks). The deterministic
+checks are engine-agnostic — they read the same normalized model on either engine.
+
+**Prerequisite**: Read [mermaid-spec.md](mermaid-spec.md) / [d2-spec.md](d2-spec.md) for symbol taxonomy
+and the classDef/`classes` reference.
 
 ---
 
