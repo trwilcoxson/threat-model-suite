@@ -6,6 +6,7 @@ model or it flags a concrete defect.
 """
 from __future__ import annotations
 
+import difflib
 import json
 import re
 import subprocess
@@ -132,6 +133,64 @@ def _resolves_in_repo(repo: Path, evidence: str) -> bool:
     return False
 
 
+# -- recon semantic-source checks (the "simpler than regex" evidence) -------
+# Reference-free JSON checks over recon.json's OPTIONAL semantic fields (dataflows[], element.type)
+# added by the semantic-source spike (docs/research/visual-engine-2026-07/SEMANTIC-SOURCE-SPIKE.md).
+# These are the JSON reference/membership FORM of checks that used to be regex over diagram TEXT — a
+# structured source is harder to fool than a scrape of the rendered picture:
+#   dataflow-endpoint-integrity  REPLACES diagram_checks' "boundary-crossing edge endpoint(s) do not
+#                                map to recon ids" (endpoints regex-parsed out of the diagram) with a
+#                                direct id set-membership over the manifest.
+#   recon-node-type-unknown      REPLACES diagram_checks._node_type_checks' "node-type-unknown-token"
+#                                (type tokens scraped from :::class / class: in the diagram) with a
+#                                membership check over recon.components[].type (same fuzzy suggestion).
+#   dataflow-ungrounded          is the edge analog of the per-element evidence grounding check.
+def recon_semantic_checks(recon: dict | None) -> list[dict[str, str]]:
+    """Additive + back-compat: each sub-check ABSTAINS when its field is absent, so every committed
+    recon (no dataflows, no component.type) yields zero defects and the production gate is unchanged.
+    Only endpoint integrity is gated (consistency); node-type + grounding-shape are advisory (recon)."""
+    out: list[dict[str, str]] = []
+    if not isinstance(recon, dict):
+        return out
+
+    # id universe = every declared element AND role (a dataflow endpoint legitimately names a role).
+    ids: set[str] = set()
+    for bucket in ("components", "data_stores", "entry_points", "trust_boundaries", "external_deps", "roles"):
+        for el in recon.get(bucket) or []:
+            if isinstance(el, dict) and "id" in el:
+                ids.add(el["id"])
+
+    for df in recon.get("dataflows") or []:
+        if not isinstance(df, dict):
+            continue
+        fid = df.get("id", "?")
+        # (1) endpoint integrity — HARD (consistency): source/destination must be declared ids.
+        for role in ("source", "destination"):
+            ref = df.get(role)
+            if ref is not None and ref not in ids:
+                out.append({"layer": "consistency", "code": "dataflow-endpoint-integrity",
+                            "detail": f"dataflow {fid}: {role} '{ref}' is not a declared recon element/role id"})
+        # (3) grounding shape — ADVISORY: a flow asserted without any evidence[] is ungrounded.
+        if not (df.get("evidence") or []):
+            out.append({"layer": "recon", "code": "dataflow-ungrounded",
+                        "detail": f"dataflow {fid}: no evidence[] grounding the flow (advisory)"})
+
+    # (2) node-type membership — ADVISORY (recon): component.type in the controlled vocabulary, fuzzy
+    # suggestion on a miss. Abstains entirely when no component carries a type token (back-compat).
+    typed = [(c.get("id", "?"), c["type"]) for c in (recon.get("components") or [])
+             if isinstance(c, dict) and (c.get("type") or "").strip()]
+    if typed:
+        members, _icons = diagram_checks._load_vocab()   # reuse the one catalog loader, no duplicate list
+        for cid, tok in typed:
+            if tok.lower() in members:
+                continue
+            sugg = difflib.get_close_matches(tok.lower(), sorted(members), n=1)
+            hint = f" (did you mean '{sugg[0]}'?)" if sugg else ""
+            out.append({"layer": "recon", "code": "recon-node-type-unknown",
+                        "detail": f"component {cid}: type '{tok}' is not in the node-type vocabulary{hint}"})
+    return out
+
+
 def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
     d = Defects()
     recon = _load_json(run_dir / "recon.json", d, "recon manifest")
@@ -190,6 +249,10 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
     if recon and recon.get("detected_pattern") == "other" and not (recon.get("detected_pattern_detail") or "").strip():
         d.add("structure", "detected-pattern-other-without-detail",
               "recon.detected_pattern is 'other' but detected_pattern_detail is empty")
+
+    # recon semantic-source checks (dataflow endpoint integrity, node-type membership, grounding shape).
+    # INERT on every committed recon (no dataflows/type) — see recon_semantic_checks docstring.
+    d.items.extend(recon_semantic_checks(recon))
 
     # ---- findings: consistency + grounding refs
     covered: set[str] = set()

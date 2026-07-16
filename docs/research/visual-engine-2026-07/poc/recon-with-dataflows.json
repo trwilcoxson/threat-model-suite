@@ -1,0 +1,739 @@
+{
+  "system_name": "AWS ECS Fullstack App (Terraform Demo)",
+  "description": "MIT-0 AWS sample: a Vue.js SPA (client) and a Node.js/Express API (server) run as separate ECS Fargate services behind two internet-facing Application Load Balancers in a single VPC, provisioned entirely by Terraform. A GitHub-triggered CodePipeline (CodeBuild + CodeDeploy blue/green) builds Docker images to ECR and deploys to ECS. The API returns a product catalog from a DynamoDB table; images are served from an S3 bucket. Both ALBs (including the backend/API ALB) are public and HTTP-only; the app has no authentication or authorization.",
+  "detected_pattern": "web-app",
+  "roles": [
+    {
+      "id": "R0",
+      "name": "anonymous (unauthenticated Internet user)"
+    },
+    {
+      "id": "R1",
+      "name": "ECS task execution role (ECS-task-excecution-Role)"
+    },
+    {
+      "id": "R2",
+      "name": "ECS task role (ECS-task-Role)"
+    },
+    {
+      "id": "R3",
+      "name": "DevOps role (CodeBuild/CodeDeploy/CodePipeline)"
+    },
+    {
+      "id": "R4",
+      "name": "CodeDeploy role"
+    },
+    {
+      "id": "R5",
+      "name": "Terraform operator / deployer (human with AWS credentials + GitHub PAT)"
+    }
+  ],
+  "components": [
+    {
+      "id": "C1",
+      "name": "Client SPA (Vue.js served by Nginx)",
+      "tech": "Vue.js 2, bootstrap-vue, axios, Nginx",
+      "evidence": [
+        "Code/client/src/main.js",
+        "Code/client/Dockerfile",
+        "Code/client/src/router/index.js"
+      ],
+      "type": "service",
+      "zone": "PRIV"
+    },
+    {
+      "id": "C2",
+      "name": "Server API (Node.js/Express)",
+      "tech": "Node.js, Express 4, aws-sdk v2, cors",
+      "evidence": [
+        "Code/server/src/app.js",
+        "Code/server/package.json",
+        "Code/server/Dockerfile"
+      ],
+      "type": "service",
+      "zone": "PRIV"
+    },
+    {
+      "id": "C3",
+      "name": "Swagger / API docs endpoint",
+      "tech": "swagger-jsdoc, swagger-ui-express",
+      "evidence": [
+        "Code/server/src/swagger/swagger.js",
+        "Code/server/src/app.js:13"
+      ],
+      "type": "service",
+      "zone": "PRIV"
+    },
+    {
+      "id": "C4",
+      "name": "Client ALB (internet-facing, HTTP:80)",
+      "tech": "AWS Application Load Balancer",
+      "evidence": [
+        "Infrastructure/main.tf:120",
+        "Infrastructure/Modules/ALB/main.tf:8",
+        "Infrastructure/Modules/ALB/main.tf:38"
+      ],
+      "type": "service",
+      "zone": "PUB"
+    },
+    {
+      "id": "C5",
+      "name": "Server/API ALB (internet-facing, HTTP:80)",
+      "tech": "AWS Application Load Balancer",
+      "evidence": [
+        "Infrastructure/main.tf:110",
+        "Infrastructure/Modules/ALB/main.tf:8",
+        "Infrastructure/Modules/ALB/main.tf:38"
+      ],
+      "type": "service",
+      "zone": "PUB"
+    },
+    {
+      "id": "C6",
+      "name": "ECS Cluster (Fargate)",
+      "tech": "Amazon ECS on Fargate",
+      "evidence": [
+        "Infrastructure/Modules/ECS/Cluster/main.tf:8",
+        "Infrastructure/main.tf:206"
+      ],
+      "type": "service",
+      "zone": "PRIV"
+    },
+    {
+      "id": "C7",
+      "name": "ECS Service - client task",
+      "tech": "ECS Fargate service, awsvpc, private subnets",
+      "evidence": [
+        "Infrastructure/main.tf:227",
+        "Infrastructure/Modules/ECS/Service/main.tf:8"
+      ],
+      "type": "service",
+      "zone": "PRIV"
+    },
+    {
+      "id": "C8",
+      "name": "ECS Service - server task",
+      "tech": "ECS Fargate service, awsvpc, private subnets",
+      "evidence": [
+        "Infrastructure/main.tf:212",
+        "Infrastructure/Modules/ECS/Service/main.tf:8"
+      ],
+      "type": "service",
+      "zone": "PRIV"
+    },
+    {
+      "id": "C9",
+      "name": "CodePipeline (Source/Build/Deploy)",
+      "tech": "AWS CodePipeline, GitHub v1 source",
+      "evidence": [
+        "Infrastructure/Modules/CodePipeline/main.tf:8",
+        "Infrastructure/main.tf:362"
+      ],
+      "type": "pipeline",
+      "zone": "CICD"
+    },
+    {
+      "id": "C10",
+      "name": "CodeBuild projects (server + client)",
+      "tech": "AWS CodeBuild, standard:4.0, privileged_mode",
+      "evidence": [
+        "Infrastructure/Modules/CodeBuild/main.tf:8",
+        "Infrastructure/Templates/buildspec.yml"
+      ],
+      "type": "pipeline",
+      "zone": "CICD"
+    },
+    {
+      "id": "C11",
+      "name": "CodeDeploy applications (blue/green ECS)",
+      "tech": "AWS CodeDeploy CodeDeployDefault.ECSAllAtOnce",
+      "evidence": [
+        "Infrastructure/Modules/CodeDeploy/main.tf:9",
+        "Infrastructure/Templates/appspec.yaml"
+      ],
+      "type": "pipeline",
+      "zone": "CICD"
+    },
+    {
+      "id": "C12",
+      "name": "ECS Autoscaling + CloudWatch alarms",
+      "tech": "Application Auto Scaling (CPU/memory target tracking)",
+      "evidence": [
+        "Infrastructure/Modules/ECS/Autoscaling/main.tf"
+      ],
+      "type": "service",
+      "zone": "CICD"
+    },
+    {
+      "id": "C13",
+      "name": "SNS deployment-notifications topic",
+      "tech": "Amazon SNS",
+      "evidence": [
+        "Infrastructure/Modules/SNS/main.tf:8",
+        "Infrastructure/Modules/CodeDeploy/main.tf:65"
+      ],
+      "type": "queue",
+      "zone": "CICD"
+    }
+  ],
+  "data_stores": [
+    {
+      "id": "D1",
+      "name": "DynamoDB products/assets table",
+      "tech": "Amazon DynamoDB, PAY_PER_REQUEST, hash_key=id(N)",
+      "evidence": [
+        "Infrastructure/Modules/Dynamodb/main.tf:8",
+        "Infrastructure/Modules/Dynamodb/variables.tf",
+        "Code/server/src/app.js:47"
+      ]
+    },
+    {
+      "id": "D2",
+      "name": "S3 assets bucket (app images)",
+      "tech": "Amazon S3, acl=private, force_destroy=true",
+      "evidence": [
+        "Infrastructure/main.tf:382",
+        "Infrastructure/Modules/S3/main.tf:8"
+      ]
+    },
+    {
+      "id": "D3",
+      "name": "S3 CodePipeline artifact bucket",
+      "tech": "Amazon S3, acl=private, force_destroy=true",
+      "evidence": [
+        "Infrastructure/main.tf:264",
+        "Infrastructure/Modules/CodePipeline/main.tf:12"
+      ]
+    },
+    {
+      "id": "D4",
+      "name": "ECR repositories (server + client images)",
+      "tech": "Amazon ECR, image_tag_mutability=MUTABLE, no scan-on-push",
+      "evidence": [
+        "Infrastructure/Modules/ECR/main.tf:8",
+        "Infrastructure/main.tf:147"
+      ]
+    },
+    {
+      "id": "D5",
+      "name": "CloudWatch Logs (ECS task + CodeBuild logs)",
+      "tech": "CloudWatch Logs, awslogs driver, 30-day retention",
+      "evidence": [
+        "Infrastructure/Modules/ECS/TaskDefinition/main.tf:45",
+        "Infrastructure/Templates/taskdef.json:8",
+        "Infrastructure/Modules/CodeBuild/main.tf:85"
+      ]
+    },
+    {
+      "id": "D6",
+      "name": "Terraform state (local, contains github_token)",
+      "tech": "Local terraform.tfstate on operator machine",
+      "evidence": [
+        "README.md:37",
+        ".gitignore"
+      ]
+    }
+  ],
+  "entry_points": [
+    {
+      "id": "E1",
+      "name": "Client ALB HTTP :80 from 0.0.0.0/0 (SPA)",
+      "tech": "HTTP, no auth, open to Internet",
+      "evidence": [
+        "Infrastructure/main.tf:100",
+        "Infrastructure/main.tf:38",
+        "Infrastructure/Modules/ALB/main.tf:38"
+      ]
+    },
+    {
+      "id": "E2",
+      "name": "Server/API ALB HTTP :80 from 0.0.0.0/0 (/api/getAllProducts, /status)",
+      "tech": "HTTP, no auth, open to Internet",
+      "evidence": [
+        "Infrastructure/main.tf:90",
+        "Code/server/src/app.js:47",
+        "Code/client/src/services/RestServices.js:6"
+      ]
+    },
+    {
+      "id": "E3",
+      "name": "Swagger UI /api/docs (publicly reachable via server ALB)",
+      "tech": "HTTP, swagger-ui-express, no auth",
+      "evidence": [
+        "Code/server/src/swagger/swagger.js:42",
+        "Infrastructure/outputs.tf:9"
+      ]
+    },
+    {
+      "id": "E4",
+      "name": "GitHub source trigger (CodePipeline PollForSourceChanges)",
+      "tech": "GitHub v1 source action, OAuth token, poll",
+      "evidence": [
+        "Infrastructure/Modules/CodePipeline/main.tf:20",
+        "Infrastructure/Modules/CodePipeline/main.tf:33"
+      ]
+    },
+    {
+      "id": "E5",
+      "name": "ALB \u2192 task health check (/status, /)",
+      "tech": "HTTP health check from ALB target group",
+      "evidence": [
+        "Infrastructure/main.tf:46",
+        "Infrastructure/Modules/ALB/main.tf:65"
+      ]
+    }
+  ],
+  "trust_boundaries": [
+    {
+      "id": "TB1",
+      "name": "Internet \u2192 public ALBs (0.0.0.0/0 :80 HTTP)",
+      "kind": "network",
+      "evidence": [
+        "Infrastructure/main.tf:95",
+        "Infrastructure/main.tf:105",
+        "Infrastructure/Modules/ALB/main.tf:14"
+      ]
+    },
+    {
+      "id": "TB2",
+      "name": "Public subnet (ALB) \u2192 private subnet (ECS tasks)",
+      "kind": "network",
+      "evidence": [
+        "Infrastructure/Modules/Networking/main.tf:27",
+        "Infrastructure/Modules/Networking/main.tf:39",
+        "Infrastructure/main.tf:221"
+      ]
+    },
+    {
+      "id": "TB3",
+      "name": "ECS task \u2192 AWS managed services via IAM task role (DynamoDB/S3)",
+      "kind": "trust",
+      "evidence": [
+        "Infrastructure/Modules/IAM/main.tf:306",
+        "Infrastructure/Modules/IAM/main.tf:36"
+      ]
+    },
+    {
+      "id": "TB4",
+      "name": "CI/CD supply chain: GitHub \u2192 CodePipeline \u2192 CodeBuild \u2192 ECR \u2192 ECS",
+      "kind": "cicd",
+      "evidence": [
+        "Infrastructure/Modules/CodePipeline/main.tf",
+        "Infrastructure/Templates/buildspec.yml",
+        "Infrastructure/Modules/CodeBuild/main.tf:22"
+      ]
+    },
+    {
+      "id": "TB5",
+      "name": "AWS account / region boundary",
+      "kind": "region",
+      "evidence": [
+        "Infrastructure/main.tf:9",
+        "Infrastructure/main.tf:28"
+      ]
+    },
+    {
+      "id": "TB6",
+      "name": "VPC perimeter (IGW / NAT egress to 0.0.0.0/0)",
+      "kind": "network",
+      "evidence": [
+        "Infrastructure/Modules/Networking/main.tf:60",
+        "Infrastructure/Modules/Networking/main.tf:91",
+        "Infrastructure/Modules/Networking/main.tf:100"
+      ]
+    },
+    {
+      "id": "VPC",
+      "name": "VPC 10.120.0.0/16 \u00b7 AWS Account \u00b7 2 AZ",
+      "kind": "network",
+      "evidence": [
+        "Infrastructure/Modules/Networking/main.tf:1",
+        "Infrastructure/main.tf:9"
+      ]
+    },
+    {
+      "id": "PUB",
+      "name": "Public Subnets \u2014 ALB tier",
+      "kind": "network",
+      "zone": "VPC",
+      "evidence": [
+        "Infrastructure/Modules/Networking/main.tf:27"
+      ]
+    },
+    {
+      "id": "PRIV",
+      "name": "Private Subnets \u2014 ECS Fargate task tier",
+      "kind": "network",
+      "zone": "VPC",
+      "evidence": [
+        "Infrastructure/Modules/Networking/main.tf:39"
+      ]
+    },
+    {
+      "id": "CICD",
+      "name": "CI/CD Control Plane",
+      "kind": "cicd",
+      "evidence": [
+        "Infrastructure/Modules/CodePipeline/main.tf:8"
+      ]
+    }
+  ],
+  "external_deps": [
+    {
+      "id": "X1",
+      "name": "GitHub source repository + OAuth personal access token",
+      "tech": "GitHub v1 source, PAT",
+      "evidence": [
+        "Infrastructure/Modules/CodePipeline/main.tf:29",
+        "README.md:92"
+      ],
+      "manifest": null,
+      "risk": "Long-lived PAT stored in local Terraform state and pipeline config; single-factor supply-chain trust anchor."
+    },
+    {
+      "id": "X2",
+      "name": "Server npm dependencies (aws-sdk, express, cors, swagger-*, artillery)",
+      "tech": "npm",
+      "evidence": [
+        "Code/server/package.json",
+        "Code/server/package-lock.json"
+      ],
+      "manifest": "Code/server/package-lock.json",
+      "risk": "aws-sdk v2 (maintenance mode); no lockfile integrity/SCA scanning in pipeline."
+    },
+    {
+      "id": "X3",
+      "name": "Client npm dependencies (vue 2, bootstrap-vue, axios)",
+      "tech": "npm",
+      "evidence": [
+        "Code/client/package.json",
+        "Code/client/package-lock.json"
+      ],
+      "manifest": "Code/client/package-lock.json",
+      "risk": "Vue 2 is end-of-life; no SCA scanning in pipeline."
+    },
+    {
+      "id": "X4",
+      "name": "Docker base images (public.ecr.aws bitnami/node:latest, nginx:latest)",
+      "tech": "Public ECR container base images",
+      "evidence": [
+        "Code/server/Dockerfile:4",
+        "Code/client/Dockerfile:13"
+      ],
+      "manifest": null,
+      "risk": "Unpinned :latest mutable tags; no digest pinning or image scanning \u2014 non-reproducible, supply-chain drift."
+    },
+    {
+      "id": "X5",
+      "name": "CodeBuild managed image aws/codebuild/standard:4.0",
+      "tech": "AWS-managed CodeBuild image",
+      "evidence": [
+        "Infrastructure/Modules/CodeBuild/main.tf:20"
+      ],
+      "manifest": null,
+      "risk": "Outdated build image; privileged_mode enabled (Docker-in-Docker)."
+    }
+  ],
+  "dataflows": [
+    {
+      "id": "F1",
+      "source": "R0",
+      "destination": "C4",
+      "type": "data",
+      "protocol": "HTTP",
+      "sensitivity": "PUBLIC",
+      "enc": "PLAIN",
+      "label": "SPA page load",
+      "evidence": [
+        "Infrastructure/Modules/ALB/main.tf:38"
+      ]
+    },
+    {
+      "id": "F2",
+      "source": "C4",
+      "destination": "C7",
+      "type": "data",
+      "protocol": "HTTP",
+      "sensitivity": "INTERNAL",
+      "enc": "PLAIN",
+      "label": "forward to client task",
+      "evidence": [
+        "Infrastructure/main.tf:227"
+      ]
+    },
+    {
+      "id": "F3",
+      "source": "C7",
+      "destination": "C1",
+      "type": "control",
+      "sensitivity": "INTERNAL",
+      "label": "ECS runs SPA container",
+      "evidence": [
+        "Infrastructure/main.tf:227"
+      ]
+    },
+    {
+      "id": "F4",
+      "source": "R0",
+      "destination": "C5",
+      "type": "data",
+      "protocol": "HTTP",
+      "sensitivity": "PUBLIC",
+      "enc": "PLAIN",
+      "label": "GET /api/getAllProducts,/status",
+      "evidence": [
+        "Code/server/src/app.js:47"
+      ]
+    },
+    {
+      "id": "F5",
+      "source": "C5",
+      "destination": "C8",
+      "type": "data",
+      "protocol": "HTTP",
+      "sensitivity": "INTERNAL",
+      "enc": "PLAIN",
+      "label": "forward to server task",
+      "evidence": [
+        "Infrastructure/main.tf:212"
+      ]
+    },
+    {
+      "id": "F6",
+      "source": "C8",
+      "destination": "C2",
+      "type": "control",
+      "sensitivity": "INTERNAL",
+      "label": "ECS runs API container",
+      "evidence": [
+        "Infrastructure/main.tf:212"
+      ]
+    },
+    {
+      "id": "F7",
+      "source": "C2",
+      "destination": "C3",
+      "type": "control",
+      "sensitivity": "PUBLIC",
+      "label": "serves /api/docs",
+      "evidence": [
+        "Code/server/src/swagger/swagger.js:42"
+      ]
+    },
+    {
+      "id": "F8",
+      "source": "C2",
+      "destination": "D1",
+      "type": "data",
+      "protocol": "HTTPS",
+      "sensitivity": "INTERNAL",
+      "enc": "ENC",
+      "label": "DocumentClient.scan catalog",
+      "evidence": [
+        "Code/server/src/app.js:47"
+      ]
+    },
+    {
+      "id": "F9",
+      "source": "R0",
+      "destination": "D2",
+      "type": "data",
+      "protocol": "HTTPS",
+      "sensitivity": "INTERNAL",
+      "enc": "ENC",
+      "label": "product image fetch",
+      "evidence": [
+        "Infrastructure/Modules/S3/main.tf:8"
+      ]
+    },
+    {
+      "id": "F10",
+      "source": "C7",
+      "destination": "D5",
+      "type": "data",
+      "protocol": "HTTP",
+      "sensitivity": "INTERNAL",
+      "label": "awslogs task logs",
+      "evidence": [
+        "Infrastructure/Modules/ECS/TaskDefinition/main.tf:45"
+      ]
+    },
+    {
+      "id": "F11",
+      "source": "C8",
+      "destination": "D5",
+      "type": "data",
+      "protocol": "HTTP",
+      "sensitivity": "INTERNAL",
+      "label": "awslogs task logs",
+      "evidence": [
+        "Infrastructure/Modules/ECS/TaskDefinition/main.tf:45"
+      ]
+    },
+    {
+      "id": "F12",
+      "source": "R5",
+      "destination": "X1",
+      "type": "build",
+      "sensitivity": "INTERNAL",
+      "label": "git push to main",
+      "evidence": [
+        "README.md:92"
+      ]
+    },
+    {
+      "id": "F13",
+      "source": "R5",
+      "destination": "D6",
+      "type": "admin",
+      "sensitivity": "RESTRICTED",
+      "label": "terraform apply \u00b7 local state",
+      "evidence": [
+        "README.md:37"
+      ]
+    },
+    {
+      "id": "F14",
+      "source": "X1",
+      "destination": "C9",
+      "type": "build",
+      "sensitivity": "CONFIDENTIAL",
+      "label": "source poll PollForSourceChanges",
+      "evidence": [
+        "Infrastructure/Modules/CodePipeline/main.tf:20"
+      ]
+    },
+    {
+      "id": "F15",
+      "source": "C9",
+      "destination": "D3",
+      "type": "build",
+      "sensitivity": "CONFIDENTIAL",
+      "label": "store source + artifacts",
+      "evidence": [
+        "Infrastructure/main.tf:264"
+      ]
+    },
+    {
+      "id": "F16",
+      "source": "C9",
+      "destination": "C10",
+      "type": "build",
+      "sensitivity": "INTERNAL",
+      "label": "trigger build stage",
+      "evidence": [
+        "Infrastructure/Modules/CodePipeline/main.tf:8"
+      ]
+    },
+    {
+      "id": "F17",
+      "source": "X4",
+      "destination": "C10",
+      "type": "build",
+      "sensitivity": "INTERNAL",
+      "label": "pull base image :latest",
+      "evidence": [
+        "Code/server/Dockerfile:4"
+      ]
+    },
+    {
+      "id": "F18",
+      "source": "C10",
+      "destination": "D4",
+      "type": "build",
+      "sensitivity": "CONFIDENTIAL",
+      "label": "docker build/push",
+      "evidence": [
+        "Infrastructure/Modules/ECR/main.tf:8"
+      ]
+    },
+    {
+      "id": "F19",
+      "source": "C10",
+      "destination": "D5",
+      "type": "build",
+      "sensitivity": "INTERNAL",
+      "label": "build logs",
+      "evidence": [
+        "Infrastructure/Modules/CodeBuild/main.tf:85"
+      ]
+    },
+    {
+      "id": "F20",
+      "source": "C9",
+      "destination": "C11",
+      "type": "build",
+      "sensitivity": "INTERNAL",
+      "label": "trigger deploy stage",
+      "evidence": [
+        "Infrastructure/Modules/CodePipeline/main.tf:8"
+      ]
+    },
+    {
+      "id": "F21",
+      "source": "C11",
+      "destination": "C6",
+      "type": "control",
+      "sensitivity": "INTERNAL",
+      "label": "blue/green deploy",
+      "evidence": [
+        "Infrastructure/Modules/CodeDeploy/main.tf:9"
+      ]
+    },
+    {
+      "id": "F22",
+      "source": "D4",
+      "destination": "C6",
+      "type": "control",
+      "sensitivity": "INTERNAL",
+      "label": "image pull on task start",
+      "evidence": [
+        "Infrastructure/main.tf:206"
+      ]
+    },
+    {
+      "id": "F23",
+      "source": "C6",
+      "destination": "C7",
+      "type": "control",
+      "sensitivity": "INTERNAL",
+      "label": "schedule client tasks",
+      "evidence": [
+        "Infrastructure/main.tf:227"
+      ]
+    },
+    {
+      "id": "F24",
+      "source": "C6",
+      "destination": "C8",
+      "type": "control",
+      "sensitivity": "INTERNAL",
+      "label": "schedule server tasks",
+      "evidence": [
+        "Infrastructure/main.tf:212"
+      ]
+    },
+    {
+      "id": "F25",
+      "source": "C11",
+      "destination": "C13",
+      "type": "async",
+      "sensitivity": "INTERNAL",
+      "label": "deploy notifications",
+      "evidence": [
+        "Infrastructure/Modules/SNS/main.tf:8"
+      ]
+    },
+    {
+      "id": "F26",
+      "source": "C12",
+      "destination": "C8",
+      "type": "control",
+      "sensitivity": "INTERNAL",
+      "label": "autoscaling CPU/mem",
+      "evidence": [
+        "Infrastructure/Modules/ECS/Autoscaling/main.tf"
+      ]
+    }
+  ]
+}
