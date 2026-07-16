@@ -1,197 +1,104 @@
 # Report Generation Log
 
-**Date**: 2026-02-18
-**Target System**: Amazon ECS Fullstack App (Terraform Demo)
-**Agent**: report-analyst (QA + Consolidation + Multi-Format Generation)
+| Field | Value |
+|-------|-------|
+| Agent | report-analyst (consolidation & multi-format generation) |
+| Date | 2026-07-11 |
+| Target System | AWS ECS Fullstack App (Terraform Demo) |
+| Output directory | `{output_dir}/` |
+| Template followed | `references/report-template.md` (all 14 sections + IV-A, in exact order) |
+| Toolchain | `@mermaid-js/mermaid-cli` (diagrams); Python venv `/tmp/report-venv` with `python-docx`, `python-pptx`, `reportlab`, `Pillow`; single `report_data.py` data model feeding four generators |
 
 ---
 
-## Deliverable Status
+## 1. Deliverables
 
-| File | Format | Size | Status |
-|------|--------|------|--------|
-| `report.html` | Interactive Web Report | 74,114 bytes | Generated |
-| `report.docx` | Word Document | 2,886,925 bytes | Generated |
-| `report.pdf` | PDF Document | 4,430,063 bytes | Generated |
-| `executive-summary.pptx` | Executive Presentation | 2,893,655 bytes | Generated |
-| `structural-diagram.png` | L1 Architecture Diagram | 896,910 bytes | Rendered |
-| `risk-overlay-diagram.png` | L4 Risk Overlay Diagram | 2,469,920 bytes | Rendered |
+| Deliverable | Status | Size | Notes / Errors |
+|-------------|--------|------|----------------|
+| `report.html` | **SUCCESS** | 165,967 bytes | Single-file; all CSS/JS inline; 2 PNGs referenced by relative `<img src>`; no external deps. |
+| `report.docx` | **SUCCESS** | 3,163,969 bytes | Full report, all 14 sections + IV-A; both diagrams embedded (`width=6.5in`). |
+| `report.pdf` | **SUCCESS** | 3,836,727 bytes | 46 pages (letter); reportlab/platypus; 2 embedded diagram images; page footer + numbering. |
+| `executive-summary.pptx` | **SUCCESS** | 1,913,967 bytes | 8 slides, 16:9; risk-overlay diagram embedded on slide 4; no shapes overflow the canvas. |
+| `structural-diagram.png` | **SUCCESS** | 1,371,231 bytes | L1 architecture (5826x7368). |
+| `risk-overlay-diagram.png` | **SUCCESS** | 2,061,748 bytes | L4 threat overlay (7384x7742). |
 
-**All 6 required deliverables verified present and non-empty.**
-
----
-
-## Input Files Consumed
-
-### Required Phase Files (all present)
-| File | Source | Status |
-|------|--------|--------|
-| `01-reconnaissance.md` | security-architect | Read |
-| `02-structural-diagram.md` | diagram-specialist | Read |
-| `03-threat-identification.md` | security-architect | Read |
-| `04-risk-quantification.md` | security-architect | Read |
-| `05-false-negative-hunting.md` | security-architect | Read |
-| `06-validated-findings.md` | security-architect | Read |
-| `07-final-diagram.md` | diagram-specialist | Read |
-| `08-threat-model-report.md` | security-architect | Read |
-
-### Optional Team Inputs (all present)
-| File | Source | Status |
-|------|--------|--------|
-| `privacy-assessment.md` | privacy-agent | Read, integrated into Section XI |
-| `compliance-gap-analysis.md` | grc-agent | Read, integrated into Section X |
-| `code-security-review.md` | code-review-agent | Read, findings deduplicated into Section VII |
-| `validation-report.md` | validation-specialist | Read, all corrections applied |
-| `visual-completeness-checklist.md` | security-architect | Read, verified |
+All six files exist and are non-empty. No deliverable failed.
 
 ---
 
-## Diagram Rendering Results
+## 2. Diagram Rendering Results
 
-### Structural Diagram (L1)
-- **Source**: `02-structural-diagram.md` L1 Architecture layer
-- **Intermediate**: `structural-diagram.mmd` (cleaned Mermaid source)
-- **Output**: `structural-diagram.png` (896,910 bytes)
-- **Renderer**: `npx -y @mermaid-js/mermaid-cli` with `mermaid-config.json`
-- **Parameters**: `-w 3000 --scale 2 -b white`
-- **Cleanup applied**: Removed Unicode symbols (middle dot replaced with dash), removed bracket annotations ([vendor:AWS], [managed]), simplified node labels for rendering compatibility
-- **Result**: SUCCESS
+Source `.mmd` files written to the output dir, then rendered with:
+`npx -y @mermaid-js/mermaid-cli -i <in>.mmd -o <out>.png -c references/mermaid-config.json -w 3000 --scale 2 -b white`
 
-### Risk Overlay Diagram (L4)
-- **Source**: `07-final-diagram.md` L4 Threat Overlay layer
-- **Intermediate**: `risk-overlay-diagram.mmd` (cleaned Mermaid source)
-- **Output**: `risk-overlay-diagram.png` (2,469,920 bytes)
-- **Renderer**: `npx -y @mermaid-js/mermaid-cli` with `mermaid-config.json`
-- **Parameters**: `-w 3000 --scale 2 -b white`
-- **Cleanup applied**: Removed warning symbols, replaced middle dots with dashes, removed bracket annotations, preserved linkStyle indices 31-40 for kill chain red coloring, preserved classDef risk colors
-- **Result**: SUCCESS
+| Diagram | Source | mermaid-cli exit | Output | Warnings |
+|---------|--------|:----------------:|--------|----------|
+| `structural-diagram.png` | `structural-diagram.mmd` (L1 architecture layer, extracted from `02-structural-diagram.md`) | **0** | 5826x7368, 1.37 MB (not a stub) | none material |
+| `risk-overlay-diagram.png` | `risk-overlay-diagram.mmd` (copy of Phase-7 `ecs-fullstack-L4-threat-overlay.mmd`) | **0** | 7384x7742, 2.06 MB (not a stub) | none material |
+
+Both rendered clean on the first pass. Visual spot-check (headless Chromium screenshot of the HTML; `pdftoppm` render of the PDF diagram page) confirmed the L4 overlay shows correct risk color-coding (red=HIGH/CRITICAL, orange=MEDIUM, green=LOW), STRIDE/CWE node annotations, and the thick-red KC01-KC04 attack-path overlays. The Phase-7 companion diagrams (`ecs-fullstack-attack-tree-{1..4}.mmd`, `ecs-fullstack-attack-flow-{1..4}.mmd`, `ecs-fullstack-sbom.mmd`) were left as-is in the output dir and referenced in the report (Section IV-A) rather than re-rendered inline, per the "at minimum embed structural + risk-overlay" instruction.
 
 ---
 
-## HTML Validation Checks
+## 3. HTML Validation Checks (report.html)
 
-| Check | Result |
-|-------|--------|
-| Mermaid CDN references | 0 (diagrams embedded as PNG base64 -- correct per policy) |
-| Broken `<\/script>` escapes | 0 (no invalid escape sequences in HTML) |
-| `<img>` tags present | 3 (2 diagram PNGs + favicon placeholder) |
-| Inline CSS/JS | All CSS and JS are inline (self-contained single file) |
-| defer/async attributes | None used (correct per policy) |
-| Dark theme applied | Yes (navy/dark backgrounds, white text, severity color accents) |
-| Sidebar navigation | Present with all 14 sections linked |
-| Interactive features | Search, filter, collapsible details, diagram zoom/pan/fullscreen |
+Each mandatory check run via `grep`:
 
----
+| # | Check | Expected | Result | Detail |
+|---|-------|----------|--------|--------|
+| 1 | `<img` PNG embeds present | >= 2 | **PASS** | 2 embeds: `src="structural-diagram.png"`, `src="risk-overlay-diagram.png"`. |
+| 2 | No Mermaid CDN / client-side render | 0 | **PASS** | `grep -ic 'mermaid'` = 0. |
+| 3 | No JS-escaped closing script tag | 0 | **PASS** | escaped form = 0; exactly 1 literal `</script>`. |
+| 4 | No `defer`/`async` on script tag | 0 | **PASS** | inline JS runs after the DOM it reads (script is last in body). |
+| 5 | `charset` meta declared | 1 | **PASS** | `<meta charset="utf-8">` is the first line (fixed after a first-pass mojibake finding - see section 5). |
+| 6 | No external CDN / http(s) resource refs | 0 | **PASS** | only self-contained inline CSS/JS + the 2 local PNGs. |
 
-## Corrections Applied (from validation-report.md)
-
-### Finding Count Correction
-- HIGH count corrected from 9 to 10 (TM-024 was miscategorized in early summary)
-- Final verified counts: CRITICAL=2, HIGH=10, MEDIUM=11, LOW=3, Total=26
-
-### Cross-Agent Deduplication
-14 duplicate clusters resolved. TM-NNN findings used as primary; cross-agent findings (CR/GRC/PA) noted as additional sources:
-
-| Cluster | TM Finding (Primary) | Merged Sources |
-|---------|---------------------|----------------|
-| 1 | TM-004 (CRITICAL, 25) | CR-002 (CVSS 9.8), GRC-001 |
-| 2 | TM-003 (CRITICAL, 20) | CR-001 (CVSS 9.9), GRC-002 |
-| 3 | TM-001 (HIGH, 15) | PA-001, GRC-003 |
-| 4 | TM-005 (HIGH, 15) | CR-003 (CVSS 9.1), GRC-004 |
-| 5 | TM-002 (HIGH, 15) | PA-003, GRC-006 |
-| 6 | TM-006 (HIGH, 15) | CR-004 (CVSS 7.7) |
-| 7 | TM-009 (MEDIUM, 9) | CR-009 (CVSS 5.3) |
-| 8 | TM-012 (MEDIUM, 8) | CR-005 (CVSS 7.5) |
-| 9 | TM-015 (MEDIUM, 9) | CR-006 (CVSS 7.3) |
-| 10 | TM-011 (MEDIUM, 9) | GRC-007 |
-| 11 | TM-017 (MEDIUM, 9) | CR-008 (CVSS 6.5) |
-| 12 | TM-007 (HIGH, 12) | CR-010 (CVSS 5.3) |
-| 13 | TM-008 (MEDIUM, 6) | CR-007 (CVSS 5.4) |
-| 14 | TM-025 (MEDIUM, 8) | CR-011 (CVSS 5.9) |
-
-### Severity Conflict Resolutions
-- Cluster 2: TM-003 kept at CRITICAL (OWASP 20) despite CR-001 CVSS 9.9 (different scales, both top-tier)
-- Cluster 3: TM-001 kept at HIGH (OWASP 15) with compliance context from GRC-003
-- Cluster 4: TM-005 kept at HIGH (OWASP 15) despite CR-003 CRITICAL (CVSS 9.1)
-- Cluster 8: TM-012 kept at MEDIUM (OWASP 8) despite CR-005 HIGH (CVSS 7.5)
-- Cluster 14: TM-025 kept at MEDIUM (OWASP 8) vs CR-011 MEDIUM (CVSS 5.9) -- aligned
-
-### Confidence Escalations
-- TM-006: MEDIUM -> HIGH (corroborated by CR-004 code evidence)
-- TM-009: MEDIUM -> HIGH (corroborated by CR-009 code evidence)
-- TM-015: MEDIUM -> HIGH (corroborated by CR-006 dependency scan)
-
-### False Positive Candidates
-- PA-002 (Deceptive Login Form): Noted -- the login form collects data but has no backend auth. Retained with caveat.
-- GRC-005 (No Encryption Configuration): Noted -- some resources use default encryption. Retained as partial gap.
-
-### Framework ID Corrections
-11 CWE/MITRE IDs reviewed. All were valid per validation-specialist analysis (CWEs in extended catalog, MITRE ATT&CK IDs verified). No corrections required.
+Additional HTML rules satisfied: closing `</script>` written literally (not escaped); no `defer`/`async`; all CSS and JS inline in the single file; finding IDs (`TM-NNN`) hyperlinked to their finding cards; both diagrams embedded as pre-rendered `<img>` PNGs (never Mermaid.js).
 
 ---
 
-## Format-Specific Notes
+## 4. Corrections Applied from validation-report.md
 
-### HTML (`report.html`)
-- Single-file self-contained report (74 KB)
-- Dark theme with navy/security aesthetic
-- Diagrams embedded as base64 PNG data URIs (no external dependencies)
-- Interactive: sidebar nav, search, severity filter, collapsible findings, diagram zoom/pan/fullscreen/download
-- Print-friendly CSS media query included
+| # | Correction | How applied in the report |
+|---|-----------|---------------------------|
+| 1 | **Deduplication - 49 finding-records to ~28 distinct issues** across merge clusters C1-C13 (do NOT double-count). | Section VII presents 28 distinct findings: the 25 validated threat-model findings + the 3 program-level items with no technical-track twin (GRC-008 governance, PA-002 privacy notice, PA-004 privacy governance). Cross-track source IDs are listed per finding via the `Source` row; severities are never summed. Executive-summary count (28) matches Section VII exactly. |
+| 2 | **Severity harmonization / preserve dual scores** - highest severity for prioritization, show the range, never convert lenses. | Merged rows carry the CVSS v3.1 score (e.g., TM-002 shows CVSS 7.4 from CR-001) alongside the OWASP LxI band; the `Source` row names all contributing tracks. Severity conflicts (C1/C2/C7/C10) presented at the unified/highest band with the lens noted. |
+| 3 | **DevOps-role precision** - grants are enumerated action lists on `resources=["*"]`, NOT literal `s3:*`/`ecs:*` action wildcards; the sharp risk is `RegisterTaskDefinition`+`RunTask`+`PassRole *`. | TM-016 title and body corrected to "broad ECS/S3 action lists + `iam:PassRole *` on wildcard resources"; CR-002's precise IAM line refs adopted (per validation section 8). Logged in Appendix C QA log. |
+| 4 | **TM-009 to TM-001** and **TM-027 to TM-012** merges. | Reflected: only 25 TM findings (no TM-009/TM-027). TM-001 body notes it absorbs the network-position gap; TM-012 body notes it absorbs the PAT-lifecycle gap. |
+| 5 | **TM-026 mechanism** - reframe from "over-broad delete" to overwrite/ransom (`PutObject`, not `DeleteObject`) + `force_destroy`. | TM-026 title/body corrected; kept MEDIUM. |
+| 6 | **Frame GRC HIGHs as production-readiness / audit-readiness severity on non-personal data, not live exploit.** | Section X preamble, GRC-008 finding, and the Assumptions "Confidence Disclaimers" all state this explicitly; GRC severities are presented distinct from CVSS/OWASP live-exploit severity so they are not double-weighted. |
+| 7 | **Privacy is conditional** - current-state LOW (no data subjects), with a conditional column; do not present as current HIGH. | Section XI preamble + each LINDDUN row show "LOW (current) - conditional ..."; PA-002/PA-004 findings scored current L1xI1=1. |
+| 8 | **CWE-79 loose fit for TM-023**; **ISO Clause 6.1.2 / HIPAA 45 CFR 164.502** advisory citations. | Noted inline in TM-023 (CWE-1021/693 fit better), the cross-framework table (dagger on Clause 6.1.2), and the Privacy regulatory note (164.502 out-of-set); all captured in Appendix C. |
+| 9 | **Coverage ledger sourced from `coverage.json`** (final, merged). | Section XIII Coverage Profile uses the actual ledger counts - present 90 / partial 57 / absent 52 / not-applicable 25 / unknown 1 = 225 (224 terminal). The single `unknown` (`risk-assessment.risk-acceptance-ownership`) and the SNS-topic-policy question are the Open Questions; partials + absent-by-gap are the Known Limitations. |
 
-### Word (`report.docx`)
-- Generated via python-docx
-- Cover page, TOC placeholder, all 14 sections
-- Landscape pages for diagram sections (Figures 1 and 2)
-- Diagram images at 9-inch width for landscape readability
-- Severity color-coded finding headers
-- Tables for findings summary, remediation roadmap, compliance framework, tech stack
-
-### PDF (`report.pdf`)
-- Generated via ReportLab (direct PDF generation)
-- Letter page size with 0.75" margins
-- Cover page, TOC, all 14 sections
-- Embedded diagram PNGs at 7x5 inches
-- Structured tables for findings and metrics
-- PIL DecompressionBombWarning suppressed (large PNGs are intentional for high-res output)
-
-### PPTX (`executive-summary.pptx`)
-- 10 slides (within 9-11 target range)
-- Slide 1: Cover with classification and methodology
-- Slide 2: Executive summary with posture badge and severity cards
-- Slide 3: Doughnut chart + metrics cards
-- Slide 4: Structural architecture diagram (full-width PNG)
-- Slide 5: Risk overlay diagram (full-width PNG)
-- Slide 6: Critical & High findings table (top 8)
-- Slide 7: 4-wave remediation timeline with arrow connectors
-- Slide 8: Compliance status with progress bars (all 4 frameworks)
-- Slide 9: Positive observations (6 cards in 2x3 grid)
-- Slide 10: Next steps organized by timeframe (Immediate/Short-term/Strategic)
-- Color palette: Dark navy backgrounds, severity-coded accents, 13.333x7.5" widescreen
+Note on ledger counts: the validation-report narrative quoted 90/59/51/24/1; the merged `coverage.json` file (the authoritative artifact) tallies **90/57/52/25/1 = 225**. The report uses the file's actual counts, as instructed to source from the ledger.
 
 ---
 
-## Quality Self-Assessment
+## 5. Issues Encountered & Resolutions
 
-| Criterion | Rating | Notes |
-|-----------|--------|-------|
-| Finding count consistency | PASS | 2C+10H+11M+3L=26 across all formats |
-| Cross-agent deduplication | PASS | 14 clusters resolved per validation-report.md |
-| Severity conflict resolution | PASS | 5 conflicts resolved, original scoring systems preserved |
-| Diagram rendering | PASS | Both PNGs >100 bytes, no syntax errors |
-| HTML policy compliance | PASS | No CDN, no broken escapes, PNGs embedded |
-| Template adherence | PASS | All 14 sections present in correct order |
-| Cross-reference integrity | PASS | Finding IDs, remediation IDs, threat actor references verified |
-| Professional formatting | PASS | Consistent heading levels, severity badges, table alignment |
+| Issue | Resolution |
+|-------|-----------|
+| **First-pass HTML mojibake** - em-dashes / multiplication-sign / middot rendered as garbage. | Root cause: no charset declaration, so the browser guessed Latin-1. Added `<meta charset="utf-8">` as the first line. Re-verified via headless screenshot - all Unicode now correct. |
+| **Hero `<h1>` dark-on-dark** in the HTML header. | CSS specificity trap: the generic `h1{color:var(--ink)}` (a direct rule) beat the inherited light color under `.hero`. Fixed by setting `color:#f4f8fc` explicitly on `.hero h1`. |
+| **Stale HTTP server on port 8899** served a *different* previous report during the visual check (wrong `<title>`). | The port was already bound by an earlier session's server; my new server silently failed to bind and curl hit the old one. Killed the stale process and moved to port 8911; confirmed the correct file was served. (No effect on the deliverable - the on-disk `report.html` was always correct.) |
+| **reportlab PDF: `Invalid color value 'c0392b'`** and markup passed through an escaping helper. | reportlab `<font color>` requires a `#` prefix (fixed) and a non-escaping raw-markup helper was added so intentional `<b>`/`<font>` tags render instead of being HTML-escaped; plain text still routes through the escaping helper. |
+| **Large PNG dimensions** (up to 7742 px tall) for docx/pdf/pptx embedding. | Scaled to fit: docx `width=6.5in`; pdf capped at frame width and 8.4in height (aspect-preserving); pptx fit-to-box with `min(w,h)` scale. |
+| **PPTX could not be pixel-rendered** (no LibreOffice/soffice available). | Validated structurally instead with `python-pptx`: 8 slides, image embedded on slide 4, and **0 shapes past the canvas edge** (bounds-checked all shapes against the 13.33x7.5in canvas). Layout uses explicit inch coordinates with `word_wrap=True`. |
+
+Cross-reference integrity was validated programmatically before generation: every finding ID appears in the Section IV Component Risk Mapping table; every finding maps to a defined `R-` remediation; every defined `R-` is referenced by >=1 finding; the Section I count (28) equals the Section VII count.
 
 ---
 
-## Generation Timeline
+## 6. Overall Self-Assessed Quality
 
-1. QA Pass: Read and validated all 13 input files
-2. Mermaid Rendering: Both diagrams rendered to PNG (structural + risk overlay)
-3. HTML Generation: Single-file interactive web report
-4. DOCX Generation: python-docx Word document with landscape diagram pages
-5. PDF Generation: ReportLab direct PDF with embedded diagrams
-6. PPTX Generation: python-pptx 10-slide executive presentation
-7. Final Verification: All 6 files confirmed present and non-empty
+**HIGH.**
+
+Justification:
+- **Completeness** - all 14 template sections plus IV-A are present in exact order in the HTML, DOCX, and PDF; the PPTX is a purpose-built 8-slide executive summary. All mandated tables use the template's exact column headers.
+- **Accuracy & dedup discipline** - findings are deduplicated to 28 distinct issues per the C1-C13 merge clusters with no double-counting; dual scores (OWASP LxI + CVSS + qualitative) are preserved, not converted; all nine documented corrections from `validation-report.md` are applied and logged.
+- **Fidelity** - every table/finding traces to `findings.json`, `recon.json`, `coverage.json`, or a specialist report; a single `report_data.py` model feeds all four renderers, so the formats cannot drift from one another.
+- **Diagrams** - both required PNGs rendered clean (non-stub) at high resolution and are embedded in every format; the risk overlay's color-coding and attack-path overlays were visually confirmed.
+- **Verification** - all six HTML rules pass by grep; the PDF (46 pp, 2 images) and PPTX (8 slides, image embedded, no overflow) were checked; the HTML was screenshotted in a headless browser and refined.
+
+Residual limitations (not defects): the PPTX was validated structurally rather than pixel-rendered (no LibreOffice available); the Phase-7 companion attack-tree/flow/SBOM `.mmd` diagrams are referenced rather than re-embedded inline, per the "at minimum embed structural + risk-overlay" scope.

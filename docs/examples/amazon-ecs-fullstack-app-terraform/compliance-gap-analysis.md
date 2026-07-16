@@ -1,995 +1,662 @@
-# Compliance Specialist -- Compliance Gap Analysis
+# Compliance Specialist — Compliance Gap Analysis
 
 ## Metadata
+
 | Field | Value |
 |-------|-------|
-| Agent | compliance-specialist |
-| Date | 2026-02-18 |
-| Target System | Amazon ECS Fullstack App (Terraform Demo) |
-| Scope | Full system: 14 Terraform modules (IAM, ALB, S3, DynamoDB, ECR, ECS, CodePipeline, CodeBuild, CodeDeploy, SNS, Networking, SecurityGroup), Node.js/Express backend, Vue.js frontend, AWS CI/CD pipeline, networking, data stores |
-| Methodology | SOC 2 Type II (Trust Service Criteria), ISO 27001:2022 (Annex A), NIST CSF 2.0, PCI-DSS v4.0 (scoping assessment), HIPAA Security Rule (applicability assessment) |
-| Scoring System | Qualitative (compliance gap severity) |
+| Agent | compliance-specialist (grc-agent) |
+| Date | 2026-07-11 |
+| Target System | AWS ECS Fullstack App (Terraform Demo) — MIT-0 reference sample |
+| Frameworks Assessed | SOC 2 Type II (2017 TSC, scored) · CIS AWS Foundations / cloud-security baseline (technical checks, scored) · ISO 27001:2022 & NIST 800-53 Rev 5 (cross-mapped reference) · PCI-DSS v4.0 & HIPAA (assessed Not Applicable) |
+| Assessment Scope | `Infrastructure/` (Terraform IaC + modules + Templates), `Code/server` (Node.js/Express API), `Code/client` (Vue.js SPA), CI/CD pipeline, AWS control surface — as inventoried in `01-reconnaissance.md` and referenced by Phase 2 node ids (C1-C13, D1-D6, E1-E5, TB1-TB6, R0-R5, X1-X5) |
+| Scope Exclusions | AWS-managed physical/environmental controls (shared-responsibility — AWS SOC 2/ISO reports cover data-center, hardware, hypervisor); runtime penetration testing; organizational policy documents (none exist in repo) |
+| Assessment Method | Static IaC/config/code review via reconnaissance + structural DFD; control mapping against verified framework reference files; no runtime testing |
+| Scoring System | Qualitative (per agent-output-protocol.md — CRITICAL/HIGH/MEDIUM/LOW) |
+| Methodology | SOC 2 TSC control mapping + CIS AWS/cloud baseline + cross-framework mapping (ISO 27001:2022, NIST 800-53 Rev 5); 6-phase compliance-assessment methodology |
+
+---
 
 ## Summary
-- Total findings: 18 (5 critical, 7 high, 4 medium, 2 low)
-- Top 3 risks: (1) Complete absence of encryption in transit -- all traffic is HTTP/plaintext, violating encryption requirements across every applicable framework; (2) No authentication or authorization controls on any endpoint, making access control compliance impossible; (3) Secrets (GitHub OAuth token) stored in plaintext Terraform state with no secrets management, violating credential protection requirements
-- Key recommendation: Implement TLS/HTTPS on both ALBs immediately -- this single change addresses the highest-severity compliance gap across all four applicable frameworks and is a prerequisite for any certification or audit engagement
+
+- **Total findings: 14 (0 Critical, 8 High, 4 Medium, 2 Low).** No CRITICAL: per the qualitative rubric, CRITICAL denotes an active regulatory violation/enforcement — and **no compliance regime is formally in scope** for this MIT-0 demo (no PII/PHI/cardholder data). Findings are framed as **"what a production deployment would need to close"** before it could pass a SOC 2 Type II or clear a CIS AWS baseline.
+- **SOC 2 readiness ≈ 15.7%; CIS AWS/cloud technical baseline ≈ 13.3%; combined ≈ 15.0%.** The system has credible cloud-network *bones* (private subnets, SG chaining, multi-AZ, blue/green rollback) but essentially **no security program and no audit-evidence surface** — the two things a SOC 2 Type II is built on.
+- **Top 3 gaps (all HIGH, all audit-blocking for a real engagement):**
+  1. **No security audit trail** (GRC-004) — no CloudTrail, no ALB access logs, no VPC flow logs, no Config/GuardDuty. A SOC 2 Type II literally cannot be evidenced without an audit trail (CC7.2/CC7.3).
+  2. **No governance program** (GRC-008) — no policies, risk assessment, incident response, access reviews, or training. SOC 2 is ~50% organizational controls (CC1-CC5, CC9); all are absent.
+  3. **No encryption in transit** (GRC-001) — both public ALBs are HTTP:80 only; all app traffic is plaintext (CC6.1/CC6.7).
+- **Key recommendation:** For any non-demo use, sequence remediation as **(a) turn on the audit-evidence plane** (CloudTrail + access/flow logs + Config) — cheap, unblocks everything downstream — then **(b) close the transport/access-control gaps** (TLS, scoped IAM, image scanning), then **(c) stand up the governance program** (policies, risk assessment, IR, vendor management) which is the long pole for SOC 2.
 
 ---
 
-## 1. Executive Summary
+## Scope and Applicability Matrix
 
-This system exhibits a **pre-compliance posture** with an overall readiness score of approximately **12/100** across applicable frameworks. The architecture provides a sound structural foundation (VPC segmentation, private subnets, Fargate isolation, Blue/Green deployments) but lacks nearly all security controls required for production compliance. Of the four applicable frameworks assessed (SOC 2, ISO 27001, NIST CSF 2.0, and PCI-DSS applicability), **61 material gaps** were identified across control domains. Five gaps are rated Critical -- any one of which would result in immediate audit failure or certification denial. The system was explicitly designed as a demo/reference architecture, and the gaps identified here are consistent with that intent. However, organizations forking this project for production use must treat this gap analysis as a minimum remediation roadmap before handling any regulated data or engaging with external auditors.
+| Framework | Applicable? | Rationale | Priority |
+|-----------|:-----------:|-----------|:--------:|
+| **SOC 2 Type II** (2017 TSC) | Yes (reference) | Cloud-hosted SaaS-shaped fullstack app; SOC 2 is the standard enterprise-customer assurance report and the most relevant framework for this control surface. Assessed against Common Criteria (CC1-CC9) + Availability (A1). Used as the primary scored framework. | P1 |
+| **CIS AWS Foundations / cloud-security baseline** | Yes (reference) | The system is 100% AWS (ECS/ALB/S3/DynamoDB/ECR/IAM/VPC). CIS AWS Foundations Benchmark is the canonical baseline for the AWS control surface (encryption, logging, IAM, network exposure). Scored as a technical checklist; see limitation on CIS numeric IDs below. | P1 |
+| **ISO 27001:2022** | Yes (cross-map) | The international ISMS certification path. Not independently scored here (would require the management-system clauses + a full 93-control Annex A pass); mapped to SOC 2/NIST equivalents for evidence reuse. | P2 |
+| **NIST 800-53 Rev 5** | Yes (cross-map) | Serves as the detailed control catalog behind CIS AWS and FedRAMP. Not independently scored; used to give each finding a precise control anchor via `cross-framework-mapping.md`. | P2 |
+| **PCI-DSS v4.0** | **No** | No cardholder data anywhere. Product catalog is non-financial (`id/path/title`); the `Login.vue` "password" field is inert (`Code/client/src/components/Login.vue:28`); no payment flow exists. No cardholder-data environment (CDE) to scope. | — |
+| **HIPAA Security Rule** | **No** | No protected health information (PHI). No healthcare context, no covered-entity/business-associate relationship, no ePHI stored or transmitted. | — |
+| **GDPR / CCPA (privacy)** | **No** (this report) | `has_personal_data = false` (recon §1.10). Privacy posture is owned by the privacy-specialist (`privacy-assessment.md`); not re-assessed here. | — |
 
----
-
-## 2. Scope and Applicability Matrix
-
-| Framework | Applicable | Rationale | Priority |
-|-----------|-----------|-----------|----------|
-| SOC 2 Type II | Yes | SaaS/web application architecture serving external users; enterprise customers will require SOC 2 before procurement | P1 |
-| ISO 27001:2022 | Yes | International standard applicable to any organization establishing an ISMS; provides structured security management framework for this architecture | P2 |
-| NIST CSF 2.0 | Yes | Voluntary but widely adopted framework; AWS itself aligns to NIST; provides comprehensive risk-based structure for cloud-native systems | P2 |
-| PCI-DSS v4.0 | Conditional | Not currently applicable -- system processes product catalog data only (no payment data). Becomes applicable if payment processing is added. Scoping assessment included for forward-looking guidance | P3 |
-| HIPAA Security Rule | No | System does not process, store, or transmit Protected Health Information (PHI). Product catalog data (titles, image URLs) does not constitute PHI. No healthcare business associate relationships identified | N/A |
-| FedRAMP | No | No federal data processing identified. No government customer requirements documented. Would require fundamental re-architecture if needed | N/A |
-| CMMC 2.0 | No | No Controlled Unclassified Information (CUI) or DoD contracts identified | N/A |
+> **PCI/HIPAA note:** Both are Not Applicable *today*. If a production deployment wires the login form to real auth, stores user accounts, or adds a payment path, PCI-DSS and/or privacy scope must be re-triggered (recon §1.10 flags this explicitly).
 
 ---
 
-## 3. Compliance Status Dashboard
+## Compliance Status Dashboard
 
-| Framework | Total Control Areas | Compliant | Partial | Non-Compliant | N/A | % Complete |
-|-----------|-------------------|-----------|---------|---------------|-----|------------|
-| SOC 2 (CC criteria) | 33 | 3 | 6 | 22 | 2 | 9% |
-| ISO 27001:2022 (Annex A) | 93 | 5 | 8 | 41 | 39 | 10% |
-| NIST CSF 2.0 | 106 | 4 | 9 | 38 | 55 | 8% |
-| PCI-DSS v4.0 (if applicable) | 64 | 1 | 3 | 48 | 12 | 2% |
+> **Calculation:** `% Complete = (Compliant + Partial*0.5) / (Total - N/A) * 100`
 
----
+| Framework | Version | Total Reqs | Compliant | Partial | Not Implemented | N/A | % Complete |
+|-----------|---------|:----------:|:---------:|:-------:|:---------------:|:---:|:----------:|
+| SOC 2 (CC + Availability) | 2017 TSC | 36 | 0 | 11 | 24 | 1 | **15.7%** |
+| CIS AWS / cloud baseline (technical checks) | — | 15 | 0 | 4 | 11 | 0 | **13.3%** |
+| **Combined** | — | **51** | **0** | **15** | **35** | **1** | **15.0%** |
 
-## 4. Detailed Gap Analysis
+**SOC 2 math:** `(0 + 11*0.5) / (36 - 1) * 100 = 5.5 / 35 * 100 = 15.7%`
+**CIS/cloud math:** `(0 + 4*0.5) / (15 - 0) * 100 = 2.0 / 15 * 100 = 13.3%`
+**Combined math:** `(0 + 15*0.5) / (51 - 1) * 100 = 7.5 / 50 * 100 = 15.0%`
 
-### 4.1 SOC 2 Type II -- Trust Service Criteria
+**SOC 2 per-criterion breakdown (36 criteria = CC1.1-CC9.2 [33] + A1.1-A1.3 [3]):**
 
-#### CC1: Control Environment
+| Status | Criteria |
+|--------|----------|
+| **Partial (11)** | CC2.1 (informal data classification in recon §1.4), CC5.1, CC5.2 (some technical control activities exist), CC6.1 (cloud IAM present but no user auth/MFA/TLS), CC6.5 (`force_destroy` exists, no sanitization policy), CC6.6 (SG + private subnets, but `0.0.0.0/0:80` open, no WAF), CC7.2 (CloudWatch autoscaling alarms, no security monitoring), CC7.5 (blue/green deploy rollback only), CC8.1 (CodePipeline + IaC, no approval/test gate), A1.1 (autoscaling min1/max4), A1.2 (multi-AZ, but single-NAT SPOF, no DR) |
+| **N/A (1)** | CC6.4 (physical access — AWS shared responsibility) |
+| **Not Implemented (24)** | CC1.1-CC1.5, CC2.2, CC2.3, CC3.1-CC3.4, CC4.1, CC4.2, CC5.3, CC6.2, CC6.3, CC6.7, CC6.8, CC7.1, CC7.3, CC7.4, CC9.1, CC9.2, A1.3 |
+| **Compliant (0)** | — none reach the "auditor-defensible, fully satisfies" bar in a demo with no program and no evidence retention |
 
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Management's commitment to integrity and ethical values | CC1.1 | Non-Compliant | No documented information security policy, code of conduct for security, or management commitment statement | High | Create and publish Information Security Policy with management sign-off | Moderate |
-| Board/management oversight of security | CC1.2 | Non-Compliant | No evidence of security governance structure, risk committee, or management oversight of security controls | High | Establish security governance charter and assign security responsibilities | Moderate |
-| Organizational structure for security | CC1.3 | Non-Compliant | No security roles defined, no RACI matrix for security responsibilities | Medium | Define security roles and responsibilities within the organization | Moderate |
-| Competence and accountability | CC1.4 | Non-Compliant | No security training program or competency requirements documented | Medium | Implement security awareness training program | Moderate |
-
-#### CC2: Communication and Information
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Internal security communication | CC2.1 | Non-Compliant | No documented security policies communicated to personnel | Medium | Create security policy library and establish communication procedures | Moderate |
-| External security communication | CC2.2 | Partial | CONTRIBUTING.md references security issue reporting but no formal external security communication (no security.txt, no vulnerability disclosure policy) | Medium | Publish security contact information and vulnerability disclosure policy | Quick Win |
-
-#### CC3: Risk Assessment
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Risk identification and analysis | CC3.1 | Non-Compliant | No formal risk assessment process documented. This threat model constitutes a first step but is not part of a recurring program | High | Establish formal risk assessment methodology and schedule | Moderate |
-| Fraud risk assessment | CC3.2 | Non-Compliant | No fraud risk assessment performed | Low | Include fraud risk scenarios in risk assessment program | Quick Win |
-| Change-related risk identification | CC3.3 | Non-Compliant | No change management risk assessment. CodeDeploy auto-continues without manual approval gates | Medium | Implement change risk assessment procedures and pipeline approval gates | Moderate |
-
-#### CC5: Control Activities
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Selection and development of controls | CC5.1 | Non-Compliant | No control framework adopted or documented | High | Adopt control framework and map to SOC 2 criteria | Moderate |
-| Technology general controls | CC5.2 | Partial | Some infrastructure controls exist (SG, private subnets) but are not documented as part of a control framework | Medium | Document existing controls and identify gaps against framework | Quick Win |
-| Deployment of controls through policies | CC5.3 | Non-Compliant | No policies governing technology controls; infrastructure deployed without security policy enforcement | High | Develop and deploy security policies governing infrastructure standards | Moderate |
-
-#### CC6: Logical and Physical Access Controls
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Logical access security | CC6.1 | Non-Compliant | No authentication mechanism on any endpoint. Login component is cosmetic only. `app.use(cors())` allows all origins. No API keys, tokens, or session management | Critical | Implement authentication (e.g., Amazon Cognito, Auth0) with session management and CORS restrictions | Significant |
-| Access provisioning and management | CC6.2 | Non-Compliant | No user provisioning process. IAM roles exist but are overly permissive (`iam:PassRole` on `*`, S3 actions on `*`, ECS actions on `*`) | High | Implement least-privilege IAM policies scoped to specific resources; establish access provisioning procedures | Moderate |
-| Access removal/modification | CC6.3 | Non-Compliant | No access review or deprovisioning procedures. No user accounts to manage (no auth), but IAM role review process is absent | Medium | Establish periodic access review process for IAM roles and policies | Moderate |
-| Physical and logical access restrictions | CC6.4 | Partial | Fargate provides AWS-managed physical security. However, no logical access restrictions on application layer | Medium | Leverage AWS shared responsibility model documentation; implement application-level access controls | Moderate |
-| Access disposal | CC6.5 | Non-Compliant | `force_destroy = true` on S3 buckets allows uncontrolled data disposal. No data retention or disposal procedures | Medium | Remove `force_destroy`, implement data retention policies and controlled disposal procedures | Quick Win |
-| Encryption of data | CC6.6 | Non-Compliant | No TLS/HTTPS on ALBs (`enable_https = false`). No S3 bucket encryption configured. DynamoDB uses only AWS-owned keys (no customer control). SNS topic unencrypted. No encryption policy | Critical | Enable HTTPS on ALBs with ACM certificates; enable SSE-S3/SSE-KMS on S3 buckets; configure CMK encryption for DynamoDB and SNS | Significant |
-| Restriction of data transmission | CC6.7 | Non-Compliant | All data transmitted over HTTP (plaintext). No VPC endpoints -- traffic to AWS services traverses NAT Gateway over internet. No restrictions on data egress | Critical | Implement TLS everywhere; add VPC endpoints for DynamoDB, S3, ECR; configure egress restrictions in security groups | Significant |
-| Prevention of unauthorized software | CC6.8 | Non-Compliant | ECR image tags are MUTABLE (tag overwrite possible). No image scanning. Buildspec sourced from repository (any committer can inject arbitrary build commands). `privileged_mode = true` on CodeBuild | High | Set ECR to IMMUTABLE tags; enable ECR image scanning; enforce buildspec from secure location; restrict CodeBuild privileges | Moderate |
-
-#### CC7: System Operations
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Detection of anomalies and events | CC7.1 | Non-Compliant | No anomaly detection. No GuardDuty, Config, CloudTrail, or Security Hub. CloudWatch logs exist but no alerting beyond autoscaling metrics. SNS topic has no subscribers | High | Enable AWS GuardDuty, CloudTrail, Config; configure CloudWatch alarms; subscribe SNS topics | Moderate |
-| Monitoring for anomalous activity | CC7.2 | Non-Compliant | No VPC Flow Logs. No Container Insights on ECS Cluster. No application-level monitoring or SIEM integration | High | Enable VPC Flow Logs; enable Container Insights; implement centralized log analysis | Moderate |
-| Incident response | CC7.3 | Non-Compliant | No incident response plan, procedures, or playbooks documented | High | Develop and test incident response plan with defined roles and communication procedures | Moderate |
-| Recovery from incidents | CC7.4 | Non-Compliant | No backup/recovery procedures. DynamoDB PITR not enabled. S3 versioning not enabled. No disaster recovery plan | High | Enable DynamoDB PITR; enable S3 versioning; develop business continuity and DR plan | Moderate |
-
-#### CC8: Change Management
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Changes to infrastructure and software | CC8.1 | Partial | CI/CD pipeline exists (CodePipeline) with Blue/Green deployments and auto-rollback. However, no approval gates, no branch protection, no code review requirements, and `PollForSourceChanges = true` (no webhook verification) | High | Add manual approval stage to CodePipeline; enforce branch protection on GitHub; require code reviews before merge | Moderate |
-
-#### CC9: Risk Mitigation
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Risk mitigation through business processes | CC9.1 | Non-Compliant | No documented risk mitigation strategies. No vendor risk assessment for GitHub, npm registry, or public ECR base images | Medium | Establish vendor risk management program; document risk treatment decisions | Moderate |
-| Vendor and business partner risk | CC9.2 | Non-Compliant | Third-party dependencies (GitHub, npm packages, public ECR images) used without security assessment. No SBOM. Dependencies significantly outdated (aws-sdk v2, Express 4.16.x) | Medium | Implement software supply chain security: SBOM generation, dependency scanning, vendor security reviews | Moderate |
-
-### 4.2 ISO 27001:2022 -- Selected Annex A Controls
-
-#### A.5: Organizational Controls
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Information security policy | A.5.1 | Non-Compliant | No information security policy exists | High | Draft and approve information security policy | Moderate |
-| Information security roles | A.5.2 | Non-Compliant | No defined security roles or responsibilities | Medium | Define RACI for security responsibilities | Quick Win |
-| Threat intelligence | A.5.7 | Non-Compliant | No threat intelligence collection or analysis | Medium | Subscribe to AWS Security Bulletins; implement vulnerability feeds | Quick Win |
-| Information security in project management | A.5.8 | Non-Compliant | No security requirements in project/development lifecycle | Medium | Integrate security requirements into SDLC | Moderate |
-| Inventory of information and assets | A.5.9 | Partial | Infrastructure defined in Terraform (provides implicit inventory) but no formal asset register maintained | Low | Formalize asset inventory from Terraform state and resource tagging | Quick Win |
-| Supplier relationships security | A.5.19 | Non-Compliant | No supplier security assessment for GitHub, npm, public ECR base images | Medium | Establish supplier security assessment process | Moderate |
-| Incident management | A.5.24 | Non-Compliant | No incident management process defined | High | Develop incident management plan and procedures | Moderate |
-| Business continuity and ICT readiness | A.5.30 | Non-Compliant | Single NAT Gateway (single AZ). No DR plan. No backup strategy documented | High | Implement multi-AZ NAT; develop BCP and DR plans | Significant |
-
-#### A.8: Technological Controls
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| User endpoint devices | A.8.1 | N/A | Fargate serverless -- no user-managed endpoints | N/A | N/A | N/A |
-| Privileged access rights | A.8.2 | Non-Compliant | `iam:PassRole` on `*` in both DevOps and ECS task role policies. CodeBuild runs in `privileged_mode = true`. No MFA requirement for AWS console access documented | Critical | Scope `iam:PassRole` to specific role ARNs; disable unnecessary privileged mode; enforce MFA on AWS accounts | Moderate |
-| Access control to source code | A.8.4 | Non-Compliant | No branch protection. Buildspec sourced from repository -- any committer can modify build logic. No code review requirements enforced | High | Enforce branch protection; require pull request reviews; move buildspec to CodeBuild project definition | Moderate |
-| Authentication mechanisms | A.8.5 | Non-Compliant | No authentication on application. No MFA configured for any access path | Critical | Implement application authentication with MFA support | Significant |
-| Capacity management | A.8.6 | Partial | ECS Autoscaling configured (min 1, max 4) but max is very low. No billing alarms or cost anomaly detection | Low | Increase autoscaling limits; add billing alarms and cost monitoring | Quick Win |
-| Malware protection | A.8.7 | Non-Compliant | No ECR image scanning. No container runtime security. No dependency vulnerability scanning | Medium | Enable ECR scan-on-push; implement dependency scanning in CI/CD | Moderate |
-| Vulnerability management | A.8.8 | Non-Compliant | Outdated dependencies (AWS provider ~>3.38, Express 4.16.x, aws-sdk v2). No vulnerability scanning pipeline. No patch management process | High | Implement dependency scanning; update dependencies; establish patch management cadence | Moderate |
-| Configuration management | A.8.9 | Partial | Infrastructure defined as code (Terraform) but no secure baseline configurations. Default Terraform tags commented out. No drift detection | Medium | Define secure baseline configs; enable Terraform drift detection; uncomment and enforce resource tagging | Moderate |
-| Data deletion/masking | A.8.10-11 | Non-Compliant | `force_destroy = true` on S3 allows uncontrolled deletion. No data masking. Error handler exposes internal error messages | Medium | Remove force_destroy; implement data lifecycle policies; sanitize error responses | Quick Win |
-| Monitoring and logging | A.8.15-16 | Partial | CloudWatch Logs configured with 30-day retention. However, no CloudTrail, no VPC Flow Logs, no audit trail for access, no alerting | High | Enable CloudTrail, VPC Flow Logs, Container Insights; implement alerting and log analysis | Moderate |
-| Redundancy | A.8.14 | Partial | Multi-AZ ECS deployment (2 AZs). However, single NAT Gateway is a single point of failure. Single region only | Medium | Deploy NAT Gateway per AZ; consider multi-region for DR | Moderate |
-| Network security | A.8.20-22 | Partial | VPC with public/private subnet separation. Security groups restrict ECS task ingress to ALB only. However, no WAF, no egress filtering, security groups allow all egress, no VPC endpoints, no network monitoring | High | Implement WAF; restrict security group egress; add VPC endpoints; enable VPC Flow Logs | Significant |
-| Secure coding | A.8.28 | Non-Compliant | No input validation. Error messages expose internal details. `npm install` used instead of `npm ci`. No SAST/DAST in pipeline | Medium | Implement input validation; add SAST/DAST to CI/CD pipeline; use `npm ci` for deterministic builds | Moderate |
-| Encryption (cryptography) | A.8.24 | Non-Compliant | No TLS on ALBs. No explicit encryption on S3, SNS, or DynamoDB (beyond AWS defaults). No key management (KMS not configured) | Critical | Enable TLS; configure KMS keys; encrypt all data stores explicitly | Significant |
-| Separation of environments | A.8.31 | Non-Compliant | Single environment with no dev/staging/production separation. Environment name is parameterized but only one deployment defined | Medium | Implement environment separation (dev/staging/prod) with appropriate access controls | Significant |
-
-### 4.3 NIST CSF 2.0
-
-#### GV (Govern)
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Organizational context | GV.OC | Non-Compliant | No documented organizational risk context, stakeholder requirements, or legal/regulatory obligations | Medium | Document organizational context and compliance obligations | Moderate |
-| Risk management strategy | GV.RM | Non-Compliant | No risk management strategy or risk appetite statement | High | Develop risk management strategy with defined risk appetite | Moderate |
-| Cybersecurity roles and responsibilities | GV.RR | Non-Compliant | No cybersecurity roles defined | Medium | Define and assign cybersecurity roles | Quick Win |
-| Policy | GV.PO | Non-Compliant | No cybersecurity policy established | High | Develop cybersecurity policy aligned to NIST CSF | Moderate |
-| Oversight | GV.OV | Non-Compliant | No cybersecurity oversight or review process | Medium | Establish periodic cybersecurity program review | Moderate |
-| Supply chain risk management | GV.SC | Non-Compliant | No supply chain risk management. Uses public ECR images, npm packages, GitHub integration without formal assessment | Medium | Implement C-SCRM program addressing software dependencies and third-party services | Moderate |
-
-#### ID (Identify)
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Asset management | ID.AM | Partial | Assets implicitly defined via Terraform code. No formal CMDB or asset register. No data classification scheme | Medium | Formalize asset inventory; implement data classification | Moderate |
-| Risk assessment | ID.RA | Non-Compliant | No formal risk assessment process. This threat model is a first step | High | Establish recurring risk assessment program | Moderate |
-| Improvement | ID.IM | Non-Compliant | No lessons-learned or continuous improvement process | Low | Integrate improvement cycle into security operations | Quick Win |
-
-#### PR (Protect)
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Identity management and access control | PR.AA | Non-Compliant | No authentication. No access control. IAM roles overly permissive | Critical | Implement identity provider, authentication, and least-privilege access controls | Significant |
-| Awareness and training | PR.AT | Non-Compliant | No security awareness or training program | Medium | Implement security training for developers and operations | Moderate |
-| Data security | PR.DS | Non-Compliant | No encryption in transit. No explicit encryption at rest configuration. No data classification. No DLP | Critical | Implement encryption (TLS + at-rest); classify data; establish data handling procedures | Significant |
-| Platform security | PR.PS | Partial | Infrastructure as Code provides repeatable builds. Private subnets used. However, no hardened container configs (no readonlyRootFilesystem, no non-root user), no WAF, outdated dependencies | High | Harden container definitions; implement WAF; update dependencies; enforce secure baselines | Moderate |
-| Technology infrastructure resilience | PR.IR | Partial | Multi-AZ ECS services. Blue/Green deployment. However, single NAT GW, no DynamoDB PITR, no S3 versioning, no DR plan | Medium | Implement redundancy fixes; enable data protection features; develop DR plan | Moderate |
-
-#### DE (Detect)
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Continuous monitoring | DE.CM | Non-Compliant | No GuardDuty, CloudTrail, Config, Security Hub, or VPC Flow Logs. CloudWatch logging exists but no anomaly detection or alerting beyond autoscaling | High | Deploy AWS security services (GuardDuty, CloudTrail, Config, Security Hub); implement monitoring and alerting | Moderate |
-| Adverse event analysis | DE.AE | Non-Compliant | No event correlation, SIEM, or security analytics capability | Medium | Implement log aggregation and security event analysis | Moderate |
-
-#### RS (Respond)
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Incident management | RS.MA | Non-Compliant | No incident response plan or procedures | High | Develop incident response plan with communication and escalation procedures | Moderate |
-| Incident analysis | RS.AN | Non-Compliant | No forensic or analysis capability | Medium | Establish incident analysis procedures and tools | Moderate |
-| Incident reporting | RS.CO | Non-Compliant | No incident reporting procedures. SNS topic exists but has no subscribers | Medium | Configure SNS subscribers; establish incident reporting procedures | Quick Win |
-| Incident mitigation | RS.MI | Partial | Blue/Green deployments enable rollback for deployment failures. No broader incident mitigation capability | Medium | Develop incident mitigation playbooks for security scenarios | Moderate |
-
-#### RC (Recover)
-
-| Requirement | Control ID | Status | Gap Description | Risk Level | Remediation | Effort |
-|------------|-----------|--------|-----------------|------------|-------------|--------|
-| Incident recovery plan execution | RC.RP | Non-Compliant | No recovery plan. No DynamoDB PITR. No S3 versioning. No backup strategy | High | Enable PITR and versioning; develop and test recovery plans | Moderate |
-| Recovery communication | RC.CO | Non-Compliant | No recovery communication procedures | Medium | Establish recovery communication plan | Quick Win |
-
-### 4.4 PCI-DSS v4.0 -- Conditional Applicability Assessment
-
-The system does not currently process payment card data. The following assessment applies only if the system is extended to include payment processing. Key gaps that would be blockers:
-
-| Requirement | PCI-DSS Req | Status | Gap Description | Risk Level (if applicable) | Remediation | Effort |
-|------------|------------|--------|-----------------|---------------------------|-------------|--------|
-| Install and maintain network security controls | 1.x | Partial | Security groups exist but no WAF, no egress filtering, no network segmentation testing | High | Implement WAF; document and test network segmentation | Significant |
-| Apply secure configurations | 2.x | Non-Compliant | No secure baseline configurations documented. Default configs used throughout | High | Define and enforce CIS benchmarks for all components | Significant |
-| Protect stored account data | 3.x | Non-Compliant | No encryption at rest configuration for data stores | Critical | Implement KMS encryption on all data stores | Significant |
-| Protect data in transit with strong cryptography | 4.x | Non-Compliant | All traffic HTTP plaintext. No TLS anywhere | Critical | Implement TLS 1.2+ on all connections | Significant |
-| Protect all systems and networks from malicious software | 5.x | Non-Compliant | No anti-malware, no image scanning, no runtime protection | High | Implement container image scanning and runtime protection | Significant |
-| Develop and maintain secure systems and software | 6.x | Non-Compliant | No secure SDLC, no code review requirements, no vulnerability management | High | Implement secure SDLC with code review and vulnerability scanning | Significant |
-| Restrict access by business need to know | 7.x | Non-Compliant | No access controls of any kind on application | Critical | Implement RBAC with business-need-to-know enforcement | Significant |
-| Identify users and authenticate access | 8.x | Non-Compliant | No authentication mechanism | Critical | Implement strong authentication with MFA | Significant |
-| Restrict physical access to cardholder data | 9.x | Compliant (inherited) | AWS Fargate provides physical security via shared responsibility model | N/A (AWS responsibility) | Document shared responsibility model | Quick Win |
-| Log and monitor all access | 10.x | Partial | CloudWatch Logs exist but no audit trail, no access logging, no 12-month retention | High | Implement comprehensive audit logging with 12-month retention | Moderate |
-| Test security of systems and networks regularly | 11.x | Non-Compliant | No penetration testing, no vulnerability scanning, no change detection | High | Establish security testing program | Significant |
-| Support information security with policies and programs | 12.x | Non-Compliant | No information security policy or program | High | Develop PCI-DSS compliant information security policy | Significant |
+**CIS AWS / cloud baseline (15 technical checks):** Partial (4): S3 SSE (default AWS-owned key, no CMK), SG exposure (only :80, tasks private — but `0.0.0.0/0` open), DynamoDB encryption (default), multi-AZ redundancy (single NAT). Not Implemented (11): ALB HTTPS/TLS, S3 public-access-block, S3 versioning, S3/ALB access logging, CloudTrail, VPC flow logs, AWS Config, GuardDuty, IAM least-privilege (no wildcards), ECR scan-on-push + immutable tags, Secrets Manager/SSM (no plaintext secret in state).
 
 ---
 
-## 5. Cross-Framework Control Mapping
+## Framework-Specific Findings
 
-| Control Description | SOC 2 | ISO 27001 | NIST CSF 2.0 | PCI-DSS v4.0 | Implementation Status |
-|--------------------|-------|-----------|-------------|---------|---------------------|
-| Encryption in transit (TLS) | CC6.6, CC6.7 | A.8.24 | PR.DS | 4.2.1 | **Not Implemented** |
-| Encryption at rest | CC6.6 | A.8.24 | PR.DS | 3.5.1 | **Not Implemented** (defaults only) |
-| Multi-factor authentication | CC6.1 | A.8.5 | PR.AA | 8.4.2 | **Not Implemented** |
-| Authentication mechanism | CC6.1 | A.8.5 | PR.AA | 8.3.1 | **Not Implemented** |
-| Access control / authorization | CC6.1, CC6.2 | A.8.3 | PR.AA | 7.2.1 | **Not Implemented** |
-| Least-privilege IAM policies | CC6.2, CC6.3 | A.8.2 | PR.AA | 7.2.2 | **Not Implemented** (iam:PassRole on *) |
-| Network segmentation | CC6.4 | A.8.22 | PR.PS | 1.2.1 | **Partially Implemented** (VPC/subnets/SGs, but no WAF/egress) |
-| Vulnerability management | CC7.1 | A.8.8 | ID.RA | 6.3.1 | **Not Implemented** |
-| Logging and monitoring | CC7.1, CC7.2 | A.8.15-16 | DE.CM | 10.2.1 | **Partially Implemented** (CloudWatch only, no alerting) |
-| Incident response plan | CC7.3 | A.5.24 | RS.MA | 12.10.1 | **Not Implemented** |
-| Change management | CC8.1 | A.8.32 | PR.PS | 6.5.1 | **Partially Implemented** (CI/CD exists, no approval gates) |
-| Backup and recovery | CC7.4 | A.8.13 | PR.IR | 9.5.1 | **Not Implemented** (no PITR, no versioning) |
-| Security awareness training | CC1.4 | A.6.3 | PR.AT | 12.6.1 | **Not Implemented** |
-| Information security policy | CC1.1, CC5.3 | A.5.1 | GV.PO | 12.1.1 | **Not Implemented** |
-| Risk assessment | CC3.1 | A.8.8 | ID.RA | 12.3.1 | **Not Implemented** |
-| Secrets management | CC6.1 | A.8.24 | PR.DS | 3.6.1 | **Not Implemented** (plaintext in TF state) |
-| Container image integrity | CC6.8 | A.8.7 | PR.PS | 6.3.2 | **Not Implemented** (mutable tags, no scanning) |
-| Supply chain security | CC9.2 | A.5.19 | GV.SC | 6.3.2 | **Not Implemented** |
-| WAF / application-layer protection | CC6.1 | A.8.20 | PR.PS | 6.4.1 | **Not Implemented** |
-| Data retention and disposal | CC6.5 | A.8.10 | PR.DS | 3.1.1 | **Not Implemented** |
+> Findings are grouped by control domain. Each cites verified SOC 2 IDs (`soc2-trust-services-criteria.md`) plus cross-framework anchors verified against `nist-800-53-controls.md`, `iso27001-annex-a-controls.md`, and `cross-framework-mapping.md`. Node ids (C*/D*/E*/TB*/R*/X*) reference the Phase 2 structural diagram.
+
+### SOC 2 Type II + CIS AWS / cloud baseline
 
 ---
 
-## Findings
-
-### CRITICAL GRC-001: No Encryption in Transit -- All Traffic Transmitted via HTTP Plaintext
+### HIGH GRC-001: No Encryption in Transit — Public ALBs are HTTP-only
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-001 |
-| Severity | CRITICAL |
+| Severity | HIGH |
 | Confidence | HIGH |
-| Affected Component(s) | Client ALB, Server ALB, ECS Services, all data flows |
+| Affected Component(s) | C4 (Client ALB), C5 (Server/API ALB), C1, C2, C3; entry points E1, E2, E3; boundaries TB1, TB2 |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.6, CC6.7 / ISO 27001 A.8.24 / NIST CSF PR.DS / PCI-DSS 4.2.1 |
+| Score | HIGH (material deficiency — auditors flag plaintext transport as a reportable control failure) |
+| Cross-Framework | SOC 2 CC6.1, CC6.7 · NIST SC-8, SC-8(1) · ISO A.8.24 · (map: PCI 4.2, HIPAA §164.312(e)(1) — N/A here) |
 
-**Description**: Both Application Load Balancers are configured with HTTP-only listeners (`enable_https` defaults to `false` in `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/ALB/variables.tf:28`). No ACM certificate is referenced anywhere in the codebase. All data between users and the application, and between the client frontend and backend API, traverses the network in plaintext. This is a mandatory requirement across every compliance framework assessed. No audit or certification can proceed with this gap present.
+**Description**: No TLS listener is created on either ALB. `enable_https` defaults `false` and `main.tf` never sets it, so only an HTTP:80 listener exists. All browser↔ALB and ALB↔task traffic is plaintext; the SPA calls `http://<SERVER_ALB>/api/getAllProducts` and Swagger advertises `schemes: ['http']`. SOC 2 CC6.7 (restrict transmission of information) and CC6.1 cannot be met without encryption in transit on public interfaces.
 
-**Evidence**: ALB module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/ALB/main.tf:20-35` defines HTTPS listener conditionally on `enable_https` variable, which defaults to `false`. The root module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/main.tf:110-127` creates both ALBs without setting `enable_https = true`. No `aws_acm_certificate` resource exists anywhere in the project.
+**Evidence**: `Infrastructure/Modules/ALB/main.tf:38` (HTTP:80 listener only); `variables.tf:27` (`enable_https` default false); `Code/server/src/swagger.js` (`schemes: ['http']`); recon §1.8 "No TLS". L3 DFD marks every ingress/east-west edge `[PLAIN]`.
 
 **Attack Scenario**:
-1. User accesses the application via the Client ALB on HTTP port 80
-2. An attacker on any network segment between the user and ALB intercepts all traffic
-3. API responses from the Server ALB (product data, error messages with internal details) are readable in plaintext
-4. If authentication were later added, credentials would also be transmitted in plaintext
+1. Attacker on any network path between client and ALB (public WiFi, upstream ISP, compromised router) passively captures traffic.
+2. Product data, Swagger API structure, and any future session tokens are readable in cleartext.
+3. Active MitM injects/modifies responses (no integrity protection).
 
-**Existing Mitigations**: The ALB module has the infrastructure for HTTPS (listener resource defined at line 20) -- it simply needs to be enabled and a certificate provisioned.
+**Existing Mitigations**: AWS-SDK calls from tasks to DynamoDB/S3/ECR ride AWS-managed TLS (`[ENC]` in L3) — but that only covers task→AWS-service, not the public app plane.
 
-**Recommendation**: Provision ACM certificates for both ALBs. Set `enable_https = true` in the root module for both `alb_server` and `alb_client`. Add HTTP-to-HTTPS redirect on the port 80 listener. Enforce TLS 1.2 minimum via an ALB security policy.
+**Recommendation**: Add an ACM certificate and an HTTPS:443 listener on both ALB modules; set `enable_https = true`; add an HTTP→HTTPS redirect (301); restrict SG ingress to :443; set Swagger `schemes: ['https']` and the SPA base URL to `https://`. Enforce TLS 1.2+ via a modern ALB security policy.
 
 ---
 
-### CRITICAL GRC-002: No Authentication or Authorization Controls on Any Endpoint
+### HIGH GRC-002: No Authentication or Authorization on Application Endpoints
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-002 |
-| Severity | CRITICAL |
+| Severity | HIGH |
 | Confidence | HIGH |
-| Affected Component(s) | Server ECS Service, Client ECS Service, Server ALB, Client ALB |
+| Affected Component(s) | C1 (Client SPA), C2 (Server API), C3 (Swagger); E1, E2, E3; R0 (anonymous user); TB1 |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.1 / ISO 27001 A.8.5 / NIST CSF PR.AA / PCI-DSS 8.3.1 |
+| Score | HIGH (SOC 2 CC6.1/CC6.2/CC6.3 logical-access criteria are foundational; total absence fails the domain) |
+| Cross-Framework | SOC 2 CC6.1, CC6.2, CC6.3 · NIST AC-3, IA-2, AC-2 · ISO A.5.15, A.5.16, A.8.5 |
 
-**Description**: The application has zero authentication or authorization. The `Login.vue` component is explicitly documented as cosmetic ("No auth was implemented, just a Vue.js demo component"). All API endpoints (`/status`, `/api/getAllProducts`, `/api/docs`) are publicly accessible without any credential, token, or session validation. CORS is configured with `app.use(cors())` allowing all origins. This violates access control requirements in every applicable framework.
+**Description**: There is no authentication or authorization anywhere in the application. `Login.vue`'s `onSubmit()` discards the entered credentials and routes to `/main`; the server has no middleware, guards, tokens, or sessions. Every endpoint (including the DynamoDB-backed `/api/getAllProducts` and the Swagger UI) is anonymous. SOC 2 CC6.1 (logical access), CC6.2 (registration/authorization before credential issuance), and CC6.3 (access modification/removal, least privilege) have no user-facing implementation to evidence.
 
-**Evidence**: Server application at `/Users/dev/amazon-ecs-fullstack-app-terraform/Code/server/src/app.js:10` uses `app.use(cors())` with no origin restrictions. No authentication middleware is imported or applied. The README explicitly states no authentication was implemented.
+**Evidence**: `Code/client/src/components/Login.vue:28` (`*No auth was implemented, just a Vue.js demo component`); `Code/server/src/app.js` (routes `/status`, `/api/getAllProducts`, `/api/docs` with no auth middleware); recon §1.3 "AuthN/AuthZ: None."
 
 **Attack Scenario**:
-1. Any internet user discovers the Server ALB DNS name (e.g., via DNS enumeration or Swagger docs)
-2. Attacker directly calls `/api/getAllProducts` and exfiltrates all product data
-3. Attacker accesses `/api/docs` to understand the full API surface for further exploitation
-4. No mechanism exists to identify, authenticate, or authorize any request
+1. Any internet user reaches every endpoint with no credential.
+2. Full product catalog is scrapable; Swagger UI exposes the API contract to aid further probing.
+3. In a production variant that adds any write path or user data, the same anonymous surface becomes a direct data-exposure/abuse vector.
 
-**Existing Mitigations**: None. Security groups restrict ECS task access to ALB-sourced traffic only, but the ALBs themselves are public and unauthenticated.
+**Existing Mitigations**: Machine-to-cloud identity exists (ECS task/execution roles authenticate to AWS) — but this is not user access control. For the *demo* dataset (non-personal catalog) the exposure is low; the gap is a production/compliance readiness blocker, not a live breach of sensitive data.
 
-**Recommendation**: Implement an identity provider (Amazon Cognito, Auth0, or Okta). Add authentication middleware to Express.js. Implement role-based access control. Configure CORS to allow only specific trusted origins. Consider ALB authentication integration for centralized enforcement.
+**Recommendation**: Introduce an authentication layer before any production use — e.g., an ALB OIDC/Cognito authenticate action at the edge, or app-level JWT/session middleware — with role-based authorization on the API, MFA for privileged/admin paths (NIST IA-2), and a documented user registration/deprovisioning process (CC6.2/CC6.3). Restrict Swagger UI to non-public/authenticated access.
 
 ---
 
-### CRITICAL GRC-003: Secrets Stored in Plaintext Terraform State -- No Secrets Management
+### HIGH GRC-003: IAM Over-Permissioning — Wildcard Actions and `iam:PassRole *`
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-003 |
-| Severity | CRITICAL |
+| Severity | HIGH |
 | Confidence | HIGH |
-| Affected Component(s) | CodePipeline, Terraform state, deployer workstation |
+| Affected Component(s) | R2 (ECS task role), R3 (DevOps role); TB3, TB4 |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.1, CC6.6 / ISO 27001 A.8.24 / NIST CSF PR.DS / PCI-DSS 3.6.1 |
+| Score | HIGH (least-privilege violation with broad blast radius — a standard SOC 2 CC6.3 / CIS IAM finding) |
+| Cross-Framework | SOC 2 CC6.1, CC6.3 · NIST AC-6, AC-6(1), AC-6(5), AC-5 · ISO A.8.2, A.5.15, A.5.18 |
 
-**Description**: The GitHub personal access token (`github_token`) is passed as a Terraform variable (marked `sensitive` but this only suppresses plan output) and stored in plaintext in the local Terraform state file. The state file has no remote backend, no encryption, and no access controls. Additionally, CodeBuild environment variables include the AWS Account ID and IAM role names in plaintext. No secrets management service (AWS Secrets Manager, SSM Parameter Store, HashiCorp Vault) is used anywhere.
+**Description**: The DevOps role grants `s3:*` / `ecs:*` / `codedeploy:*` / `logs:*` / `iam:PassRole` on `resources = ["*"]`, and the **ECS task (application runtime) role holds `iam:PassRole` on `*`** — an unusual and dangerous grant for an app role. This breaks least privilege (SOC 2 CC6.3, NIST AC-6). `iam:PassRole *` combined with service access is a well-known privilege-escalation primitive.
 
-**Evidence**: Variable declaration at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/variables.tf:24-28` marks `github_token` as sensitive. CodePipeline module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/CodePipeline/main.tf:29` passes `OAuthToken = var.github_token` directly. No `backend` block exists in `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/versions.tf`. CodeBuild module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/CodeBuild/main.tf:24-82` exposes account ID, role names, and ALB URLs as plaintext environment variables.
+**Evidence**: `Infrastructure/Modules/IAM/main.tf:175` and `:306` (wildcard actions + `iam:PassRole` on `*`); recon §1.5 (R2 has `iam:PassRole *`), §1.8 "IAM over-permissioning."
 
 **Attack Scenario**:
-1. A developer with access to the deployer workstation reads `terraform.tfstate`
-2. The GitHub OAuth token is extracted from the state file
-3. Attacker uses the token to access the GitHub repository, push malicious code, and trigger the CI/CD pipeline
-4. Malicious code executes with the DevOps IAM role's broad permissions
+1. Attacker gains code execution in the server container (any app RCE/SSRF foothold).
+2. Container assumes the task role via IMDS; `iam:PassRole *` lets it pass a higher-privileged role to an AWS service it can invoke.
+3. Privilege escalation and lateral movement across the account.
 
-**Existing Mitigations**: The `sensitive = true` flag prevents the token from appearing in `terraform plan` output. The `ignore_changes` lifecycle on the CodePipeline source stage prevents token diffs. These are insufficient for actual secret protection.
+**Existing Mitigations**: DynamoDB and S3 actions on the task role *are* resource-scoped to specific ARNs (recon §1.8) — partial least privilege. Fargate removes host-level access.
 
-**Recommendation**: Configure a remote Terraform backend (S3 + DynamoDB) with encryption and access controls. Migrate secrets to AWS Secrets Manager or SSM Parameter Store. Use CodePipeline's GitHub v2 (CodeStar Connections) source action which avoids storing OAuth tokens. Reference secrets in CodeBuild via `SECRETS_MANAGER` or `PARAMETER_STORE` environment variable types.
+**Recommendation**: Remove `iam:PassRole` from the task role entirely (an app runtime role should not pass roles). Scope the DevOps role to specific resource ARNs and the minimum action set per pipeline stage; replace `s3:*`/`ecs:*` with enumerated actions. Add an IAM Access Analyzer policy and enable AWS Config `iam-*` rules to catch wildcard drift.
 
 ---
 
-### CRITICAL GRC-004: Overly Permissive IAM Policies -- iam:PassRole on Wildcard Resource
+### HIGH GRC-004: No Security Audit Trail — CloudTrail, ALB Access Logs, VPC Flow Logs, Config all Absent
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-004 |
-| Severity | CRITICAL |
+| Severity | HIGH |
 | Confidence | HIGH |
-| Affected Component(s) | IAM DevOps Role, IAM ECS Task Role |
+| Affected Component(s) | Whole account/VPC (TB5, TB6); C4, C5 (no ALB logs); D5 (CloudWatch — task/build logs only) |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.2 / ISO 27001 A.8.2 / NIST CSF PR.AA / PCI-DSS 7.2.2 |
+| Score | HIGH (audit-evidence plane absent — a SOC 2 Type II cannot be evidenced without it; also a CIS AWS logging-baseline failure) |
+| Cross-Framework | SOC 2 CC7.1, CC7.2, CC7.3 · NIST AU-2, AU-3, AU-6, AU-9, AU-11, AU-12, SI-4 · ISO A.8.15, A.8.16 · (map: PCI 10.2/10.4, HIPAA §164.312(b) — N/A here) |
 
-**Description**: Both the DevOps IAM policy and the ECS Task Role policy include `iam:PassRole` with `Resource = "*"`. This means the DevOps role (used by CodeBuild, CodeDeploy, and CodePipeline) can pass any IAM role in the AWS account to any service, enabling privilege escalation to any role including administrative roles. The ECS task role also has this permission, which is unnecessary for an application that only reads from DynamoDB and S3. Additionally, multiple statements use wildcard resources for S3 actions, ECS actions, CloudWatch, and CodeDeploy configs.
+**Description**: The only logging in the IaC is `awslogs` for ECS tasks and CodeBuild (30-day retention). There is **no CloudTrail** (API-call audit), **no ALB access logs**, **no VPC flow logs**, and **no AWS Config / GuardDuty** declared. SOC 2 CC7.2/CC7.3 (monitor components for anomalies; evaluate security events) and the entire NIST AU family have no evidence source. This is the single biggest audit-readiness blocker: a SOC 2 Type II is an *evidence-over-time* report, and there is no security audit trail to sample.
 
-**Evidence**: IAM module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/IAM/main.tf:288-293` grants `iam:PassRole` on `"*"` in the DevOps role policy. Lines 318-323 grant the same on the ECS Task Role policy. Lines 179-187 grant S3 actions on `"*"`. Lines 263-285 grant broad ECS actions on `"*"`.
+**Evidence**: `Infrastructure/Modules/ECS/TaskDefinition/main.tf:45` (awslogs driver, 30-day retention); recon §1.8 "No ALB access logs, no VPC flow logs; no GuardDuty/Config/CloudTrail declared in IaC"; L1/L3 DFD show D5 receiving only task+build logs.
 
 **Attack Scenario**:
-1. An attacker compromises the CodeBuild environment (e.g., via malicious buildspec or dependency)
-2. Using `iam:PassRole` on `*`, the attacker passes an administrative IAM role to a new ECS task or Lambda function
-3. The attacker gains full administrative access to the AWS account
-4. All account resources are compromised
+1. Attacker performs reconnaissance, credential use, or data access against the account.
+2. No CloudTrail/flow-log/access-log record exists to detect, alert, or reconstruct the activity.
+3. Incident goes undetected; post-incident forensics and breach scoping are impossible (also cripples CC7.4/CC7.5).
 
-**Existing Mitigations**: Some actions are scoped to specific resources (CodeBuild project ARNs, ECR repository ARNs, CodeDeploy resources). However, the `iam:PassRole` wildcard negates these restrictions.
+**Existing Mitigations**: CloudWatch metrics + autoscaling alarms exist for operational (not security) monitoring (CC7.2 partial). ECS task logs capture app stderr.
 
-**Recommendation**: Scope `iam:PassRole` to the specific ECS execution and task role ARNs only. Scope S3 actions to the specific bucket ARNs. Scope ECS actions to the specific cluster and service ARNs. Remove `iam:PassRole` entirely from the ECS task role policy (the application does not need to pass roles). Apply the principle of least privilege to every IAM policy statement.
+**Recommendation**: Enable an org/account CloudTrail (management + data events for S3/DynamoDB) to an encrypted, access-logged S3 bucket with ≥1yr retention (AU-11); enable ALB access logs on C4/C5; enable VPC flow logs on the VPC; enable AWS Config with a conformance pack and GuardDuty for anomaly detection (SI-4). Centralize + alert (CC7.3). This is low-cost and unblocks most downstream audit evidence.
 
 ---
 
-### CRITICAL GRC-005: No Encryption at Rest Configuration for Data Stores
+### HIGH GRC-005: No Vulnerability Management — No Image Scanning, No SCA, Mutable Tags, Unpinned Base Images
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-005 |
-| Severity | CRITICAL |
+| Severity | HIGH |
 | Confidence | HIGH |
-| Affected Component(s) | S3 Assets Bucket, S3 CodePipeline Bucket, DynamoDB Table, SNS Topic |
+| Affected Component(s) | D4 (ECR), C10 (CodeBuild), X2/X3 (npm), X4 (base images); TB4 |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.6 / ISO 27001 A.8.24 / NIST CSF PR.DS / PCI-DSS 3.5.1 |
+| Score | HIGH (no vulnerability-detection capability across image + dependency supply chain) |
+| Cross-Framework | SOC 2 CC7.1 · NIST RA-5, SI-2, SI-2(2), CM-7, SR-3 · ISO A.8.8, A.8.28 · (map: PCI 6.3/11.3 — N/A here) |
 
-**Description**: No explicit encryption configuration exists for any data store. S3 buckets at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/S3/main.tf` have no `server_side_encryption_configuration` block. DynamoDB at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/Dynamodb/main.tf` has no `server_side_encryption` block (defaults to AWS-owned key with no customer control). SNS at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/SNS/main.tf` has no `kms_master_key_id`. While AWS provides default encryption for some services, reliance on AWS-owned keys does not satisfy compliance requirements for customer-controlled encryption, and S3 buckets created with this older provider version may not have automatic encryption enabled.
+**Description**: ECR repositories are `MUTABLE` with **no `scan_on_push`**; Docker base images are unpinned (`node:latest`, `nginx:latest`) with no digest pinning; and there is no software composition analysis (SCA)/SBOM in the pipeline. SOC 2 CC7.1 (detect newly discovered vulnerabilities) and NIST RA-5/SI-2 have no implementation. Mutable tags mean a `:latest` push can silently replace a running image (integrity gap).
 
-**Evidence**: S3 module (`/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/S3/main.tf`) is 15 lines total -- bucket name, ACL private, force_destroy, and tags. No encryption. DynamoDB module (`/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/Dynamodb/main.tf`) has no `server_side_encryption` block. SNS module (`/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/SNS/main.tf`) is 3 lines -- just a topic name.
+**Evidence**: `Infrastructure/Modules/ECR/main.tf` (MUTABLE, no scan-on-push); `Code/*/Dockerfile` (unpinned `:latest`); recon §1.8 "ECR: MUTABLE tags, no scan_on_push. Base images unpinned; no SBOM/SCA."; §1.10 notes aws-sdk v2 + Vue 2 are EOL/maintenance.
 
 **Attack Scenario**:
-1. An attacker gains read access to S3 buckets (e.g., via misconfigured bucket policy or IAM policy)
-2. CI/CD artifacts in the CodePipeline bucket are readable in plaintext, potentially exposing build outputs and deployment configurations
-3. Without customer-managed encryption keys, there is no ability to rotate keys, audit key usage, or revoke access via key policy
-4. Compliance auditor requests evidence of encryption at rest -- none can be provided
+1. A vulnerable transitive npm package or base-image CVE ships to production undetected (no scan gate).
+2. Mutable tag allows an attacker with registry write (or a compromised build) to overwrite an image tag pointing at running tasks.
+3. Exploitable vulnerability persists with no detection/remediation loop.
 
-**Existing Mitigations**: AWS provides default encryption for DynamoDB (AWS-owned key) and newer S3 buckets (SSE-S3). However, these are not customer-managed and do not provide key rotation control or audit capabilities required by most frameworks.
+**Existing Mitigations**: Fargate patches the host/runtime; blue/green rollback limits a bad deploy's blast radius. Neither addresses image/dependency vulnerabilities.
 
-**Recommendation**: Add `server_side_encryption_configuration` with SSE-KMS to both S3 buckets. Add `server_side_encryption` block with KMS key to DynamoDB. Add `kms_master_key_id` to SNS topic. Create a KMS key with appropriate key policy and rotation enabled. Document the encryption strategy.
+**Recommendation**: Set ECR `image_tag_mutability = IMMUTABLE` and `scan_on_push = true` (or Inspector enhanced scanning); pin base images by digest; add SCA (npm audit / Trivy / Dependabot) and generate an SBOM in `buildspec.yml` with a fail-the-build severity gate; establish a patch cadence (SI-2) and plan migration off EOL aws-sdk v2 / Vue 2 (SA-22).
 
 ---
 
-### HIGH GRC-006: No Web Application Firewall (WAF) Protection
+### HIGH GRC-006: CI/CD Change Management — No Approval Gate, Auto-Deploy on `main`, Privileged Build
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-006 |
 | Severity | HIGH |
 | Confidence | HIGH |
-| Affected Component(s) | Client ALB, Server ALB |
+| Affected Component(s) | C9 (CodePipeline), C10 (CodeBuild, privileged), C11 (CodeDeploy), X1 (GitHub), E4; TB4; R3 |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.1, CC6.8 / ISO 27001 A.8.20 / NIST CSF PR.PS / PCI-DSS 6.4.1 |
+| Score | HIGH (change-management control CC8.1 lacks the segregation/approval that audits require) |
+| Cross-Framework | SOC 2 CC8.1, CC3.4 · NIST CM-3, CM-3(2), CM-5, AC-6 · ISO A.8.32, A.8.4, A.8.31 |
+| Related | GRC-003 (DevOps role), GRC-005 (build supply chain) |
 
-**Description**: No AWS WAF is configured on either ALB. The ALB security groups allow ingress from `0.0.0.0/0` on port 80 with no application-layer filtering, rate limiting, bot detection, or OWASP Top 10 protection. The Swagger API documentation is publicly accessible, providing attackers with a complete map of the API surface.
+**Description**: `PollForSourceChanges = true` on `main` means any merge auto-builds and auto-deploys with **no manual approval gate** and no automated test/quality gate before production. CodeBuild runs `privileged_mode = true` (Docker-in-Docker) on a dated managed image (`standard:4.0`). SOC 2 CC8.1 (authorize, test, approve changes) is only partially met: the mechanics (IaC, blue/green) exist, but the *authorization and testing gates* auditors sample do not.
 
-**Evidence**: Security group configuration at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/main.tf:90-107` sets `cidr_blocks_ingress = ["0.0.0.0/0"]` for both ALB security groups. No `aws_wafv2_web_acl` or `aws_wafv2_web_acl_association` resources exist in the project.
+**Evidence**: `Infrastructure/Modules/CodePipeline/main.tf:20,33` (`PollForSourceChanges`, no approval stage); recon §1.3 "any merge to `main` auto-builds and deploys," "CodeBuild `privileged_mode = true`"; TA3 profile (§1.6) — insider/compromised dev, no deploy approval gate.
 
 **Attack Scenario**:
-1. Attacker discovers the Server ALB endpoint and accesses `/api/docs` to enumerate all API endpoints
-2. Attacker launches automated scanning tools against the API without rate limiting
-3. Application-layer attacks (injection, path traversal, SSRF) are not filtered
-4. DDoS at the application layer is only mitigated by autoscaling (max 4 tasks)
+1. A developer with `main` push access (or a compromised account) merges malicious code.
+2. Pipeline auto-builds and deploys to production with no human approval or test gate.
+3. Malicious change is live; privileged build container widens the compromise surface.
 
-**Existing Mitigations**: ECS autoscaling (max 4 tasks) provides minimal DDoS resilience. Security groups restrict ECS task access to ALB-only traffic.
+**Existing Mitigations**: CodeDeploy blue/green with auto-rollback on `DEPLOYMENT_FAILURE`; SNS deploy notifications; branch-based triggering. These cover *availability* of a bad deploy, not *authorization* of a malicious one.
 
-**Recommendation**: Deploy AWS WAFv2 with managed rule groups (AWS Managed Rules for Common Threats, Known Bad Inputs, SQL Injection, XSS). Associate WAF WebACL with both ALBs. Implement rate limiting rules. Consider restricting Swagger endpoint access to internal networks only.
+**Recommendation**: Add a manual approval stage (or protected-branch + required PR reviews + required status checks) before the deploy stage (CC8.1, CM-5); add automated test/lint/security gates in the build (CM-3(2)); remove `privileged_mode` unless Docker-in-Docker is strictly required and upgrade the CodeBuild image; separate the pipeline that can *approve* from the one that *builds* (segregation of duties, AC-5).
 
 ---
 
-### HIGH GRC-007: No Security Monitoring or Detection Services Deployed
+### HIGH GRC-007: Secrets Management — GitHub PAT in Unencrypted Local Terraform State, No Vault, No Rotation
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-007 |
 | Severity | HIGH |
 | Confidence | HIGH |
-| Affected Component(s) | VPC, ECS Cluster, CloudWatch, all AWS resources |
+| Affected Component(s) | D6 (local Terraform state), X1 (GitHub PAT), R5 (operator); TB4 |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC7.1, CC7.2 / ISO 27001 A.8.15-16 / NIST CSF DE.CM / PCI-DSS 10.2.1 |
+| Score | HIGH (long-lived credential stored plaintext at rest with no rotation — sole supply-chain trust anchor) |
+| Cross-Framework | SOC 2 CC6.1 · NIST SC-12, IA-5, IA-5(6) · ISO A.8.24, A.5.17 |
 
-**Description**: No AWS security monitoring services are enabled: no CloudTrail (API audit logging), no GuardDuty (threat detection), no AWS Config (configuration compliance), no Security Hub (security posture dashboard), no VPC Flow Logs (network traffic analysis). CloudWatch Logs captures container output with 30-day retention but no alerting rules exist. The ECS cluster has no Container Insights. The SNS topic for deployment notifications has no subscribers.
+**Description**: The GitHub PAT (the single supply-chain trust anchor) is passed as a `sensitive` Terraform variable but persisted into **local, unencrypted `terraform.tfstate`** on the operator workstation and into the CodePipeline source config, with no rotation. There is no Secrets Manager/SSM/KMS usage; `taskdef.json` `secretOptions: null`. SOC 2 CC6.1 and NIST SC-12/IA-5 (authenticator management) have no managed secrets implementation; the design has no path to inject future runtime secrets safely.
 
-**Evidence**: No `aws_cloudtrail`, `aws_guardduty_detector`, `aws_config_configuration_recorder`, `aws_securityhub_account`, or `aws_flow_log` resources exist in the project. ECS cluster at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/ECS/Cluster/main.tf` has no `setting` block for Container Insights. SNS module has no subscriber resources.
+**Evidence**: `Infrastructure/Modules/CodePipeline/main.tf:29`; `README.md:37` (local state holds `github_token`); recon §1.3 "No Secrets Manager/SSM/KMS," §1.4 D6 "unencrypted, no locking," §1.8 "Terraform state local + unencrypted with the PAT inside."
 
 **Attack Scenario**:
-1. An attacker compromises the application or AWS resources
-2. No alerts are generated because no monitoring is configured
-3. The breach goes undetected for an extended period
-4. Without CloudTrail, there is no forensic trail of API calls made by the attacker
-5. Auditor requests evidence of continuous monitoring -- none exists
+1. Operator workstation is compromised or the `terraform.tfstate` file is inadvertently shared/committed.
+2. Plaintext PAT is extracted, granting repo access (source tampering → auto-deploy via GRC-006).
+3. No rotation means the exposure window is open indefinitely.
 
-**Existing Mitigations**: CloudWatch Logs capture container stdout/stderr with 30-day retention. Autoscaling CloudWatch alarms exist but only for CPU/memory thresholds.
+**Existing Mitigations**: PAT is marked `sensitive` and excluded from plan drift via `ignore_changes`; `.gitignore` excludes `terraform.tfstate*` (reduces accidental commit). It is a design/handling concern, not a committed secret (recon §1.3 confirmed clean tree).
 
-**Recommendation**: Enable CloudTrail with S3 log delivery and CloudWatch integration. Enable GuardDuty for threat detection. Enable AWS Config with conformance packs. Enable VPC Flow Logs. Enable Container Insights on the ECS cluster. Configure CloudWatch alarms for security-relevant metrics. Subscribe appropriate recipients to the SNS topic.
+**Recommendation**: Move to a remote encrypted Terraform backend (S3 + SSE-KMS + DynamoDB state locking); replace the long-lived PAT with GitHub's CodeConnections/OAuth app (short-lived tokens) or a fine-grained PAT stored in Secrets Manager with rotation (IA-5); never persist credentials to local state. Adopt Secrets Manager/SSM+KMS as the standard injection path for any future runtime secret.
 
 ---
 
-### HIGH GRC-008: No Incident Response Plan or Procedures
+### HIGH GRC-008: No Governance Program — Policies, Risk Assessment, Incident Response, Access Reviews, Training All Absent
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-008 |
 | Severity | HIGH |
 | Confidence | HIGH |
-| Affected Component(s) | Organization-wide (administrative control) |
+| Affected Component(s) | Whole system / organization |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC7.3 / ISO 27001 A.5.24 / NIST CSF RS.MA / PCI-DSS 12.10.1 |
+| Score | HIGH (SOC 2 is ~50% organizational controls; the entire control environment, risk-assessment, monitoring, and incident-response program is absent — not audit-ready) |
+| Cross-Framework | SOC 2 CC1.1-CC1.5, CC2.2, CC2.3, CC3.1-CC3.4, CC4.1, CC4.2, CC5.3, CC7.4, CC9.1, CC9.2 · NIST PL-2, RA-3, IR-1, IR-4, IR-8, AT-2, PS-3 · ISO A.5.1, A.5.24, A.6.3 |
+| Related | GRC-011 (vendor management, CC9.2) |
 
-**Description**: No incident response plan, procedures, or playbooks exist. There is no documented process for identifying, containing, eradicating, or recovering from security incidents. No escalation procedures, communication templates, or roles and responsibilities are defined. The Blue/Green deployment rollback capability provides some operational incident response for deployment failures but does not address security incidents.
+**Description**: The repository is a demo with **no security program**: no policies (information security, acceptable use, data classification, change management), no risk-assessment process, no incident-response plan, no monitoring/deficiency-tracking process, no security roles/ownership (recon: "no TM owner assigned"), no personnel security or awareness training. This collapses the entire SOC 2 organizational spine — CC1 (control environment), CC2 (communication), CC3 (risk assessment), CC4 (monitoring), CC5.3 (policy deployment), CC7.4 (incident response), CC9 (risk mitigation/vendor). README explicitly states corners are cut "due to demo proposals."
 
-**Evidence**: No incident response documentation exists in the repository. CONTRIBUTING.md references reporting security issues but provides no internal response process.
+**Evidence**: recon §1.2 "No stated security requirements, threat model, data-classification policy, or compliance scope"; §1.10 coverage `document-metadata.ownership: partial` (no TM owner); absence of any `SECURITY.md`, policy docs, or IR runbook in the 85-file tree.
 
-**Attack Scenario**:
-1. A security incident occurs (e.g., compromised credentials, data exposure, malicious code in pipeline)
-2. No defined procedures exist for who to contact, how to contain the incident, or how to communicate with stakeholders
-3. Response is ad-hoc, delayed, and potentially ineffective
-4. Regulatory notification requirements (where applicable) may be missed
+**Attack Scenario**: (governance, not technical) An auditor requests the information-security policy, the most recent risk assessment, the access-review log, and the incident-response plan on day one of a SOC 2 Type II. None exist → the engagement stops before technical controls are even sampled.
 
-**Existing Mitigations**: Blue/Green deployment with auto-rollback handles deployment failures. SNS topic exists (though unsubscribed) for deployment event notifications.
+**Existing Mitigations**: This threat-model assessment itself is a first risk-assessment artifact (CC3.2 seed). Some technical control activities exist (CC5.1/CC5.2 partial).
 
-**Recommendation**: Develop a formal incident response plan covering: incident classification, roles and responsibilities, detection and analysis procedures, containment strategies, eradication steps, recovery procedures, post-incident review process, and communication templates (internal and external). Test the plan through tabletop exercises.
+**Recommendation**: Stand up the governance baseline before pursuing SOC 2: assign a security owner (CC1.3); author the core policy set (InfoSec, acceptable use, data classification, access control, change management, incident response) (CC5.3, PL-2); implement an annual + change-triggered risk-assessment process (CC3.2, RA-3); write and test an incident-response plan (CC7.4, IR-8); define access-review cadence (CC6.3); add security awareness training (CC1.4, AT-2). This is the long pole — plan 3-6 months of program build.
 
 ---
 
-### HIGH GRC-009: CI/CD Pipeline Lacks Security Controls -- No Approval Gates or Branch Protection
+### MEDIUM GRC-009: Encryption at Rest Not Hardened — Default AWS-Owned Keys, No S3 Public-Access-Block/Versioning
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-009 |
-| Severity | HIGH |
+| Severity | MEDIUM |
 | Confidence | HIGH |
-| Affected Component(s) | CodePipeline, CodeBuild, GitHub integration |
+| Affected Component(s) | D1 (DynamoDB), D2 (S3 assets), D3 (S3 artifacts), D4 (ECR) |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC8.1, CC6.8 / ISO 27001 A.8.4, A.8.32 / NIST CSF PR.PS / PCI-DSS 6.5.1 |
+| Score | MEDIUM (baseline encryption exists via AWS defaults; gap is CMK control + S3 hardening, not raw plaintext) |
+| Cross-Framework | SOC 2 CC6.1 · NIST SC-28, SC-28(1), SC-12 · ISO A.8.24 |
 
-**Description**: The CI/CD pipeline has no security controls: no manual approval stage between build and deploy, no branch protection rules enforced via Terraform, no required code reviews, and `PollForSourceChanges = true` (polling rather than webhook with signature verification). The buildspec is sourced from the repository itself, meaning any developer with commit access can inject arbitrary commands that execute with the DevOps IAM role. CodeBuild runs in `privileged_mode = true`, granting Docker daemon access.
+**Description**: All AWS stores get AWS-owned default encryption at rest, but there is **no explicit SSE-KMS/customer-managed key**, no S3 **public-access-block**, no S3 **versioning**, and no bucket policy hardening. DynamoDB has no explicit KMS. SOC 2 CC6.1 and NIST SC-28 are *partially* met (data is encrypted) but lack the key-control and configuration hardening auditors expect, and the missing public-access-block leaves a bucket-exposure risk if an ACL/policy is later misconfigured.
 
-**Evidence**: CodePipeline at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/CodePipeline/main.tf` has three stages (Source, Build, Deploy) with no approval stage. CodeBuild at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/CodeBuild/main.tf:22` sets `privileged_mode = true`. The buildspec path at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/variables.tf:43-46` defaults to `./Infrastructure/Templates/buildspec.yml` (repository-sourced).
+**Evidence**: recon §1.4 D1 "default (AWS-owned) encryption, no explicit SSE-KMS," D2 "no SSE block, no public-access-block, no versioning"; §1.8 "S3: no server-side-encryption block, no public-access-block, no versioning"; L3 DFD marks stores `[ENC]` with "AWS-managed default / no explicit KMS."
 
 **Attack Scenario**:
-1. A malicious or compromised developer modifies the buildspec to include exfiltration commands
-2. Push to main branch automatically triggers the pipeline (no approval required)
-3. CodeBuild executes the malicious buildspec with the DevOps IAM role and Docker privileges
-4. Attacker exfiltrates secrets, deploys backdoored containers, or escalates privileges via `iam:PassRole`
+1. A future change (or human error) sets a permissive bucket ACL/policy on D2/D3.
+2. Without an account/bucket public-access-block as a backstop, objects become internet-readable.
+3. No versioning means overwrite/deletion is unrecoverable; no CMK means no key-level access separation or rotation control.
 
-**Existing Mitigations**: Blue/Green deployment with auto-rollback on failure provides some protection against obviously broken deployments. The `ignore_changes` lifecycle prevents accidental token exposure in plan output.
+**Existing Mitigations**: AWS-owned-key encryption is on by default for S3/DynamoDB/ECR (`[ENC]`); S3 `acl=private` is set.
 
-**Recommendation**: Add a manual approval stage in CodePipeline between Build and Deploy. Enforce GitHub branch protection (require pull request reviews, require status checks, restrict direct pushes to main). Move buildspec definition to the CodeBuild project itself (inline) rather than sourcing from the repository. Disable `privileged_mode` if Docker-in-Docker is not required (use Kaniko or buildah instead). Implement SAST/DAST scanning in the build stage.
+**Recommendation**: Add explicit `aws_s3_bucket_server_side_encryption_configuration` with an SSE-KMS CMK; enable `aws_s3_bucket_public_access_block` (all four flags true) at bucket and account level; enable versioning on D2/D3; set DynamoDB `server_side_encryption` to a CMK and enable ECR KMS encryption (SC-28(1), SC-12).
 
 ---
 
-### HIGH GRC-010: No Data Backup or Recovery Capability
+### MEDIUM GRC-010: No WAF, Rate Limiting, or DoS Protection on Public ALBs
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-010 |
-| Severity | HIGH |
+| Severity | MEDIUM |
 | Confidence | HIGH |
-| Affected Component(s) | DynamoDB Table, S3 Buckets |
+| Affected Component(s) | C4 (Client ALB), C5 (Server/API ALB); E1, E2; TB1 |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC7.4 / ISO 27001 A.5.30, A.8.13 / NIST CSF PR.IR, RC.RP / PCI-DSS 9.5.1 |
+| Score | MEDIUM (availability + boundary-protection gap on internet-facing L7 surface) |
+| Cross-Framework | SOC 2 CC6.6, A1.1 · NIST SC-5, SC-7, SC-7(5) · ISO A.8.20, A.8.21 |
 
-**Description**: No backup or recovery mechanisms are configured. DynamoDB Point-in-Time Recovery (PITR) is not enabled. S3 versioning is not enabled. S3 buckets have `force_destroy = true`, which allows Terraform to delete buckets containing objects without confirmation. No disaster recovery plan or backup schedule is documented.
+**Description**: Both internet-facing ALBs (SG `0.0.0.0/0:80`) have no WAF, no rate limiting, and no bot/DoS control. Open CORS (`app.use(cors())`) reflects any origin. SOC 2 CC6.6 (restrict access through boundaries) is partially met by network segmentation but lacks L7 protection; Availability A1.1 is pressured because autoscaling is capped at 4 tasks, so a flood can exhaust capacity and drive cost.
 
-**Evidence**: DynamoDB module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/Dynamodb/main.tf` has no `point_in_time_recovery` block. S3 module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/S3/main.tf:11` sets `force_destroy = true` and has no `versioning` block.
+**Evidence**: `Infrastructure/main.tf:90,100` (SG `0.0.0.0/0:80`); `Code/server/src/app.js:10` (`app.use(cors())`); recon §1.8 "No WAF, no rate limiting, no bot control"; TA2 profile (§1.6) "no WAF/rate limit; autoscaling capped at 4 tasks."
 
 **Attack Scenario**:
-1. An operator accidentally runs `terraform destroy` or deletes critical data
-2. S3 buckets (including CI/CD artifacts and application assets) are irreversibly deleted due to `force_destroy = true`
-3. DynamoDB table data is lost with no recovery option (no PITR)
-4. Application becomes non-functional with no path to data recovery
+1. Bot/botnet floods the public API/SPA endpoints.
+2. Autoscaling hits its max-4 ceiling; latency/availability degrade; cost rises.
+3. No L7 filtering blocks scanners, credential-stuffing (if auth is later added), or injection probes.
 
-**Existing Mitigations**: None for data recovery. Blue/Green deployments protect against bad application deployments but not data loss.
+**Existing Mitigations**: Multi-AZ ALBs + target-tracking autoscaling (min1/max4) absorb moderate load; tasks are in private subnets reachable only from the ALB SG.
 
-**Recommendation**: Enable DynamoDB PITR (`point_in_time_recovery { enabled = true }`). Enable S3 versioning on both buckets. Remove `force_destroy = true` from production S3 buckets. Implement S3 lifecycle policies for version retention. Document and test backup and recovery procedures. Consider cross-region replication for critical data.
+**Recommendation**: Attach AWS WAF (managed rule groups + rate-based rules) to both ALBs; tighten CORS to an explicit allow-list of origins; consider Shield Advanced if DoS is a material concern; raise/parameterize the autoscaling ceiling with a documented capacity plan (A1.1).
 
 ---
 
-### HIGH GRC-011: S3 Buckets Lack Public Access Block and Security Configuration
+### MEDIUM GRC-011: Third-Party / Vendor Risk Unmanaged; EOL Dependencies
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-011 |
-| Severity | HIGH |
+| Severity | MEDIUM |
 | Confidence | HIGH |
-| Affected Component(s) | S3 Assets Bucket, S3 CodePipeline Bucket |
+| Affected Component(s) | X1 (GitHub), X2/X3 (npm server+client), X4 (base images), X5 (CodeBuild image); C1, C2 |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.1, CC6.7 / ISO 27001 A.8.3 / NIST CSF PR.DS / PCI-DSS 1.3.1 |
+| Score | MEDIUM (no vendor due-diligence process; concrete EOL/maintenance-status dependencies in the stack) |
+| Cross-Framework | SOC 2 CC9.2 · NIST SR-3, SR-6, SA-22 · ISO A.5.19, A.5.21, A.5.23 |
+| Related | GRC-005 (SCA/image scanning), GRC-008 (CC9 program) |
 
-**Description**: S3 buckets are created with `acl = "private"` but no `aws_s3_bucket_public_access_block` resource is configured. Without the public access block, the buckets can be made publicly accessible through bucket policies or ACL changes (either accidentally or maliciously). The S3 module is only 15 lines and lacks versioning, encryption, logging, lifecycle policies, and CORS configuration.
+**Description**: No vendor management or third-party risk process exists for the external dependencies the system trusts: GitHub (source + PAT), npm registries, public ECR base images, and the CodeBuild managed image. Two core dependencies are EOL/maintenance: **aws-sdk v2** (superseded by v3) and **Vue 2** (EOL). SOC 2 CC9.2 (assess and manage vendor risk) and NIST SR-3/SR-6 have no process; SA-22 (unsupported components) is triggered by the EOL libraries.
 
-**Evidence**: S3 module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/S3/main.tf` contains only a bucket resource with name, private ACL, force_destroy, and tags. No `aws_s3_bucket_public_access_block`, `aws_s3_bucket_versioning`, `aws_s3_bucket_server_side_encryption_configuration`, or `aws_s3_bucket_logging` resources exist.
+**Evidence**: recon §1.3 external integrations (aws-sdk v2, axios, cors, public ECR base images); §1.10 "aws-sdk v2 + Vue 2 are EOL/maintenance"; §1.8 "no SCA/SBOM."
 
 **Attack Scenario**:
-1. A misconfiguration (accidental or malicious) adds a public bucket policy or changes the ACL
-2. Without public access block, the change takes effect immediately
-3. CI/CD artifacts or application assets become publicly accessible
-4. Sensitive build outputs (task definitions, deployment configs) are exposed
+1. An EOL dependency receives no security patches; a disclosed CVE has no upstream fix.
+2. A compromised/typosquatted npm package or base image is pulled at build (no provenance check).
+3. No vendor monitoring means the org is unaware of a supplier breach affecting GitHub/registry.
 
-**Existing Mitigations**: ACL is set to "private" by default.
+**Existing Mitigations**: Dependencies are enumerated in the manifests; `.gitignore` excludes `node_modules`.
 
-**Recommendation**: Add `aws_s3_bucket_public_access_block` for both buckets with all four settings enabled (`block_public_acls`, `block_public_policy`, `ignore_public_acls`, `restrict_public_buckets`). Add bucket-level logging. Add versioning. Add server-side encryption. Remove deprecated `acl` parameter and use `aws_s3_bucket_ownership_controls` instead.
+**Recommendation**: Establish a vendor inventory + risk-tiering process (CC9.2); collect SOC 2 reports / attestations for critical suppliers where applicable; plan migration off aws-sdk v2 → v3 and Vue 2 → Vue 3 (SA-22); pair with GRC-005's SCA/SBOM and base-image pinning for supply-chain provenance (SR-3).
 
 ---
 
-### HIGH GRC-012: ECR Image Tags Mutable with No Vulnerability Scanning
+### MEDIUM GRC-012: Availability & Resilience Gaps — Single-NAT SPOF, No DR Testing, No DynamoDB PITR
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-012 |
-| Severity | HIGH |
+| Severity | MEDIUM |
 | Confidence | HIGH |
-| Affected Component(s) | ECR Server Repository, ECR Client Repository |
+| Affected Component(s) | C7, C8 (ECS services), C12 (autoscaling), D1 (DynamoDB); TB6 (VPC/NAT) |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.8, CC7.1 / ISO 27001 A.8.7 / NIST CSF PR.PS / PCI-DSS 6.3.2 |
+| Score | MEDIUM (multi-AZ compute exists, but a single NAT SPOF, no backup/PITR, and no recovery testing undercut the Availability category) |
+| Cross-Framework | SOC 2 A1.1, A1.2, A1.3 · NIST CP-9, CP-9(1), CP-10 · ISO A.8.13, A.8.14, A.5.30 |
 
-**Description**: ECR repositories are configured with `image_tag_mutability = "MUTABLE"`, allowing image tags (including the "latest" tag used by the pipeline) to be overwritten. Combined with no image scanning enabled, this means a compromised or malicious image could replace a production image without detection. No `image_scanning_configuration` is defined.
+**Description**: Compute is multi-AZ with autoscaling and blue/green rollback, but egress runs through a **single NAT gateway (one AZ)** — an availability single-point-of-failure — and there is **no DynamoDB point-in-time recovery (PITR)**, no backup strategy, and **no DR/recovery testing**. SOC 2 A1.2 (environmental protections/redundancy) is partial; A1.3 (test recovery procedures) is Not Implemented — blue/green auto-rollback is a *deploy*-level control, not a tested DR plan.
 
-**Evidence**: ECR module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/ECR/main.tf:10` sets `image_tag_mutability = "MUTABLE"`. No `image_scanning_configuration` block exists. CodeBuild environment variable at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/CodeBuild/main.tf:40-42` hardcodes `IMAGE_TAG = "latest"`.
+**Evidence**: recon §1.10 "Single NAT gateway (one AZ) — availability single-point"; §1.4 D1 "no PITR, no deletion protection"; §1.8 "single NAT is the redundancy gap"; §1.9/§1.8 no DR testing declared.
 
-**Attack Scenario**:
-1. An attacker with ECR push access (via compromised DevOps role) pushes a malicious image with the "latest" tag
-2. The malicious image overwrites the legitimate production image
-3. Next ECS task deployment pulls and runs the malicious image
-4. No vulnerability scan alerts on the compromised image
+**Attack Scenario**: (availability) The single NAT's AZ fails → all task egress (image pulls, AWS API calls via public endpoints, logging) is disrupted with no automatic failover. A bad write/delete to DynamoDB is unrecoverable without PITR/backups.
 
-**Existing Mitigations**: None for image integrity. Blue/Green deployment with rollback provides recovery if the malicious image causes obvious failures.
+**Existing Mitigations**: Multi-AZ ALBs and tasks; target-tracking autoscaling + CloudWatch alarms; CodeDeploy blue/green auto-rollback; DynamoDB `PAY_PER_REQUEST` (no capacity exhaustion).
 
-**Recommendation**: Set `image_tag_mutability = "IMMUTABLE"`. Enable `image_scanning_configuration { scan_on_push = true }`. Replace the "latest" tag strategy with unique tags (git commit SHA or build number). Add ECR lifecycle policies to manage image retention. Consider enabling ECR enhanced scanning for deeper vulnerability analysis.
+**Recommendation**: Deploy one NAT gateway per AZ (or VPC endpoints to remove NAT dependence for AWS-service traffic); enable DynamoDB PITR and deletion protection; define + periodically test a documented recovery plan (A1.3, CP-10, CP-9(1)); add ICT-readiness-for-continuity testing (ISO A.5.30).
 
 ---
 
-### MEDIUM GRC-013: No Information Security Policy or Governance Documentation
+### LOW GRC-013: Insecure Data Disposal — `force_destroy` Buckets, No Lifecycle/Retention Policy
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-013 |
-| Severity | MEDIUM |
+| Severity | LOW |
 | Confidence | HIGH |
-| Affected Component(s) | Organization-wide (administrative control) |
+| Affected Component(s) | D2 (S3 assets), D3 (S3 artifacts) |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC1.1, CC5.3 / ISO 27001 A.5.1 / NIST CSF GV.PO / PCI-DSS 12.1.1 |
+| Score | LOW (data-lifecycle/disposal hygiene; low impact given non-personal demo data) |
+| Cross-Framework | SOC 2 CC6.5, C1.2 · NIST MP-6, SI-12 · ISO A.8.10 |
 
-**Description**: No information security policy, acceptable use policy, access control policy, data classification policy, change management policy, or any other governance documentation exists. While this is expected for a demo project, any organization using this as a production foundation must establish these policies before pursuing any compliance certification.
+**Description**: Both S3 buckets set `force_destroy = true` (allows non-empty-bucket deletion) with no lifecycle, retention, or secure-disposal policy. SOC 2 CC6.5 (discontinue protections over disposed assets) / C1.2 (dispose of confidential information) and NIST MP-6 have no managed process; `force_destroy` is an anti-pattern that enables accidental/malicious bulk deletion.
 
-**Evidence**: Repository contains CODE_OF_CONDUCT.md, CONTRIBUTING.md, LICENSE, and README.md. None of these constitute security governance documentation. No `/docs`, `/policies`, or similar directory exists.
+**Evidence**: recon §1.4 D2/D3 "`force_destroy=true`"; §1.8 "force_destroy = true on both buckets."
 
-**Attack Scenario**:
-1. An auditor requests the organization's information security policy as the first audit artifact
-2. No policy exists to present
-3. Audit engagement cannot proceed -- policy documentation is a prerequisite for SOC 2 Type I/II, ISO 27001 certification, and PCI-DSS validation
-4. Without policies, there are no standards for employees or contractors to follow
+**Attack Scenario**: A `terraform destroy` (accidental or via compromised operator, GRC-007) wipes both buckets including build artifacts with no versioning backstop (compounds GRC-009).
 
-**Existing Mitigations**: None.
+**Existing Mitigations**: `acl=private` on buckets; artifact bucket is pipeline-internal.
 
-**Recommendation**: Develop at minimum: Information Security Policy, Access Control Policy, Data Classification and Handling Policy, Change Management Policy, Incident Response Policy, Acceptable Use Policy, Business Continuity Plan, Vendor Management Policy, Data Retention and Disposal Policy, and Encryption Policy. These can be based on templates from SANS, NIST, or ISO 27001 Annex A mapping.
+**Recommendation**: Remove `force_destroy` on production buckets; add S3 lifecycle + retention policies and object-lock/versioning where artifacts must be retained; define a documented media-sanitization/disposal procedure (MP-6, A.8.10).
 
 ---
 
-### MEDIUM GRC-014: No VPC Flow Logs or Network Traffic Auditing
+### LOW GRC-014: Verbose Error Handling Leaks Internal Detail
 
 | Field | Value |
 |-------|-------|
 | ID | GRC-014 |
-| Severity | MEDIUM |
-| Confidence | HIGH |
-| Affected Component(s) | VPC, all subnets |
-| Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC7.2 / ISO 27001 A.8.16 / NIST CSF DE.CM / PCI-DSS 10.6.1 |
-
-**Description**: No VPC Flow Logs are configured, meaning there is no record of network traffic flows within the VPC. Without flow logs, it is impossible to detect network anomalies, investigate security incidents involving network traffic, or demonstrate network monitoring to auditors.
-
-**Evidence**: Networking module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/Networking/main.tf` defines VPC, subnets, IGW, NAT Gateway, and route tables but no `aws_flow_log` resource.
-
-**Attack Scenario**:
-1. An attacker establishes a connection to ECS tasks through a vulnerability
-2. Data exfiltration occurs over the network
-3. No flow logs exist to detect unusual outbound traffic patterns
-4. Forensic investigation has no network-level evidence to analyze
-
-**Existing Mitigations**: CloudWatch Logs capture application-level output from containers.
-
-**Recommendation**: Enable VPC Flow Logs for the VPC with delivery to CloudWatch Logs or S3. Configure flow log format to include all available fields. Set up CloudWatch Insights queries or Athena queries for flow log analysis. Implement alerting on anomalous traffic patterns.
-
----
-
-### MEDIUM GRC-015: Container Definitions Lack Security Hardening
-
-| Field | Value |
-|-------|-------|
-| ID | GRC-015 |
-| Severity | MEDIUM |
-| Confidence | HIGH |
-| Affected Component(s) | ECS Task Definitions (server and client) |
-| Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.8 / ISO 27001 A.8.9 / NIST CSF PR.PS / PCI-DSS 2.2.1 |
-
-**Description**: ECS task definitions lack container-level security hardening. No `readonlyRootFilesystem` setting (containers can write to their filesystem). No `user` specified (containers run as root by default). No resource `ulimits` defined beyond CPU/memory. No health check defined in the container definition (relies on ALB health checks only).
-
-**Evidence**: Task definition at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/ECS/TaskDefinition/main.tf:17-41` defines container with image, name, network mode, port mappings, and logging only. No `readonlyRootFilesystem`, `user`, `ulimits`, or `healthCheck` properties.
-
-**Attack Scenario**:
-1. An attacker exploits a vulnerability in the Node.js application
-2. Running as root with a writable filesystem, the attacker can modify application files, install tools, or write malicious scripts
-3. The attacker establishes persistence within the container
-4. Without container-level health checks, a compromised but "running" container may continue serving traffic
-
-**Existing Mitigations**: Fargate provides infrastructure isolation. Containers cannot access the underlying host. Security groups restrict network access.
-
-**Recommendation**: Add `"readonlyRootFilesystem": true` to container definitions (mount tmpfs for writable directories). Add `"user": "1000:1000"` or appropriate non-root user. Define container-level health checks. Set appropriate `ulimits`. Update Dockerfiles to run as non-root user.
-
----
-
-### MEDIUM GRC-016: Outdated Dependencies and No Vulnerability Management Process
-
-| Field | Value |
-|-------|-------|
-| ID | GRC-016 |
-| Severity | MEDIUM |
-| Confidence | HIGH |
-| Affected Component(s) | Node.js backend, Vue.js frontend, Terraform provider |
-| Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC7.1 / ISO 27001 A.8.8 / NIST CSF ID.RA / PCI-DSS 6.3.1 |
-
-**Description**: Multiple dependencies are significantly outdated and may contain known vulnerabilities. The AWS Terraform provider is pinned to `~> 3.38` (current is 5.x+). Express.js is at 4.16.4 (current is 4.21.x+). aws-sdk is at v2 (deprecated in favor of v3). No dependency scanning, no patch management process, and `npm install` is used instead of `npm ci` (non-deterministic builds).
-
-**Evidence**: Terraform provider version at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/versions.tf:9` pins `~> 3.38`. Reconnaissance documents Express 4.16.4, aws-sdk v2.876.0/2.885.0, Vue.js 2.6.11, and Axios 0.21.2 as project dependencies.
-
-**Attack Scenario**:
-1. A known vulnerability is disclosed in Express 4.16.x or aws-sdk v2
-2. No vulnerability scanning process exists to detect it
-3. No patch management process exists to remediate it
-4. The application remains vulnerable to publicly known exploits
-
-**Existing Mitigations**: None.
-
-**Recommendation**: Update all dependencies to current stable versions. Implement `npm ci` instead of `npm install` in Dockerfiles and build scripts. Add `npm audit` or Snyk/Trivy scanning to the CI/CD pipeline. Update the Terraform AWS provider to 5.x. Establish a patch management cadence (monthly for non-critical, immediate for critical CVEs). Generate and maintain an SBOM.
-
----
-
-### LOW GRC-017: No VPC Endpoints for AWS Service Access
-
-| Field | Value |
-|-------|-------|
-| ID | GRC-017 |
-| Severity | LOW |
-| Confidence | MEDIUM |
-| Affected Component(s) | VPC, NAT Gateway |
-| Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC6.7 / ISO 27001 A.8.22 / NIST CSF PR.DS |
-
-**Description**: No VPC endpoints are configured for AWS services (DynamoDB, S3, ECR, CloudWatch Logs). All traffic from ECS tasks to these services traverses the NAT Gateway and exits to the public internet before reaching the AWS service endpoints. While this traffic uses HTTPS (AWS SDK default), it introduces unnecessary internet exposure and NAT Gateway data transfer costs.
-
-**Evidence**: Networking module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/Networking/main.tf` defines no `aws_vpc_endpoint` resources.
-
-**Attack Scenario**:
-1. Traffic to AWS services travels through the internet (via NAT Gateway)
-2. While encrypted by the AWS SDK, this traffic path is longer and traverses more network segments than necessary
-3. A sophisticated network-level attacker could potentially observe traffic metadata
-4. NAT Gateway failure causes loss of access to all AWS services
-
-**Existing Mitigations**: AWS SDK uses HTTPS by default for service API calls. NAT Gateway is AWS-managed infrastructure.
-
-**Recommendation**: Add VPC gateway endpoints for S3 and DynamoDB (free, no NAT Gateway charges). Add VPC interface endpoints for ECR and CloudWatch Logs. This reduces internet exposure, improves latency, and reduces NAT Gateway data transfer costs.
-
----
-
-### LOW GRC-018: Single NAT Gateway Creates Availability Risk
-
-| Field | Value |
-|-------|-------|
-| ID | GRC-018 |
 | Severity | LOW |
 | Confidence | HIGH |
-| Affected Component(s) | NAT Gateway, VPC Networking |
+| Affected Component(s) | C2 (Server API) |
 | Scoring System | Qualitative |
-| Score | N/A |
-| Cross-Framework | SOC 2 CC7.4 / ISO 27001 A.8.14 / NIST CSF PR.IR |
+| Score | LOW (information-disclosure hygiene; secure-development control gap) |
+| Cross-Framework | SOC 2 CC8.1 · NIST SI-11 · ISO A.8.28 |
 
-**Description**: A single NAT Gateway is deployed in one public subnet (AZ). If this AZ experiences an outage, all ECS tasks in private subnets lose internet access (and access to AWS services that lack VPC endpoints). While ECS tasks are deployed across two AZs, the networking dependency on a single NAT Gateway creates a single point of failure.
+**Description**: The API error handler returns `{code, description: err.message}` to the client and `console.error`s the raw error. Because AWS SDK errors have no `.status`, `res.status(error.code)` can throw on an undefined status. This leaks internal error detail to clients and reflects the absence of secure-coding review (SOC 2 CC8.1 secure development, NIST SI-11 error handling).
 
-**Evidence**: Networking module at `/Users/dev/amazon-ecs-fullstack-app-terraform/Infrastructure/Modules/Networking/main.tf:91-97` creates one NAT Gateway in `aws_subnet.public_subnets[0]` only.
+**Evidence**: recon §1.8 "Error handling leaks detail: `app.js` error handler returns `{code, description: err.message}`... `res.status(error.code)` can throw"; `Code/server/src/app.js`.
 
-**Attack Scenario**:
-1. The AZ containing the NAT Gateway experiences an AWS infrastructure issue
-2. All ECS tasks lose outbound internet access
-3. Backend tasks cannot reach DynamoDB or S3 (no VPC endpoints)
-4. Application becomes unavailable despite ECS tasks running in the healthy AZ
+**Attack Scenario**: An attacker triggers backend errors to enumerate internal behavior (table names, SDK internals) from returned messages, aiding further probing.
 
-**Existing Mitigations**: Multi-AZ ECS task deployment. ALBs span multiple AZs.
+**Existing Mitigations**: Errors are also logged to CloudWatch via awslogs (visibility, though not sanitized).
 
-**Recommendation**: Deploy one NAT Gateway per AZ with corresponding route tables. Combined with VPC endpoints (GRC-017), this significantly reduces the blast radius of a single AZ failure. For demo/development environments, a single NAT Gateway is acceptable with documented risk acceptance.
+**Recommendation**: Return generic client-facing error messages with a correlation id; log detail server-side only; guard `res.status()` against undefined codes (default 500); add secure-coding review to the SDLC (A.8.28) — overlaps GRC-006's build-gate remediation.
 
 ---
 
-## 6. Risk Register
+## Cross-Framework Control Mapping
 
-| ID | Risk Description | Source | Likelihood | Impact | Rating | Treatment | Owner | Due Date |
-|----|-----------------|--------|-----------|--------|--------|-----------|-------|----------|
-| R-001 | Regulatory violation or audit failure due to plaintext data transmission (no TLS) | GRC-001 | High | High | Critical | Mitigate | Infrastructure Lead | 0-30 days |
-| R-002 | Unauthorized access to application and data due to no authentication | GRC-002 | High | High | Critical | Mitigate | Application Lead | 0-30 days |
-| R-003 | GitHub token compromise via Terraform state leading to pipeline takeover | GRC-003 | High | High | Critical | Mitigate | DevOps Lead | 0-30 days |
-| R-004 | AWS account compromise via IAM privilege escalation (iam:PassRole on *) | GRC-004 | Medium | High | Critical | Mitigate | Security Lead | 0-30 days |
-| R-005 | Data breach due to unencrypted data stores | GRC-005 | Medium | High | Critical | Mitigate | Infrastructure Lead | 30-60 days |
-| R-006 | Application-layer attack success due to no WAF | GRC-006 | High | Medium | High | Mitigate | Infrastructure Lead | 30-60 days |
-| R-007 | Undetected security breach due to no monitoring | GRC-007 | High | High | High | Mitigate | Security Lead | 30-60 days |
-| R-008 | Ineffective incident response due to no IRP | GRC-008 | Medium | High | High | Mitigate | Security Lead | 30-90 days |
-| R-009 | Malicious code deployment via insecure CI/CD pipeline | GRC-009 | Medium | High | High | Mitigate | DevOps Lead | 30-60 days |
-| R-010 | Irrecoverable data loss due to no backups | GRC-010 | Medium | High | High | Mitigate | Infrastructure Lead | 30-60 days |
-| R-011 | S3 data exposure due to missing public access blocks | GRC-011 | Medium | Medium | High | Mitigate | Infrastructure Lead | 0-30 days |
-| R-012 | Container image tampering due to mutable ECR tags | GRC-012 | Medium | High | High | Mitigate | DevOps Lead | 30-60 days |
-| R-013 | Audit cannot proceed without governance documentation | GRC-013 | High | Medium | Medium | Mitigate | GRC Lead | 30-90 days |
-| R-014 | Inability to investigate network incidents without flow logs | GRC-014 | Medium | Medium | Medium | Mitigate | Infrastructure Lead | 60-90 days |
-| R-015 | Container compromise escalation due to lack of hardening | GRC-015 | Low | Medium | Medium | Mitigate | DevOps Lead | 60-90 days |
-| R-016 | Exploitation of known vulnerabilities in outdated dependencies | GRC-016 | Medium | Medium | Medium | Mitigate | Application Lead | 30-60 days |
-| R-017 | Unnecessary internet exposure for AWS service traffic | GRC-017 | Low | Low | Low | Mitigate | Infrastructure Lead | 90-180 days |
-| R-018 | Service disruption from single NAT Gateway failure | GRC-018 | Low | Medium | Low | Accept/Mitigate | Infrastructure Lead | 90-180 days |
+> Verified against `cross-framework-mapping.md`. A single implementation produces evidence across all mapped cells. **N/A** cells for PCI/HIPAA reflect this system's scope (no cardholder data, no PHI) — the mapping-file equivalents are shown in parentheses for reference reuse if scope changes.
 
----
+| Control Area | SOC 2 (TSC) | ISO 27001:2022 | NIST 800-53 Rev 5 | PCI-DSS v4.0 | HIPAA | System Status | Finding |
+|---|---|---|---|---|---|:---:|:---:|
+| Encryption in Transit | CC6.1, CC6.7 | A.8.24 | SC-8 | (4.2) N/A | (§164.312(e)(1)) N/A | Not Implemented | GRC-001 |
+| Access Control | CC6.1 | A.5.15, A.8.3 | AC-2, AC-3 | (7.2, 7.3) N/A | (§164.312(a)(1)) N/A | Not Implemented | GRC-002 |
+| Authentication | CC6.1, CC6.6 | A.8.5 | IA-2, IA-5 | (8.2, 8.3) N/A | (§164.312(d)) N/A | Not Implemented | GRC-002 |
+| Least Privilege / IAM | CC6.1, CC6.3 | A.8.2, A.5.18 | AC-6 | (7.2) N/A | (§164.312(a)(1)) N/A | Not Implemented | GRC-003 |
+| Logging & Monitoring | CC7.2, CC7.3 | A.8.15, A.8.16 | AU-2, AU-3, AU-6 | (10.2, 10.4) N/A | (§164.312(b)) N/A | Not Implemented | GRC-004 |
+| Vulnerability Management | CC7.1 | A.8.8 | RA-5, SI-2 | (6.3, 11.3) N/A | N/A | Not Implemented | GRC-005 |
+| Change Management | CC8.1 | A.8.32 | CM-3 | (6.5) N/A | N/A | Partial | GRC-006 |
+| Key Management | CC6.1 | A.8.24 | SC-12 | (3.6, 3.7) N/A | N/A | Not Implemented | GRC-007 |
+| Encryption at Rest | CC6.1, CC6.7 | A.8.24 | SC-28 | (3.5) N/A | (§164.312(a)(2)(iv)) N/A | Partial | GRC-009 |
+| Network Security | CC6.1, CC6.6 | A.8.20, A.8.21, A.8.22 | SC-7 | (1.2, 1.3) N/A | (§164.312(e)(1)) N/A | Partial | GRC-010 |
+| Third-Party Management | CC9.2 | A.5.19, A.5.20, A.5.21 | SA-9, SR-1 | (12.8, 12.9) N/A | (§164.308(b)(1)) N/A | Not Implemented | GRC-011 |
+| Business Continuity | A1.1, A1.2 | A.5.29, A.5.30 | CP-1, CP-2, CP-4 | (12.10) N/A | (§164.308(a)(7)) N/A | Partial | GRC-012 |
+| Backup & Recovery | A1.2 | A.8.13, A.8.14 | CP-9, CP-10 | N/A | (§164.308(a)(7)) N/A | Not Implemented | GRC-012 |
+| Data Disposal | CC6.5 | A.8.10 | MP-6 | (3.1, 9.4) N/A | (§164.310(d)(2)) N/A | Not Implemented | GRC-013 |
+| Risk Assessment | CC3.2, CC3.4 | Clause 6.1.2 † | RA-3 | (12.3.1) N/A | (§164.308(a)(1)(ii)(A)) N/A | Not Implemented | GRC-008 |
+| Incident Response | CC7.4, CC7.5 | A.5.24-A.5.28 | IR-1, IR-4, IR-8 | (12.10) N/A | (§164.308(a)(6)) N/A | Not Implemented | GRC-008 |
+| Security Awareness Training | CC1.4 | A.6.3 | AT-2, AT-3 | (12.6) N/A | (§164.308(a)(5)) N/A | Not Implemented | GRC-008 |
 
-## 7. Remediation Roadmap
+> **†** `Clause 6.1.2` is an ISO 27001 management-system clause (information security risk assessment), not an Annex A control — flagged as approximate in `cross-framework-mapping.md`. Verify against the primary standard before relying on it.
 
-### Phase 1 -- Critical / Quick Wins (0-30 days)
-
-**Objective**: Address audit-blocking gaps and highest-risk vulnerabilities.
-
-| Priority | Item | Finding | Effort | Dependency |
-|----------|------|---------|--------|------------|
-| 1 | Enable HTTPS on both ALBs with ACM certificates | GRC-001 | Moderate | ACM certificate provisioning |
-| 2 | Scope IAM policies: replace `iam:PassRole` wildcard with specific role ARNs | GRC-004 | Quick Win | None |
-| 3 | Configure S3 public access blocks on both buckets | GRC-011 | Quick Win | None |
-| 4 | Configure remote Terraform backend (S3 + DynamoDB) with encryption | GRC-003 | Moderate | S3 bucket for state |
-| 5 | Migrate GitHub token to AWS Secrets Manager; switch to GitHub v2 (CodeStar) source | GRC-003 | Moderate | Secrets Manager setup |
-| 6 | Remove `force_destroy = true` from S3 buckets | GRC-010 | Quick Win | None |
-| 7 | Set ECR image tag immutability to IMMUTABLE | GRC-012 | Quick Win | Update build scripts to use unique tags |
-| 8 | Enable ECR scan-on-push | GRC-012 | Quick Win | None |
-
-### Phase 2 -- High Priority (30-90 days)
-
-**Objective**: Establish core security controls and monitoring.
-
-| Priority | Item | Finding | Effort | Dependency |
-|----------|------|---------|--------|------------|
-| 9 | Implement authentication mechanism (Cognito or equivalent) | GRC-002 | Significant | Application code changes |
-| 10 | Deploy AWS WAFv2 with managed rule groups on both ALBs | GRC-006 | Moderate | ALBs must exist |
-| 11 | Enable CloudTrail, GuardDuty, and AWS Config | GRC-007 | Moderate | S3 bucket for logs |
-| 12 | Enable VPC Flow Logs | GRC-014 | Quick Win | CloudWatch Logs or S3 |
-| 13 | Enable Container Insights on ECS Cluster | GRC-007 | Quick Win | None |
-| 14 | Add S3 encryption (SSE-KMS) and DynamoDB CMK encryption | GRC-005 | Moderate | KMS key creation |
-| 15 | Enable DynamoDB PITR and S3 versioning | GRC-010 | Quick Win | None |
-| 16 | Add manual approval stage to CodePipeline | GRC-009 | Quick Win | SNS topic for approval notifications |
-| 17 | Move buildspec to CodeBuild project definition (inline) | GRC-009 | Moderate | Build process changes |
-| 18 | Update all dependencies to current versions | GRC-016 | Moderate | Testing required |
-| 19 | Add dependency scanning (npm audit / Snyk / Trivy) to CI/CD pipeline | GRC-016 | Moderate | Phase 1 CI/CD changes |
-| 20 | Develop Incident Response Plan | GRC-008 | Moderate | None |
-| 21 | Restrict CORS to specific origins | GRC-002 | Quick Win | Determine allowed origins |
-
-### Phase 3 -- Medium Priority (90-180 days)
-
-**Objective**: Mature security posture and prepare for audit readiness.
-
-| Priority | Item | Finding | Effort | Dependency |
-|----------|------|---------|--------|------------|
-| 22 | Develop and publish information security policy library | GRC-013 | Significant | Management approval |
-| 23 | Harden container definitions (readonlyRootFilesystem, non-root user) | GRC-015 | Moderate | Application testing |
-| 24 | Implement VPC endpoints for S3, DynamoDB, ECR, CloudWatch | GRC-017 | Moderate | VPC configuration |
-| 25 | Deploy NAT Gateway per AZ | GRC-018 | Moderate | Budget approval |
-| 26 | Enforce GitHub branch protection rules | GRC-009 | Quick Win | Repository admin access |
-| 27 | Implement environment separation (dev/staging/prod) | ISO A.8.31 | Significant | Architecture decisions |
-| 28 | Add SNS topic encryption | GRC-005 | Quick Win | KMS key from Phase 2 |
-| 29 | Implement SAST/DAST scanning in pipeline | GRC-009, GRC-016 | Moderate | Tool selection |
-| 30 | Restrict security group egress rules | ISO A.8.22 | Moderate | Identify required egress |
-| 31 | Implement CloudWatch alarms for security events | GRC-007 | Moderate | Phase 2 monitoring |
-
-### Phase 4 -- Continuous Improvement (180+ days)
-
-**Objective**: Sustain compliance posture and pursue certifications.
-
-| Priority | Item | Finding | Effort | Dependency |
-|----------|------|---------|--------|------------|
-| 32 | Establish formal risk assessment program (recurring) | GRC-013, NIST ID.RA | Moderate | GRC tooling |
-| 33 | Implement security awareness training program | SOC 2 CC1.4 | Moderate | Training platform |
-| 34 | Establish vendor risk management program | SOC 2 CC9.2 | Moderate | Assessment templates |
-| 35 | Implement SBOM generation and tracking | GRC-016 | Moderate | SBOM tooling |
-| 36 | Conduct tabletop exercises for incident response | GRC-008 | Quick Win | IRP from Phase 2 |
-| 37 | Engage SOC 2 Type I auditor (readiness assessment) | All | Significant | Phases 1-3 complete |
-| 38 | Begin ISO 27001 ISMS implementation | All | Significant | Policy library from Phase 3 |
-| 39 | Implement automated compliance monitoring (AWS Config conformance packs) | All | Moderate | Phase 2 Config setup |
-| 40 | Pursue SOC 2 Type II (observation period) | All | Significant | Type I complete |
+**Efficiency notes (evidence reuse):**
+- **Turning on the AWS audit-evidence plane** (GRC-004: CloudTrail + ALB/VPC/access logs + Config) simultaneously produces evidence for **SOC 2 CC7.2/CC7.3, ISO A.8.15/A.8.16, and NIST AU-2/AU-6/SI-4** — one implementation, three frameworks. Highest evidence-per-effort item.
+- **Adding TLS on the ALBs** (GRC-001) satisfies **SOC 2 CC6.7, ISO A.8.24, and NIST SC-8** at once, and pre-satisfies PCI 4.2 / HIPAA §164.312(e)(1) if scope ever changes.
+- **SSE-KMS with a CMK** (GRC-009 + GRC-007 key management) covers **SOC 2 CC6.1, ISO A.8.24, NIST SC-28 and SC-12** together — encryption-at-rest and key-management rows share the implementation.
+- **The governance program build** (GRC-008) is where cross-framework reuse is largest: one policy/risk/IR/training program produces evidence across the whole SOC 2 CC1-CC5/CC9 spine, ISO A.5/A.6, and the NIST -1/RA/IR/AT families.
 
 ---
 
-## 8. Evidence Collection Guide
+## Risk Register
 
-| Gap/Control | Required Evidence | Suggested Format | Storage Location | Collection Frequency |
-|------------|------------------|-----------------|-----------------|---------------------|
-| TLS/HTTPS configuration (GRC-001) | ACM certificate details, ALB listener config, TLS policy | AWS Console screenshot / Terraform plan output | Compliance evidence repository | Per change + quarterly |
-| Authentication implementation (GRC-002) | Authentication flow documentation, Cognito/IdP config, session management | Architecture diagram, config exports | Compliance evidence repository | Per change + annually |
-| Secrets management (GRC-003) | Secrets Manager console showing stored secrets, Terraform backend config | AWS Console screenshot, backend.tf | Compliance evidence repository | Quarterly |
-| IAM policy review (GRC-004) | IAM policy JSON documents, access review reports | AWS IAM policy export, review spreadsheet | Compliance evidence repository | Quarterly |
-| Encryption at rest (GRC-005) | KMS key policies, S3/DynamoDB encryption config, SNS encryption | AWS Console screenshots / Terraform state | Compliance evidence repository | Per change + quarterly |
-| WAF configuration (GRC-006) | WAF WebACL rules, associated resources, blocked request logs | AWS WAF console export | Compliance evidence repository | Monthly review |
-| Monitoring configuration (GRC-007) | CloudTrail trail config, GuardDuty findings, Config rules | AWS Console screenshots, service dashboards | Compliance evidence repository | Continuous + monthly review |
-| Incident response plan (GRC-008) | IRP document, tabletop exercise reports, incident tickets | Document (PDF/DOCX), exercise reports | Compliance evidence repository | Annually + post-incident |
-| CI/CD security (GRC-009) | Pipeline config with approval stage, branch protection settings, SAST reports | CodePipeline console, GitHub settings, scan reports | Compliance evidence repository | Per change + quarterly |
-| Backup and recovery (GRC-010) | PITR status, S3 versioning config, recovery test results | AWS Console screenshots, test reports | Compliance evidence repository | Monthly verification + annual DR test |
-| Access reviews | User/role access review reports with approvals | Spreadsheet with reviewer sign-off | GRC tool/SharePoint | Quarterly |
-| Change management | Change tickets with approvals, deployment records | CodePipeline execution history | Jira/ServiceNow + AWS Console | Per change |
-| Vulnerability scans | Dependency scan reports, ECR scan results, penetration test reports | Tool-generated reports (HTML/PDF) | Compliance evidence repository | Continuous (CI/CD) + annual pentest |
-| Policy acknowledgments | Employee policy acknowledgment records | Signed documents or e-learning completion | HR/GRC system | Annually + onboarding |
+> Likelihood (L) × Impact (I) per the compliance-assessment Phase 5 rubric (1-5 each). Rating: Critical 17-25 · High 10-16 · Medium 5-9 · Low 1-4. Impact is calibrated to *compliance/audit + security* consequence for a production deployment (no active regulatory mandate today, so no cell reaches the regulatory-enforcement ceiling).
 
----
+| Finding | Gap | L | I | Score | Rating | Treatment | Suggested Owner | Due |
+|---------|-----|:-:|:-:|:-----:|:------:|-----------|-----------------|-----|
+| GRC-004 | No security audit trail | 4 | 4 | 16 | High | Mitigate | DevOps / Platform | 0-30d |
+| GRC-001 | No encryption in transit | 4 | 4 | 16 | High | Mitigate | Platform / DevOps | 0-30d |
+| GRC-003 | IAM over-permissioning (`iam:PassRole *`) | 3 | 5 | 15 | High | Mitigate | Platform / Security | 0-30d |
+| GRC-002 | No authN/authZ on app | 3 | 4 | 12 | High | Mitigate | App developers | 0-30d |
+| GRC-005 | No vuln mgmt / image scanning / SCA | 4 | 3 | 12 | High | Mitigate | DevOps | 0-30d |
+| GRC-006 | CI/CD no approval/test gate; privileged build | 3 | 4 | 12 | High | Mitigate | DevOps | 30-90d |
+| GRC-007 | PAT in unencrypted local state, no rotation | 3 | 4 | 12 | High | Mitigate | DevOps / Security | 0-30d |
+| GRC-008 | No governance program | 3 | 4 | 12 | High | Mitigate | Security lead / Mgmt | 30-180d |
+| GRC-009 | Encryption at rest not hardened | 3 | 3 | 9 | Medium | Mitigate | Platform | 30-90d |
+| GRC-010 | No WAF / rate limiting / DoS protection | 3 | 3 | 9 | Medium | Mitigate | Platform / Security | 30-90d |
+| GRC-011 | Vendor risk unmanaged; EOL deps | 3 | 3 | 9 | Medium | Mitigate | Security / App devs | 90-180d |
+| GRC-012 | Single-NAT SPOF, no DR test, no PITR | 2 | 4 | 8 | Medium | Mitigate | Platform | 90-180d |
+| GRC-013 | Insecure data disposal (`force_destroy`) | 2 | 3 | 6 | Medium | Mitigate | Platform | 90-180d |
+| GRC-014 | Verbose error handling leaks detail | 3 | 2 | 6 | Medium | Mitigate | App developers | 90-180d |
 
-## 9. Policy Gap Analysis
-
-| Policy | Status | Framework Reference | Priority |
-|--------|--------|-------------------|----------|
-| Information Security Policy | Missing | ISO 27001 A.5.1, SOC 2 CC1.1, NIST CSF GV.PO, PCI-DSS 12.1 | P1 |
-| Access Control Policy | Missing | ISO 27001 A.8.3, SOC 2 CC6.1-CC6.3, NIST CSF PR.AA, PCI-DSS 7.1 | P1 |
-| Incident Response Plan | Missing | ISO 27001 A.5.24, SOC 2 CC7.3, NIST CSF RS.MA, PCI-DSS 12.10 | P1 |
-| Data Classification Policy | Missing | ISO 27001 A.5.12, SOC 2 CC6.5, NIST CSF PR.DS, PCI-DSS 3.1 | P1 |
-| Acceptable Use Policy | Missing | ISO 27001 A.5.10, SOC 2 CC1.4, NIST CSF PR.AT | P2 |
-| Business Continuity Plan | Missing | ISO 27001 A.5.30, SOC 2 CC7.4, NIST CSF RC.RP, PCI-DSS 12.10 | P1 |
-| Vendor Management Policy | Missing | ISO 27001 A.5.19, SOC 2 CC9.2, NIST CSF GV.SC | P2 |
-| Data Retention and Disposal Policy | Missing | ISO 27001 A.8.10, SOC 2 CC6.5, NIST CSF PR.DS, PCI-DSS 3.1 | P2 |
-| Change Management Policy | Missing | ISO 27001 A.8.32, SOC 2 CC8.1, NIST CSF PR.PS, PCI-DSS 6.5 | P1 |
-| Encryption Policy | Missing | ISO 27001 A.8.24, SOC 2 CC6.6, NIST CSF PR.DS, PCI-DSS 3.5/4.2 | P1 |
-| Vulnerability Management Policy | Missing | ISO 27001 A.8.8, SOC 2 CC7.1, NIST CSF ID.RA, PCI-DSS 6.3 | P2 |
-| Secure Development Policy (SDLC) | Missing | ISO 27001 A.8.25-28, SOC 2 CC8.1, NIST CSF PR.PS, PCI-DSS 6.2 | P2 |
-| Logging and Monitoring Policy | Missing | ISO 27001 A.8.15, SOC 2 CC7.2, NIST CSF DE.CM, PCI-DSS 10.1 | P2 |
-| Password/Authentication Policy | Missing | ISO 27001 A.8.5, SOC 2 CC6.1, NIST CSF PR.AA, PCI-DSS 8.3 | P1 |
-| Network Security Policy | Missing | ISO 27001 A.8.20-22, SOC 2 CC6.4, NIST CSF PR.PS, PCI-DSS 1.1 | P2 |
+> Note: GRC-013/GRC-014 are LOW *severity* findings (audit-outcome impact) but land at Medium *risk score* (L×I) because they are plausible and non-trivial in blast radius; severity and risk-score are distinct axes per the two rubrics. Both are scheduled in the medium-term roadmap.
 
 ---
 
-## 10. Audit Readiness Assessment
+## Remediation Roadmap
 
-- **Readiness Score**: 12/100
-- **Blockers** (items that will prevent successful audit):
-  1. No TLS/HTTPS -- fails encryption requirements across all frameworks
-  2. No authentication -- fails logical access control requirements
-  3. No information security policies -- audit cannot begin without foundational documentation
-  4. No incident response plan -- required by all frameworks
-  5. No monitoring or audit trail (no CloudTrail) -- cannot demonstrate detective controls
-- **High-Risk Areas** (areas auditors will scrutinize most):
-  1. Logical access controls and authentication mechanisms
-  2. Encryption in transit and at rest
-  3. Change management controls in CI/CD pipeline
-  4. IAM policy least-privilege adherence
-  5. Security monitoring and incident detection capability
-- **Preparation Tasks**:
-  1. Complete Phase 1 and Phase 2 of the Remediation Roadmap before engaging an auditor
-  2. Develop minimum required policies (6+ months before Type II observation period)
-  3. Establish evidence collection processes and centralized evidence repository
-  4. Conduct internal readiness assessment after Phase 2 completion
-  5. Engage auditor for SOC 2 Type I readiness assessment before committing to Type II
-- **Evidence Checklist** (minimum documents for SOC 2 Type I):
-  - Information Security Policy (signed by management)
-  - System Description document
-  - Risk Assessment results
-  - Access control documentation and user access reviews
-  - Change management procedures and evidence
-  - Incident response plan
-  - Encryption standards and configuration evidence
-  - Monitoring and alerting configuration
-  - Vendor/subservice organization assessment
-  - Business continuity and disaster recovery plans
-- **Interview Preparation** (topics auditors will ask about):
-  - Who is responsible for information security? (Need defined roles)
-  - How are access rights provisioned and reviewed? (Need documented process)
-  - How are changes to infrastructure and applications managed? (CI/CD pipeline documentation)
-  - How are security incidents detected and responded to? (IRP + monitoring evidence)
-  - How is data protected in transit and at rest? (TLS + encryption configuration)
-  - How are vulnerabilities identified and remediated? (Scanning + patching process)
-  - How are third-party risks managed? (Vendor assessment process)
+### Immediate (0-30 days) — High Risk, high evidence-per-effort
+
+| # | Finding | Framework(s) | Risk | Remediation | Owner | Est. Effort |
+|---|---------|-------------|------|-------------|-------|-------------|
+| 1 | GRC-004 | SOC2 CC7.2/7.3 · NIST AU-2/AU-6 · ISO A.8.15 | High | Enable CloudTrail (mgmt+data events) → encrypted S3; ALB access logs; VPC flow logs; AWS Config + GuardDuty; centralize + alert | DevOps/Platform | 2-4 days (Low complexity) |
+| 2 | GRC-001 | SOC2 CC6.7 · NIST SC-8 · ISO A.8.24 | High | ACM cert + HTTPS:443 listener on both ALB modules; `enable_https=true`; HTTP→HTTPS redirect; TLS1.2+ policy; SPA/Swagger to `https` | Platform/DevOps | 2-3 days (Low) |
+| 3 | GRC-003 | SOC2 CC6.3 · NIST AC-6 · ISO A.8.2 | High | Remove `iam:PassRole` from task role; scope DevOps role to ARNs + enumerated actions; add Access Analyzer + Config wildcard rules | Platform/Security | 3-5 days (Medium) |
+| 4 | GRC-007 | SOC2 CC6.1 · NIST SC-12/IA-5 · ISO A.8.24 | High | Remote encrypted TF backend (S3+KMS+DynamoDB lock); replace PAT with CodeConnections/short-lived token in Secrets Manager + rotation | DevOps/Security | 2-4 days (Medium) |
+| 5 | GRC-005 | SOC2 CC7.1 · NIST RA-5/SI-2 · ISO A.8.8 | High | ECR IMMUTABLE + scan_on_push; pin base images by digest; add SCA (Trivy/npm audit) + SBOM with fail-build gate in `buildspec.yml` | DevOps | 3-5 days (Medium) |
+| 6 | GRC-002 | SOC2 CC6.1/6.2 · NIST IA-2/AC-3 · ISO A.8.5 | High | Add auth at edge (ALB OIDC/Cognito) or app JWT/session middleware + RBAC + MFA for privileged paths; restrict Swagger | App developers | 1-3 weeks (High) |
+
+### Short-Term (30-90 days) — High & Medium Risk
+
+| # | Finding | Framework(s) | Risk | Remediation | Owner | Est. Effort |
+|---|---------|-------------|------|-------------|-------|-------------|
+| 1 | GRC-006 | SOC2 CC8.1 · NIST CM-3/CM-5 · ISO A.8.32 | High | Manual approval stage + protected branch/required reviews + automated test/security gates; remove `privileged_mode`; upgrade build image | DevOps | 4-6 days (Medium) |
+| 2 | GRC-009 | SOC2 CC6.1 · NIST SC-28/SC-12 · ISO A.8.24 | Medium | SSE-KMS CMK on S3/DynamoDB/ECR; S3 public-access-block (account+bucket); enable versioning | Platform | 3-4 days (Low) |
+| 3 | GRC-010 | SOC2 CC6.6/A1.1 · NIST SC-5/SC-7 · ISO A.8.20 | Medium | AWS WAF (managed + rate-based rules) on both ALBs; tighten CORS allow-list; document capacity plan / raise autoscale ceiling | Platform/Security | 3-5 days (Medium) |
+
+### Medium-Term (90-180 days) — Medium Risk & program build
+
+| # | Finding | Framework(s) | Risk | Remediation | Owner | Est. Effort |
+|---|---------|-------------|------|-------------|-------|-------------|
+| 1 | GRC-008 | SOC2 CC1-CC5/CC9 · NIST PL-2/RA-3/IR-8/AT-2 · ISO A.5.1/A.5.24/A.6.3 | High | Assign security owner; author policy set; annual+change-triggered risk assessment; IR plan + test; access-review cadence; awareness training | Security lead/Mgmt | 3-6 months (High) |
+| 2 | GRC-011 | SOC2 CC9.2 · NIST SR-3/SA-22 · ISO A.5.19/A.5.21 | Medium | Vendor inventory + risk tiering; collect supplier attestations; migrate off EOL aws-sdk v2 → v3, Vue 2 → Vue 3 | Security/App devs | 2-4 weeks + migration (Medium) |
+| 3 | GRC-012 | SOC2 A1.2/A1.3 · NIST CP-9/CP-10 · ISO A.8.13/A.5.30 | Medium | NAT-per-AZ or VPC endpoints; DynamoDB PITR + deletion protection; documented + tested recovery plan | Platform | 1-2 weeks (Medium) |
+| 4 | GRC-013 | SOC2 CC6.5 · NIST MP-6 · ISO A.8.10 | Medium | Remove `force_destroy` on prod buckets; lifecycle/retention + object-lock/versioning; disposal procedure | Platform | 1-2 days (Low) |
+| 5 | GRC-014 | SOC2 CC8.1 · NIST SI-11 · ISO A.8.28 | Medium | Generic client errors + correlation id; server-side detail only; guard `res.status()`; add secure-coding review to SDLC | App developers | 1-2 days (Low) |
+
+### Long-Term (180+ days) — Strategic
+
+| # | Item | Framework(s) | Remediation | Owner | Est. Effort |
+|---|------|-------------|-------------|-------|-------------|
+| 1 | Pursue formal SOC 2 Type II | SOC 2 (all) | After 0-180d remediation, engage auditor; run 6-12 month observation period with continuous evidence collection | Security lead/Mgmt | 6-12 months |
+| 2 | ISO 27001:2022 certification path (optional) | ISO 27001 | Stand up the ISMS management-system clauses (4-10) + Annex A SoA; leverage SOC 2 evidence reuse | Security lead | 9-18 months |
 
 ---
 
-## Observations
+## Evidence Collection Guide
 
-The following positive security practices are already in place and provide a foundation for compliance:
+> What to collect per gap so a future SOC 2 Type II can be evidenced. Store in a version-controlled evidence repository (or GRC tool); collect at the cadence shown.
 
-1. **Infrastructure as Code (Terraform)**: All infrastructure is defined as code, providing repeatability, auditability, and version control of infrastructure changes. This is a strong foundation for change management evidence.
-2. **Private subnet architecture**: ECS tasks run in private subnets with no direct internet exposure. Traffic flows through ALBs in public subnets, providing network-layer segmentation.
-3. **Security group segmentation**: ECS task security groups restrict ingress to traffic from the respective ALB security group only, preventing direct access to containers.
-4. **Fargate serverless compute**: Using AWS Fargate eliminates host management responsibility and provides AWS-managed infrastructure isolation.
-5. **Blue/Green deployments with auto-rollback**: CodeDeploy Blue/Green deployment strategy enables zero-downtime deployments with automatic rollback on failure, reducing deployment risk.
-6. **CloudWatch logging**: Container output is captured in CloudWatch Logs with 30-day retention, providing a baseline for application logging.
-7. **Multi-AZ ECS deployment**: Services are distributed across two Availability Zones, providing baseline availability.
-8. **Network mode awsvpc**: Each ECS task gets its own ENI, enabling security group-level isolation per task.
-9. **Terraform variable sensitivity**: The GitHub token is marked as sensitive, preventing exposure in plan output (though insufficient for full protection).
-10. **Modular Terraform structure**: The 14-module structure enables independent security hardening of each component without monolithic refactoring.
+| Gap | Evidence to Collect | Format | Storage | Frequency |
+|-----|--------------------|--------|---------|-----------|
+| GRC-004 | CloudTrail config screenshot/Terraform; sample log export; Config conformance-pack report; GuardDuty findings | Config export + logs | Encrypted S3 + GRC tool | Continuous; review quarterly |
+| GRC-001 | ALB listener config (HTTPS:443); ACM cert ARN; SSL Labs / testssl report | Config + scan report | Evidence repo | On change + quarterly |
+| GRC-003 | IAM policy JSON (post-scoping); Access Analyzer findings; access-review sign-off | JSON + review log | GRC tool | Quarterly access review |
+| GRC-002 | Auth config (OIDC/Cognito/JWT); RBAC matrix; MFA enforcement proof | Config + matrix | Evidence repo | On change + quarterly |
+| GRC-005 | ECR scan results; SCA/SBOM report; base-image digest pins; patch log | Scan reports | Pipeline artifacts | Per build |
+| GRC-006 | Pipeline approval-stage config; PR review records; test-gate results | Config + PR logs | Git + pipeline | Per deploy |
+| GRC-007 | Remote backend config; Secrets Manager rotation config; token-rotation log | Config + logs | GRC tool | On rotation |
+| GRC-008 | Signed policies; risk-assessment report; IR plan + test after-action; training completion records | PDFs/records | GRC tool | Annual + on change |
+| GRC-009 | SSE-KMS config; public-access-block status; versioning status | Config export | Evidence repo | Quarterly |
+| GRC-010 | WAF rule config + blocked-request metrics; CORS config | Config + metrics | Evidence repo | Quarterly |
+| GRC-011 | Vendor register; supplier SOC 2 reports; dependency-version report | Register + reports | GRC tool | Annual + on onboarding |
+| GRC-012 | NAT/VPC-endpoint config; PITR status; DR-test after-action report | Config + report | Evidence repo | Per DR test (≥annual) |
+
+---
+
+## Policy Gap Analysis
+
+> Required policies for a SOC 2 Type II vs. what exists in the repo. **None currently exist** (recon §1.2 confirms no policy/threat-model/data-classification docs).
+
+| Required Policy | Framework Reference | Exists? | Gap |
+|-----------------|--------------------|:-------:|-----|
+| Information Security Policy | SOC2 CC5.3 · ISO A.5.1 · NIST PL-2 | No | Author top-level ISP with management approval |
+| Access Control Policy | SOC2 CC6.1/6.3 · ISO A.5.15 · NIST AC-1 | No | Define provisioning/deprovisioning/review + least privilege |
+| Data Classification Policy | SOC2 CC2.1 · ISO A.5.12 · NIST RA-2 | Informal only | Formalize the INTERNAL/CONFIDENTIAL/RESTRICTED scheme used in recon §1.4 |
+| Change Management Policy | SOC2 CC8.1 · ISO A.8.32 · NIST CM-3 | No | Document approval, testing, rollback (ties to GRC-006) |
+| Incident Response Plan | SOC2 CC7.4/7.5 · ISO A.5.24 · NIST IR-8 | No | Author + test IR plan; define breach roles/timelines |
+| Risk Assessment Process | SOC2 CC3.2 · ISO Clause 6.1.2 · NIST RA-3 | This TM (seed) | Formalize annual + change-triggered process |
+| Vendor / Third-Party Risk Policy | SOC2 CC9.2 · ISO A.5.19 · NIST SR-1 | No | Vendor inventory, tiering, due diligence (ties to GRC-011) |
+| Acceptable Use Policy | SOC2 CC1.1 · ISO A.5.10 | No | Author AUP |
+| Security Awareness Training Program | SOC2 CC1.4 · ISO A.6.3 · NIST AT-2 | No | Stand up onboarding + annual training |
+| Business Continuity / DR Plan | SOC2 A1.2/A1.3 · ISO A.5.30 · NIST CP-2 | No | Document + test (ties to GRC-012) |
+| Cryptography / Key Management Policy | SOC2 CC6.1 · ISO A.8.24 · NIST SC-12 | No | Define TLS/at-rest/key-rotation standards (ties to GRC-001/007/009) |
+
+---
+
+## Audit Readiness Assessment
+
+**Readiness score: ~15% (Not Ready for a SOC 2 Type II).** The system is a demo, not a candidate for audit as-is.
+
+**Blockers (must clear before an audit is viable):**
+1. **No audit-evidence plane** (GRC-004) — a Type II samples evidence over a 6-12 month window; there is nothing to sample. This is blocker #1.
+2. **No governance program** (GRC-008) — no policies, risk assessment, IR, access reviews, or training. The organizational half of SOC 2 is empty.
+3. **Core technical control failures** (GRC-001 TLS, GRC-002 auth, GRC-003 IAM) — foundational CC6 criteria unmet.
+
+**High-risk areas:** logical access (CC6), system operations/monitoring (CC7), change management (CC8), the entire control environment (CC1-CC5).
+
+**Prep tasks (in order):** (1) enable logging/CloudTrail/Config (GRC-004); (2) close transport + IAM + secrets gaps (GRC-001/003/007); (3) add auth + vuln scanning + change gates (GRC-002/005/006); (4) build the governance program and start the observation window (GRC-008); (5) collect evidence continuously per the Evidence Collection Guide; (6) engage an auditor for readiness assessment, then the Type II observation period.
+
+**Evidence readiness checklist (currently all ✗ except where noted):** InfoSec policy ✗ · risk assessment (this TM = partial seed) · access reviews ✗ · CloudTrail/audit logs ✗ · encryption in transit ✗ · IAM least-privilege evidence ✗ · vulnerability scan results ✗ · change-approval records ✗ · IR plan + test ✗ · vendor register ✗ · DR test ✗ · training records ✗.
+
+---
+
+## Observations (Positive)
+
+- **Sound network segmentation** — tasks in private subnets reachable only from their ALB SG; ALBs in public subnets; NAT for egress (partial CC6.6, ISO A.8.22). Good bones for CC6.6 once WAF/TLS are added.
+- **Multi-AZ + autoscaling + blue/green rollback** — a real availability/resilience foundation (partial A1.1/A1.2; CC8.1 mechanics exist), just missing DR testing and single-NAT redundancy.
+- **IAM role separation** (execution vs task vs devops vs codedeploy) and **resource-scoped DynamoDB/S3 actions** — the least-privilege *pattern* is present even though the wildcards break it.
+- **Default encryption at rest** on all AWS stores and **AWS-managed TLS** for task→service calls — the baseline is on; it just needs CMK control and public-plane TLS.
+- **Clean secrets hygiene in the tree** — no committed keys/certs/passwords; the sole credential (PAT) is a `sensitive` variable, not a committed secret (recon §1.3).
+- **Fargate** removes host/OS patching from scope (reduces CC7.1/SI-2 surface vs. self-managed EC2).
 
 ---
 
 ## Assumptions & Limitations
 
 ### Assumptions
-1. **Demo/reference architecture context**: This assessment treats the system as a potential production foundation, consistent with organizations forking AWS demo projects. All findings are assessed against production compliance standards.
-2. **Single AWS account**: Assessment assumes a single AWS account deployment with no existing organizational security services (GuardDuty, Security Hub, Config, CloudTrail) at the account or organization level.
-3. **No external compliance services**: Assessment assumes no compensating controls exist outside the Terraform codebase (e.g., no pre-existing WAF, no third-party SIEM, no MDM).
-4. **Product catalog data is non-sensitive**: The DynamoDB data (product titles, image URLs) is treated as PUBLIC classification. If the system were extended to handle PII, PHI, or payment data, additional framework-specific requirements would apply.
-5. **AWS default encryption behavior**: Assessment notes that newer AWS services provide default encryption with AWS-owned keys, but treats this as insufficient for compliance purposes where customer-managed key control is expected.
+- **No compliance regime is formally in scope.** Per the task framing and recon (`has_regulatory=false`, `has_personal_data=false`), SOC 2 and CIS AWS/cloud baselines are assessed as the *most relevant reference frameworks* for the AWS control surface, with gaps framed as production-readiness needs — not as active regulatory violations.
+- Assessment is grounded in `01-reconnaissance.md` and `02-structural-diagram.md` (per skill guidance to reuse recon rather than re-scan); file paths/config values cited are as reported there.
+- AWS-managed physical/environmental controls are assumed covered under the shared-responsibility model (AWS's own SOC 2/ISO reports) — CC6.4 marked N/A on that basis.
+- Code in the reviewed tree represents the intended deployment (no separate prod branch was available).
 
 ### Limitations
-1. **Static analysis only**: Assessment was performed against Terraform code and application source without running `terraform plan`, `terraform validate`, `npm audit`, or deploying the infrastructure. Runtime configuration may differ from code.
-2. **No organizational context**: Administrative/procedural controls were assessed based on repository contents only. The hosting organization may have existing policies, training, or governance that are not represented in this codebase.
-3. **No penetration testing**: Assessment identifies compliance gaps but does not validate exploitability of technical vulnerabilities.
-4. **Framework versions**: Assessment references SOC 2 (2017 TSC), ISO 27001:2022, NIST CSF 2.0, and PCI-DSS v4.0 as current at the assessment date. Future framework revisions may introduce additional requirements.
-5. **Regional regulations**: Assessment does not evaluate jurisdiction-specific privacy regulations (GDPR, CCPA, etc.) as the deployment region and user base geography are not specified.
+- **Static analysis only** — no runtime testing, no live AWS account inspection; a real deployment's console settings (e.g., account-level CloudTrail/Config that aren't in this IaC) could change some statuses.
+- **CIS AWS Foundations Benchmark numeric IDs are not in the curated reference set** (`references/` covers SOC 2, ISO 27001, NIST 800-53, PCI-DSS, HIPAA). To avoid citing unverifiable IDs, CIS/cloud checks are described by their technical intent and anchored to the *verified* SOC 2 / NIST / ISO equivalents rather than to CIS control numbers.
+- **ISO 27001 and NIST 800-53 are cross-mapped, not independently scored.** A full ISO Annex A (93-control) or NIST moderate-baseline pass, and the ISO management-system clauses, were out of scope; only the mapped equivalences to scored SOC 2/CIS findings are asserted.
+- **Organizational controls assessed as absent from evidence, not from interview** — CC1-CC5/CC9 findings reflect the absence of policy/program artifacts in the repo; a real org might hold these outside the codebase.
+- Privacy (GDPR/CCPA) is owned by the privacy-specialist and not re-assessed here.
+
+### Out of Scope
+- PCI-DSS and HIPAA control-by-control assessment (both Not Applicable — no cardholder data, no PHI).
+- Penetration testing, runtime configuration audit, and interview-based control effectiveness.
 
 ---
 
 ## Cross-References
 
-- **Reconnaissance**: `/Users/dev/amazon-ecs-fullstack-app-terraform/threat-model-output/01-reconnaissance.md` -- Asset inventory, security control inventory, and missing controls catalog provided the primary input for this compliance assessment
-- **Related threat model findings**: GRC findings map to threat model risks identified in the security architect's analysis. Specifically:
-  - GRC-001 (No TLS) corresponds to the reconnaissance finding of HTTP-only ALBs
-  - GRC-002 (No auth) corresponds to the reconnaissance finding of cosmetic Login.vue
-  - GRC-003 (Secrets in state) corresponds to the reconnaissance finding of GitHub token in plaintext state
-  - GRC-004 (IAM privilege) corresponds to the reconnaissance finding of `iam:PassRole` on `*`
-  - GRC-009 (CI/CD security) corresponds to the reconnaissance finding of repository-sourced buildspec with privileged mode
+- **Reconnaissance**: `01-reconnaissance.md` — §1.4 asset inventory (D1-D6), §1.5 actors/roles (R0-R5), §1.8 security control inventory (authoritative), §1.10 coverage seed.
+- **Structural diagram**: `02-structural-diagram.md` — L1 architecture (C1-C13, D1-D6), L2 trust & identity (TB1-TB6, R1-R4), L3 data/encryption (`[PLAIN]`/`[ENC]` split).
+- **Related specialist outputs** (expected): threat-model findings (TM-*) overlap on GRC-001 (TLS), GRC-003 (IAM `iam:PassRole *`), GRC-006 (CI/CD), GRC-004 (logging); code-review findings (CR-*) overlap on GRC-014 (error handling), GRC-005 (deps); privacy (PA-*) — no overlap (no personal data).
+- **Framework references used (all IDs verified)**: `soc2-trust-services-criteria.md`, `nist-800-53-controls.md`, `iso27001-annex-a-controls.md`, `cross-framework-mapping.md`. PCI/HIPAA references consulted only to confirm Not-Applicable scoping.
+- **Coverage ledger**: `coverage.json` — compliance-governance domain items updated below for the validation-specialist to merge.
+
+---
+
+## Coverage States
+
+> Compliance-and-governance domain (taxonomy section 33). These four items were seeded `not-applicable` in `coverage.json` under `has_regulatory=false`. Having now assessed the AWS control surface against SOC 2 + CIS AWS/cloud baselines per the task framing, they are updated to reflect the assessed posture. States use the taxonomy vocabulary (`present`/`partial`/`absent`/`not-applicable`/`unknown`). The validation-specialist should merge these over the seed values.
+
+| Item id | State | Detail / Note | Source |
+|---------|-------|---------------|--------|
+| compliance-governance.applicable-frameworks | partial | No regime is legally/contractually mandated (MIT-0 demo, no PII/PHI/PCI). Relevant reference baselines identified and assessed: SOC 2 Type II (primary) + CIS AWS Foundations/cloud-security; ISO 27001 & NIST 800-53 cross-mapped; PCI-DSS & HIPAA confirmed N/A. Applicability is now answered, but the system has no documented compliance scope/program of its own. | This report §Scope; recon §1.10 `has_regulatory=false` |
+| compliance-governance.control-mapping | partial | A verified SOC2↔ISO↔NIST control mapping and per-control gap analysis were produced here (17-row cross-framework table; 36 SOC 2 criteria scored ≈15.7%). The system itself evidences few of the mapped controls and has no formal, audited control-to-feature mapping. | This report §Cross-Framework Mapping, §Dashboard; GRC-001..014 |
+| compliance-governance.policy-ownership | absent | No security/privacy policy set, no assigned security/compliance owner (recon: no TM owner), and no risk-acceptance or exception-approval process exist. Governance spine (SOC 2 CC1-CC5) is unimplemented. | GRC-008; recon §1.2, §1.10 `document-metadata.ownership: partial` |
+| compliance-governance.regulatory-reporting | absent | No breach-notification or regulatory-reporting process, and no incident-response plan; the missing audit-evidence plane (GRC-004) means a breach could not even be detected or scoped. No mandated reporting obligation applies to the current demo data, but the capability is entirely absent for any production/regulated use. | GRC-004, GRC-008; recon §1.8 |
 
 ---
 
@@ -998,30 +665,26 @@ The following positive security practices are already in place and provide a fou
 ### Process Health
 | Metric | Value |
 |--------|-------|
-| Files Read | 22 |
-| Files Written | 1 |
+| Files Read | 11 (01-reconnaissance.md, 02-structural-diagram.md, agent-output-protocol.md, compliance SKILL.md, soc2/nist/iso/cross-framework/gap-template/checklists reference files, coverage.json, coverage-taxonomy.json) |
+| Files Written | 1 (compliance-gap-analysis.md) |
 | Errors Encountered | 0 |
 | Items Skipped | 0 |
 | Self-Assessed Output Quality | HIGH |
 
 ### What Went Well
-- Reconnaissance file was comprehensive and provided a thorough asset inventory, security control inventory, and missing controls catalog that directly mapped to compliance framework requirements
-- All 14 Terraform modules were readable and well-structured, enabling precise evidence citation with file paths and line numbers
-- The demo nature of the project was clearly documented, allowing appropriate contextualization of findings (expected for demo vs. unacceptable for production)
-- Cross-framework control mapping revealed significant overlap -- many single remediation items address gaps across all four applicable frameworks simultaneously, providing high compliance ROI
+- Reconnaissance (§1.8 security control inventory) and the L2/L3 structural diagrams were thorough and directly mappable to control domains — every finding traces to a specific recon line + Phase 2 node id, so no re-scan of the codebase was needed.
+- All cited SOC 2, NIST 800-53, and ISO 27001 control IDs were verified against the reference files before use; the cross-framework table was lifted from the verified `cross-framework-mapping.md` (including its `†` approximation flags).
+- Clean framework scoping: PCI/HIPAA/privacy dispositioned as N/A with concrete rationale, avoiding template padding.
 
 ### Issues Encountered
-- None. All files were accessible and the project structure was straightforward. The reconnaissance report provided sufficient context to determine framework applicability without additional information gathering.
+- **CIS AWS Foundations Benchmark is not in the curated reference set.** Rather than cite unverifiable CIS numeric IDs, CIS/cloud checks are described by intent and anchored to verified SOC 2/NIST/ISO equivalents. Documented in Limitations. No impact on grounding.
+- The four compliance-governance ledger items were seeded `not-applicable` (has_regulatory=false). Per the task framing (assess against SOC 2/CIS anyway), I updated them to assessed states (partial/absent) in Coverage States for the validation-specialist to merge — a deliberate override of the seed, noted with rationale.
 
 ### What Was Skipped or Incomplete
-- **Runtime validation**: Did not execute Terraform, deploy infrastructure, or perform runtime compliance checks. All findings are based on static code analysis. Impact: Actual deployed configuration may have additional controls or different settings than what the code defines.
-- **npm audit / dependency CVE analysis**: Did not run vulnerability scanning against package-lock.json files. Finding GRC-016 is based on version numbers identified in the reconnaissance rather than confirmed CVEs. Impact: Specific CVE citations would strengthen the vulnerability management gap finding.
-- **Organizational policy assessment**: Could only assess policies based on repository contents. The hosting organization (AWS) likely has its own policies that do not apply to forked instances. Impact: Policy gap analysis may overstate gaps for organizations with existing policy frameworks.
-- **GDPR/CCPA applicability**: Deferred regional privacy regulation assessment due to unspecified deployment geography and user base. Impact: Organizations with EU users or California residents would need additional privacy regulation analysis.
-- **Quantitative risk analysis**: Regulatory penalty amounts were not included because the system does not currently process regulated data. If extended to handle payment or health data, specific penalty structures (PCI fines up to $100K/month, HIPAA penalties up to $2.1M per violation category per year) should be incorporated.
+- ISO 27001 and NIST 800-53 were cross-mapped, not independently scored (would require full Annex A / moderate-baseline passes + ISO management-system clauses — out of scope). Only SOC 2 and the CIS/cloud technical checklist are scored in the dashboard; noted in Limitations.
+- No runtime/live-account inspection — account-level AWS settings not expressed in the reviewed IaC (e.g., an org-wide CloudTrail) can't be confirmed or refuted; GRC-004 assumes the IaC is the source of truth.
 
 ### Assumptions Made
-- Assumed AWS provider version ~>3.38 may not enable automatic S3 default encryption (this feature was added in later provider versions), making the explicit encryption configuration gap more critical
-- Assumed no AWS Organizations-level security services (GuardDuty, Config, Security Hub, CloudTrail) exist that might provide compensating controls at the account level
-- Assumed the `aws_s3_bucket` resource with the older provider version uses the legacy single-resource configuration (pre-v4 bucket configuration style) rather than the newer separate resource approach
-- Assumed Fargate platform version LATEST is used based on the appspec.yaml reference in the reconnaissance
+- Treated `01-reconnaissance.md` file paths/config values (e.g., `IAM/main.tf:175,306`, `ALB/main.tf:38`) as accurate without re-opening source, per skill guidance to reuse recon.
+- Scoped SOC 2 to Common Criteria + Availability (36 criteria), treating Confidentiality/Processing Integrity/Privacy categories as not-in-scope-for-this-engagement (Confidentiality partially relevant to build artifacts, but not separately scored to avoid inflating the denominator).
+- Calibrated qualitative severity so nothing is CRITICAL (no active regulatory mandate); "audit-blocking for a real SOC 2" gaps are HIGH.

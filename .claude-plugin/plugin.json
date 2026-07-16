@@ -1,0 +1,5 @@
+{
+  "name": "threat-model-suite",
+  "description": "Agentic security-assessment suite — threat modeling, privacy impact, and compliance analysis — with a deterministic manifest-validation hard gate enforced by a PreToolUse hook before report generation.",
+  "version": "0.1.0"
+}

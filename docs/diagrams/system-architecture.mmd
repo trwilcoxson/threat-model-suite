@@ -12,11 +12,11 @@ flowchart TB
 
     subgraph Core["Core Pipeline — Sequential"]
         direction LR
-        SA["<b>security-architect</b><br/><i>Phase 1, 3-6, 8s</i><br/>STRIDE-LM, PASTA"]
+        SA["<b>security-architect</b><br/><i>Phase 1 · Phases 3-5 ·<br/>Phases 6+8 (fresh context)</i><br/>STRIDE-LM, PASTA"]
         DS["<b>diagram-specialist</b><br/><i>Phases 2, 7</i><br/>Mermaid DFDs"]
     end
 
-    subgraph Specialists["Specialist Agents — Parallel (Team only)"]
+    subgraph Specialists["Specialist Agents — Background, parallel from Phase 2 (Team only)"]
         direction LR
         PA["<b>privacy-agent</b><br/><i>PIA, LINDDUN</i><br/>GDPR, CCPA, HIPAA"]
         GRC["<b>grc-agent</b><br/><i>Compliance Mapping</i><br/>SOC 2, PCI-DSS, NIST"]
@@ -25,9 +25,11 @@ flowchart TB
 
     subgraph PostProcess["Post-Processing — Sequential"]
         direction LR
-        VS["<b>validation-specialist</b><br/><i>Deduplication</i><br/>Framework ID Verify<br/>Severity Consistency"]
+        VS["<b>validation-specialist</b><br/><i>Cross-validate + dedup</i><br/>Framework ID verify<br/>Merge coverage.json <i>(single writer)</i>"]
+        Gate{"<b>Manifest Validation Gate</b><br/><i>deterministic</i><br/>recon/findings/coverage JSON"}
         RA["<b>report-analyst</b><br/><i>QA Review</i><br/>HTML, DOCX, PDF, PPTX"]
-        VS --> RA
+        VS --> Gate
+        Gate -->|"pass"| RA
     end
 
     subgraph FS["Shared Filesystem: threat-model-output/"]
@@ -36,12 +38,13 @@ flowchart TB
         TeamOut["privacy-assessment.md<br/>compliance-gap-analysis.md<br/>code-security-review.md"]
         ValOut["validation-report.md"]
         Reports["report.html<br/>report.docx<br/>report.pdf<br/>executive-summary.pptx"]
+        ObsFS["events.ndjson<br/>pipeline-summary.md<br/>coverage.json<br/>report-generation-log.md"]
     end
 
     subgraph Refs["Reference Files — Institutional Knowledge"]
         direction LR
         R1["<b>frameworks.md</b><br/>STRIDE-LM, MITRE<br/>CWE, OWASP"]
-        R2["<b>mermaid-spec.md</b><br/>+ 4 diagram refs"]
+        R2["<b>mermaid-spec.md</b><br/>+ 6 companion diagram refs"]
         R3["<b>report-template.md</b><br/>Sections I-XIV"]
         R4["<b>agent-output-</b><br/><b>protocol.md</b>"]
     end
@@ -70,7 +73,7 @@ flowchart TB
     class Parent parent
     class SA,PA,GRC,CR agent
     class DS diagram
-    class VS,RA post
-    class FS,Phases,TeamOut,ValOut,Reports fs
+    class VS,RA,Gate post
+    class FS,Phases,TeamOut,ValOut,Reports,ObsFS fs
     class Refs,R1,R2,R3,R4 ref
     class User user

@@ -1,0 +1,44 @@
+flowchart TD
+    %% Version: 2026-07-11 | Phase: 7 | System: AWS ECS Fullstack Demo | Type: Attack Tree | Chain: KC03
+    Goal(["GOAL (KC03): Run attacker code in prod\n-> account-wide privilege escalation\n(composite CRITICAL)"]):::criticalRisk
+
+    AND0{AND}
+    Goal --> AND0
+
+    SG1(["Sub-goal: land malicious code in the pipeline"]):::neutral
+    SG2(["Sub-goal: execute + escalate from the build"]):::neutral
+    AND0 --> SG1
+    AND0 --> SG2
+
+    OR1{OR}
+    SG1 --> OR1
+    T12["TM-012 · T1078/T1552: steal PAT\nfrom plaintext local state / pipeline\nCWE-798,312"]:::highRisk
+    T18["TM-018 · T1195: poison :latest base /\nEOL dep (no SCA/SBOM)"]:::highRisk
+    OR1 --> T12
+    OR1 --> T18
+
+    T13["TM-013 · T1195: push to main ->\nauto blue/green deploy, no approval\nCWE-732"]:::highRisk
+    SG1 --> T13
+
+    AND1{AND}
+    SG2 --> AND1
+    T15["TM-015 · T1059: privileged CodeBuild\nDocker-in-Docker RCE\nCWE-269"]:::highRisk
+    AND1 --> T15
+
+    OR2{OR}
+    T15 --> OR2
+    T17["TM-017 · T1195: overwrite mutable ECR tag\nCWE-732 (no scan / no digest pin)"]:::highRisk
+    T19["TM-019 · T1195: tamper taskdef.json\n(sed injects taskRoleArn)\nCWE-732"]:::medRisk
+    OR2 --> T17
+    OR2 --> T19
+
+    T16["TM-016 · T1078: DevOps role\nRegisterTaskDefinition+RunTask+PassRole *\nCWE-269,732 -> account-wide"]:::highRisk
+    T17 --> T16
+    T19 --> T16
+
+    classDef criticalRisk fill:#dc3545,stroke:#491217,stroke-width:2px,color:#fff
+    classDef highRisk fill:#ffcccc,stroke:#cc0000,stroke-width:2px,color:#000
+    classDef medRisk fill:#ffe6cc,stroke:#cc7a00,stroke-width:2px,color:#000
+    classDef lowRisk fill:#ccffcc,stroke:#008000,stroke-width:2px,color:#000
+    classDef noFindings fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
+    classDef neutral fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000

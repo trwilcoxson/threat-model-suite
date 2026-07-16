@@ -123,3 +123,10 @@ flowchart TD
 
 (For larger trees a CycloneDX-style table with versions + CVEs is an acceptable substitute, kept
 under the same `## SBOM` / `## Dependency` heading.)
+
+**Verification stamp (what the eval matches).** The deterministic check
+(`evals/reliability/diagram_checks.py`) recognizes this graph by a `Type:` token — here `Type: SBOM`
+(or `Type: Dependency`) — on the diagram's `%% Version: ...` stamp. Matching is case-insensitive and
+tolerates a hyphen or a space between words, and the token is accepted either after a `|` field
+separator (`%% Version: ... | Type: SBOM`) or as a bare `%% type: sbom` line. The Version stamp form
+alone is sufficient. Same convention as the companion diagrams in `mermaid-diagrams.md` §5.

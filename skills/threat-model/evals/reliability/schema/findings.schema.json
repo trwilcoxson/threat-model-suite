@@ -3,12 +3,14 @@
   "title": "Findings manifest — machine-readable mirror of the report's findings",
   "description": "Emitted by the threat-model run alongside the markdown report. The eval validates structure, internal consistency (severity == band(L x I)), grounding (refs resolve to recon), and coverage — none of which need a per-target answer key.",
   "type": "object",
+  "additionalProperties": false,
   "required": ["findings", "summary_counts", "no_issue_surface"],
   "properties": {
     "findings": {
       "type": "array",
       "items": {
         "type": "object",
+        "additionalProperties": false,
         "required": ["id", "title", "stride_lm", "likelihood", "impact", "severity", "asset_refs", "surface_refs", "attack_path", "remediation"],
         "properties": {
           "id":         { "type": "string", "pattern": "^TM-[0-9]{3}$" },
@@ -18,8 +20,8 @@
           "likelihood": { "type": "integer", "minimum": 1, "maximum": 5 },
           "impact":     { "type": "integer", "minimum": 1, "maximum": 5 },
           "severity":   { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
-          "cwe":        { "type": "array", "items": { "type": "string", "pattern": "^CWE-[0-9]+$" } },
-          "mitre":      { "type": "array", "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" } },
+          "cwe":        { "type": ["array", "null"], "items": { "type": "string", "pattern": "^CWE-[0-9]+$" }, "description": "null or omitted when the finding maps to no CWE" },
+          "mitre":      { "type": ["array", "null"], "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" }, "description": "null or omitted when the finding maps to no ATT&CK technique" },
           "asset_refs":   { "type": "array", "items": { "type": "string" }, "description": "recon component/data_store ids this finding concerns" },
           "surface_refs": { "type": "array", "items": { "type": "string" }, "description": "recon entry_point/trust_boundary/external_dep ids this finding covers" },
           "attack_path":  { "type": "string" },
@@ -29,10 +31,11 @@
     },
     "summary_counts": {
       "type": "object",
+      "additionalProperties": false,
       "required": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
       "properties": {
-        "LOW": { "type": "integer" }, "MEDIUM": { "type": "integer" },
-        "HIGH": { "type": "integer" }, "CRITICAL": { "type": "integer" }
+        "LOW": { "type": "integer", "minimum": 0 }, "MEDIUM": { "type": "integer", "minimum": 0 },
+        "HIGH": { "type": "integer", "minimum": 0 }, "CRITICAL": { "type": "integer", "minimum": 0 }
       }
     },
     "no_issue_surface": {

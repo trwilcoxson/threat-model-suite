@@ -1,0 +1,85 @@
+flowchart TD
+    %% Version: 2026-07-11 | Phase: 2 | System: AWS ECS Fullstack Demo | Layer: L1
+    R0["Anonymous Internet User\n(browser · no credential)"]:::external
+    R5["Terraform Operator / Developer\n(AWS creds + GitHub PAT)"]:::external
+    X1["GitHub Repository\n[vendor:GitHub] source + PAT"]:::externalDep
+    X4["Docker Base Images\nbitnami/node:latest, nginx:latest\n[vendor:public-ECR]"]:::externalDep
+
+    subgraph VPC["VPC 10.120.0.0/16 · AWS Account · Single Region · 2 AZ"]
+        subgraph PUB["Public Subnets — ALB tier"]
+            C4(["Client ALB\nAWS ALB · internet-facing · HTTP:80\n[vendor:AWS] [managed]"]):::neutral
+            C5(["Server / API ALB\nAWS ALB · internet-facing · HTTP:80\n[vendor:AWS] [managed]"]):::neutral
+        end
+        subgraph PRIV["Private Subnets — ECS Fargate task tier"]
+            C6(["ECS Cluster\nAmazon ECS on Fargate\n[vendor:AWS] [managed]"]):::neutral
+            C7(["ECS Service — client task\nawsvpc · Fargate\n[vendor:AWS] [managed]"]):::neutral
+            C8(["ECS Service — server task\nawsvpc · Fargate\n[vendor:AWS] [managed]"]):::neutral
+            C1(["Client SPA\nVue.js 2 · bootstrap-vue · Nginx\n[self-managed]"]):::neutral
+            C2(["Server API\nNode.js · Express 4 · aws-sdk v2\n[self-managed]"]):::neutral
+            C3(["Swagger / API Docs\nswagger-ui-express · /api/docs\n[self-managed]"]):::neutral
+        end
+    end
+
+    subgraph CICD["CI/CD Control Plane"]
+        C9[/"CodePipeline\nSource/Build/Deploy · GitHub v1\n[vendor:AWS] [managed]"/]:::pipeline
+        C10[/"CodeBuild (server + client)\nstandard:4.0 · privileged_mode\n[vendor:AWS] [managed]"/]:::pipeline
+        C11[/"CodeDeploy\nblue/green ECS · ECSAllAtOnce\n[vendor:AWS] [managed]"/]:::pipeline
+        C12(["ECS Autoscaling + CloudWatch\nApp Auto Scaling · CPU/mem target\n[vendor:AWS] [managed]"]):::neutral
+        C13(["SNS Topic\ndeployment notifications\n[vendor:AWS] [managed]"]):::neutral
+    end
+
+    D1[("DynamoDB\nproduct catalog · PAY_PER_REQUEST\n[vendor:AWS] [managed]")]:::dataStore
+    D2[("S3 assets bucket\nproduct images · acl=private\n[vendor:AWS] [managed]")]:::dataStore
+    D3[("S3 artifact bucket\nsource + build artifacts\n[vendor:AWS] [managed]")]:::dataStore
+    D4[("ECR repositories\nserver + client images · MUTABLE\n[vendor:AWS] [managed]")]:::dataStore
+    D5[("CloudWatch Logs\nawslogs · 30-day retention\n[vendor:AWS] [managed]")]:::dataStore
+    D6[("Terraform State\nlocal file · contains github_token\n[self-managed]")]:::dataStore
+
+    R0 -->|"HTTP: SPA page load [PUBLIC] [PLAIN]"| C4
+    C4 -->|"HTTP: forward to client task [INTERNAL] [PLAIN]"| C7
+    C7 -.->|"[CTRL] ECS runs SPA container [INTERNAL]"| C1
+    R0 -->|"HTTP: GET /api/getAllProducts,/status [PUBLIC] [PLAIN]"| C5
+    C5 -->|"HTTP: forward to server task [INTERNAL] [PLAIN]"| C8
+    C8 -.->|"[CTRL] ECS runs API container [INTERNAL]"| C2
+    C2 -.->|"[CTRL] serves /api/docs [PUBLIC]"| C3
+    C2 -->|"HTTPS: DocumentClient.scan catalog [INTERNAL]"| D1
+    R0 -->|"HTTPS: product image fetch [INTERNAL]"| D2
+    C7 -->|"HTTP: awslogs task logs [INTERNAL]"| D5
+    C8 -->|"HTTP: awslogs task logs [INTERNAL]"| D5
+    R5 -->|"[BUILD] git push to main [INTERNAL]"| X1
+    R5 -.->|"[ADMIN] terraform apply · local state [RESTRICTED]"| D6
+    X1 -->|"[BUILD] source poll PollForSourceChanges [CONFIDENTIAL]"| C9
+    C9 -->|"[BUILD] store source + artifacts [CONFIDENTIAL]"| D3
+    C9 -->|"[BUILD] trigger build stage [INTERNAL]"| C10
+    X4 -->|"[BUILD] pull base image :latest [INTERNAL]"| C10
+    C10 -->|"[BUILD] docker build/push [CONFIDENTIAL]"| D4
+    C10 -->|"[BUILD] build logs [INTERNAL]"| D5
+    C9 -->|"[BUILD] trigger deploy stage [INTERNAL]"| C11
+    C11 -.->|"[CTRL] blue/green deploy [INTERNAL]"| C6
+    D4 -.->|"[CTRL] image pull on task start [INTERNAL]"| C6
+    C6 -.->|"[CTRL] schedule client tasks [INTERNAL]"| C7
+    C6 -.->|"[CTRL] schedule server tasks [INTERNAL]"| C8
+    C11 -->|"[ASYNC] deploy notifications [INTERNAL]"| C13
+    C12 -.->|"[CTRL] autoscaling CPU/mem [INTERNAL]"| C8
+
+    subgraph Legend["Legend — L1 Symbols & Edge Types"]
+        LG1["[ ] External Entity / Dependency"]:::external
+        LG2["([ ]) Process / Service"]:::neutral
+        LG3["[( )] Data Store"]:::dataStore
+        LG4["[/ /] CI/CD Pipeline"]:::pipeline
+        LG5["--> Data flow (default)"]
+        LG6["-.-> [CTRL] Control/API"]
+        LG7["--> [BUILD] Build/Deploy (orange)"]
+        LG8["--> [ASYNC] Async/Event (green)"]
+        LG9["-.-> [ADMIN] Admin/Ops (red)"]
+    end
+
+    linkStyle 11,13,14,15,16,17,18,19 stroke:#f39c12,stroke-width:2px
+    linkStyle 12 stroke:#cc0000,stroke-width:2px
+    linkStyle 24 stroke:#27ae60,stroke-width:2px
+
+    classDef neutral fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
+    classDef external fill:#cce5ff,stroke:#004085,stroke-width:1px,color:#000
+    classDef dataStore fill:#e2e3e5,stroke:#383d41,stroke-width:1px,color:#000
+    classDef pipeline fill:#d5dbdb,stroke:#7f8c8d,stroke-width:1px,color:#000
+    classDef externalDep fill:#f5f5f5,stroke:#333,stroke-width:3px,stroke-dasharray:3,color:#000

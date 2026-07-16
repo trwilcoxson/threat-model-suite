@@ -24,22 +24,25 @@ def _blocks(report_text: str) -> list[str]:
 
 
 def _layer_of(block: str) -> str | None:
+    # Declared stamp only — never infer a diagram's layer from its prose. A block with no
+    # `Layer: L{N}` stamp is left unclassified; its absence is already surfaced by
+    # no-version-stamp / missing-layers, not silently guessed from keywords (determinism boundary).
     m = re.search(r"Layer:\s*(L[1-4])", block)
-    if m:
-        return m.group(1)
-    low = block.lower()
-    if "threat overlay" in low or "risk overlay" in low:
-        return "L4"
-    if "trust" in low and "identit" in low:
-        return "L2"
-    return None
+    return m.group(1) if m else None
 
 
 def _edges(block: str) -> list[tuple[str, str | None]]:
-    """Return (raw_line, label-or-None) for each edge operator occurrence."""
+    """Return (raw_line, label-or-None) for each real edge.
+
+    An arrow glyph inside a quoted node label (e.g. the spec-required legend nodes
+    `L5["-->  Data flow"]`, `RL6["==> Attack Path"]`) is label text, not an edge. Strip the
+    double-quoted spans first; only an operator that survives is a real edge. Real labeled edges
+    keep their glyph outside the quotes (`A -->|"HTTPS [ENC]"| B` -> `A -->|| B` still has `-->`).
+    """
     out = []
     for line in block.splitlines():
-        if re.search(EDGE_OPS, line):
+        bare = re.sub(r'"[^"]*"', "", line)  # drop quoted label text before testing for an edge op
+        if re.search(EDGE_OPS, bare):
             lbl = re.search(r"\|\s*\"?(.*?)\"?\s*\|", line)
             out.append((line.strip(), lbl.group(1) if lbl else None))
     return out
@@ -91,12 +94,15 @@ def _section(text: str, *keywords: str) -> str:
 
 
 def _typed(blocks: list[str], *types: str) -> list[str]:
-    pats = [r"%%\s*type:\s*" + re.escape(t).replace(r"\-", "[- ]") for t in types]  # tolerate space or hyphen
+    """Blocks whose diagram-type stamp matches any of `types`, in EITHER documented form:
+      - bare:        `%% type: attack-flow`
+      - §5 stamp:    `%% Version: ... | Type: Attack Flow | Chain: KC1`   (type after a `|` field sep)
+    Words tolerate hyphen or space ("attack-flow" == "Attack Flow"); matching is case-insensitive.
+    See references/mermaid-diagrams.md §5 and references/analytical-visuals.md §5 for the stamp.
+    """
+    # `type:` may follow either `%%` (bare) or a `|` field separator inside a `%% Version: ...` line.
+    pats = [r"(?:%%|\|)\s*type:\s*" + re.escape(t).replace(r"\-", "[- ]") for t in types]
     return [b for b in blocks if any(re.search(p, b.lower()) for p in pats)]
-
-
-AUTH_VOCAB = ("login", "signin", "sign-in", "oauth", "oidc", "jwt", "saml", "session", "mfa",
-              "otp", "auth", "token", "apikey", "api key", "password")
 
 
 def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, findings_doc: dict | None) -> dict[str, Any]:
@@ -120,7 +126,7 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
     deps = recon.get("external_deps", [])
     recon_ids = {e["id"] for b in ("components", "data_stores", "entry_points", "trust_boundaries", "external_deps")
                  for e in recon.get(b, []) if isinstance(e, dict) and "id" in e}
-    all_mitre = {m for f in findings for m in f.get("mitre", [])}
+    all_mitre = {m for f in findings for m in (f.get("mitre") or [])}
     present: list[str] = []
 
     # attack tree + attack-flow — gate: >=3 declared kill chains
@@ -142,11 +148,11 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
         else:
             present.append("attack-flow")
 
-    # auth sequence — gate: auth surface (entry-point vocab OR S/E finding); name match may only SKIP
-    auth_entry = any(any(k in (e.get("name", "") + " " + " ".join(e.get("evidence", []))).lower() for k in AUTH_VOCAB)
-                     for e in recon.get("entry_points", []))
+    # auth sequence — gate: DECLARED auth fact only (an S/E finding, or declared roles[]). No name/
+    # content sniffing of entry-point strings — an entry point *named* "tokenizer" must not force a
+    # sequenceDiagram (determinism boundary: gate on skill-declared facts, never inferred content).
     auth_finding = any("S" in f.get("stride_lm", []) or "E" in f.get("stride_lm", []) for f in findings)
-    if auth_entry or auth_finding:
+    if auth_finding or roles:
         seqs = [b for b in blocks if "sequencediagram" in b.lower()]
         if not seqs:
             D("no-auth-sequence", "auth surface present but no sequenceDiagram rendered")
@@ -182,7 +188,9 @@ def analytical_checks(report_text: str, blocks: list[str], recon: dict | None, f
     # L×I risk heat map — gate: >=1 scored finding
     scored = [f for f in findings if isinstance(f.get("likelihood"), int) and isinstance(f.get("impact"), int)]
     if scored:
-        hm = _section(report_text, "heat map", "heatmap", "risk matrix", "likelihood")
+        # Match the heat-map heading specifically — NOT a bare "likelihood", which also matches an
+        # earlier "Likelihood Scoring" methodology heading and made _section grab the wrong section.
+        hm = _section(report_text, "heat map", "heatmap", "risk matrix")
         if not hm or not re.search(r"TM-\d{3}", hm):
             D("no-risk-heatmap", "scored findings exist but no Likelihood×Impact heat map plotting them")
         else:
@@ -246,9 +254,9 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None) -> di
             layers.setdefault(L, []).append(b)
 
     # ---- requirement 1: taxonomy / required layers per scaling
-    size = 0
-    if recon:
-        size = len(recon.get("components", [])) + len(recon.get("data_stores", []))
+    # Scale on COMPONENT count only, per mermaid-layers.md §6 / SKILL.md ("≤5 components → 2-layer;
+    # 6-20 → full 4-layer"). Data stores don't drive layer strategy.
+    size = len(recon.get("components", [])) if recon else 0
     required = {"L1", "L2", "L3", "L4"} if size > 5 else {"L1", "L4"}
     present = set(layers)
     missing = sorted(required - present)

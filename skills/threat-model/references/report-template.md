@@ -6,6 +6,7 @@
 - Section II: System Overview (purpose, scope, tech stack, deployment model)
 - Section III: Architecture Diagram — Structural (rendered diagram, component metadata, trust boundaries, network topology)
 - Section IV: Risk Overlay Diagram (rendered diagram, component risk mapping, critical data flows)
+- Section IV-A: Coverage & Communication Visuals (STRIDE-per-element matrix, L×I heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph — each when applicable)
 - Section V: Asset Inventory (data assets, data flow summary)
 - Section VI: Threat Actor Profiles
 - Section VII: Findings (ordered by severity, standardized format)
@@ -317,7 +318,7 @@ Omit this section entirely. Add note in Section XIII: "Privacy impact assessment
 ### A. Methodology Notes
 - STRIDE-LM category definitions
 - PASTA scoring scale (1-5 for both likelihood and impact)
-- OWASP Risk Rating severity bands: CRITICAL (20-25), HIGH (12-19), MEDIUM (6-11), LOW (1-5)
+- OWASP Risk Rating severity bands: CRITICAL (17-25), HIGH (10-16), MEDIUM (5-9), LOW (1-4)
 - If code review findings present: CVSS v3.1 scale and severity mapping
 
 ### B. Framework Reference Table

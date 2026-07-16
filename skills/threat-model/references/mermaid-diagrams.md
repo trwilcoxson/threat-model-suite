@@ -194,6 +194,14 @@ flowchart LR
 Declare one `kill_chains[]` entry in `findings.json` (`{id, goal, steps:[TM-ids]}`) per chain so
 verification can require one attack tree and one attack flow per declared chain.
 
+**Verification stamp (what the eval matches).** The deterministic diagram check
+(`evals/reliability/diagram_checks.py`) identifies a companion/analytical diagram by a `Type:` token,
+case-insensitively, tolerating a hyphen **or** a space between words. It accepts the token in either
+form: the documented `%% Version: ... | Type: Attack Flow | Chain: KC1` stamp (the `Type:` field after
+a `|` separator) **or** a bare `%% type: attack-flow` comment line. So `Type: Attack Flow`,
+`Type: Attack Tree`, and `Type: SBOM` on the Version stamp are sufficient — you do not also need a
+separate `%% type:` line. Recognized kinds: `attack-tree`, `attack-flow`/`kill-chain`, and `sbom`.
+
 ---
 
 ## §6 Phase Integration

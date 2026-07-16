@@ -1,0 +1,24 @@
+flowchart TD
+    %% Version: 2026-07-11 | Phase: 7 | System: AWS ECS Fullstack Demo | Type: Attack Tree | Chain: KC02
+    Goal(["GOAL (KC02): Execute attacker-controlled\nscript in a victim's browser"]):::highRisk
+
+    AND1{AND}
+    Goal --> AND1
+
+    P1["Precondition: on-path position\n(rogue Wi-Fi / ISP / transit)"]:::medRisk
+    T2["TM-002 · intercept + rewrite HTTP\nCWE-311 (no TLS/HSTS; https_listener off)"]:::highRisk
+    T23["TM-023 · injected script faces no CSP\nCWE-79 (no CSP/X-Frame-Options/HSTS)"]:::lowRisk
+
+    AND1 --> P1
+    AND1 --> T2
+    AND1 --> T23
+
+    Impact(["Impact: control of rendered storefront\n(session/data theft in a real deployment)"]):::medRisk
+    T2 --> Impact
+    T23 --> Impact
+
+    classDef highRisk fill:#ffcccc,stroke:#cc0000,stroke-width:2px,color:#000
+    classDef medRisk fill:#ffe6cc,stroke:#cc7a00,stroke-width:2px,color:#000
+    classDef lowRisk fill:#ccffcc,stroke:#008000,stroke-width:2px,color:#000
+    classDef noFindings fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000
+    classDef neutral fill:#f5f5f5,stroke:#666,stroke-width:1px,color:#000

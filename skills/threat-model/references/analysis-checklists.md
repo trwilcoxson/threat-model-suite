@@ -160,7 +160,7 @@ Score each threat identified in Phase 3.
 - [ ] Components with NO validated findings kept as :::noFindings (not :::lowRisk)
 - [ ] Enriched node labels with machine-parseable annotations: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`
 - [ ] STRIDE abbreviations use single letters (S,T,R,I,D,E,LM)
-- [ ] LxI calculation correct, BAND matches score (CRITICAL 20-25, HIGH 12-19, MEDIUM 6-11, LOW 1-5)
+- [ ] LxI calculation correct, BAND matches score (CRITICAL 17-25, HIGH 10-16, MEDIUM 5-9, LOW 1-4)
 - [ ] CWE IDs verified against frameworks.md
 - [ ] Attack path overlays using ==> thick arrows with red linkStyle (L4 only)
 - [ ] Attack path overlays appear ONLY in L4 (not in L1-L3)
@@ -205,15 +205,17 @@ Score each threat identified in Phase 3.
 - [ ] Saved as {name}-L4-threat.mmd
 - [ ] Output saved to file (07-final-diagram.md) for large systems
 
-## Phase 8 — Final Report Checklist
+## Phase 8 — Threat Model Summary Checklist
 
-### Report Completeness
-- [ ] Executive summary with threat counts, top 3 risks, and posture rating
-- [ ] System overview, asset inventory, threat actor profiles, and attack surface summary
-- [ ] Final Mermaid diagram with risk-overlay legend
-- [ ] Threat summary table and detailed findings grouped by severity
-- [ ] Remediation recommendations with dependency ordering and implementation waves
-- [ ] LINDDUN privacy assessment, positive observations, false negative results, and assumptions
-- [ ] Update triggers and review cadence defined
-- [ ] Component and data flow names consistent between diagram and findings
-- [ ] Complete report saved to file (08-threat-model-report.md)
+Phase 8 is the security-architect's concise **summary** (not the full consolidated report — that is the
+report-analyst's job from `report-template.md`). Check the summary-only structure:
+- [ ] Executive summary (5-10 sentences): posture rating, threat counts by severity, top 3 risks with business impact, key strengths
+- [ ] Validated findings summary table (the authoritative finding list for the validation-specialist and report-analyst)
+- [ ] Remediation priority list grouped by implementation wave, with dependency ordering and quick-wins marked
+- [ ] Assumptions and scope (what was assumed, what was not analyzed, lifecycle re-assessment triggers)
+- [ ] `findings.json` emitted and passing the Pre-Emit Self-Check
+- [ ] Component and data flow names consistent with the Phase 2 diagram labels
+- [ ] Summary saved to file (08-threat-model-report.md)
+
+(The full report — system overview, all diagrams, LINDDUN privacy analysis, positive observations — is
+assembled later by the report-analyst; do NOT reproduce it here.)

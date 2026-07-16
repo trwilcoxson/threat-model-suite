@@ -1,5 +1,7 @@
 # Agent Output Protocol
 
+> _Mirror of the canonical `skills/threat-model/references/agent-output-protocol.md` — do not edit independently; keep byte-identical to the canonical copy (this line excepted)._
+
 ## Contents
 - Purpose
 - Required Document Structure (Metadata, Summary, Findings, Observations, Assumptions, Cross-References)
@@ -72,7 +74,7 @@ ALL findings from ALL agents MUST use this format:
 | Affected Component(s) | [matching diagram node IDs from Phase 2 structural diagram] |
 | Scoring System | [OWASP Risk Rating / CVSS v3.1 / Qualitative] |
 | Score | [numeric score, vector string, or N/A] |
-| Cross-Framework | [MITRE: Txxxx | CWE-NNN | OWASP category] |
+| Cross-Framework | [MITRE: Txxxx · CWE-NNN · OWASP category] |
 
 **Description**: [What is the issue and why it matters]
 
@@ -107,10 +109,10 @@ All agents MUST use these severity definitions (mapped to their scoring system):
 ### OWASP Risk Rating (threat model, privacy)
 | Severity | Score Range (L×I) | Description |
 |----------|-------------------|-------------|
-| CRITICAL | 20-25 | Immediate exploitation likely, severe business impact |
-| HIGH | 12-19 | Realistic attack path, significant business impact |
-| MEDIUM | 6-11 | Plausible attack, moderate business impact |
-| LOW | 1-5 | Theoretical or low-impact finding |
+| CRITICAL | 17-25 | Immediate exploitation likely, severe business impact |
+| HIGH | 10-16 | Realistic attack path, significant business impact |
+| MEDIUM | 5-9 | Plausible attack, moderate business impact |
+| LOW | 1-4 | Theoretical or low-impact finding |
 
 ### CVSS v3.1 (code review)
 | Severity | Score Range | Description |
@@ -238,7 +240,7 @@ The validation-specialist checks every agent output against these rules:
 | Affected Component(s) | PaymentSvc |
 | Scoring System | CVSS v3.1 |
 | Score | 9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H) |
-| Cross-Framework | MITRE: T1190 | CWE-89 | OWASP A03:2021 |
+| Cross-Framework | MITRE: T1190 · CWE-89 · OWASP A03:2021 |
 
 **Description**: The payment query handler constructs SQL queries using string concatenation with user-supplied input, allowing SQL injection.
 

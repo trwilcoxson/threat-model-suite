@@ -4,52 +4,61 @@ flowchart TD
     Start(["User Request"]) --> Recon["Parent does lightweight recon<br/><i>Glob/Grep for IaC, APIs, data stores</i>"]
     Recon --> Mode{"Solo or Team?"}
 
-    %% Solo Path
-    Mode -->|"Small system,<br/>no sensitive data,<br/>no IaC"| Solo_SA1["<b>security-architect</b><br/><i>blocking</i><br/>Phase 1 only"]
-    Solo_SA1 -->|"01-reconnaissance.md"| Solo_DS1["<b>diagram-specialist</b><br/><i>blocking</i><br/>Phase 2: structural DFDs"]
-    Solo_DS1 -->|"02-structural-diagram.md"| Solo_SA2["<b>security-architect</b><br/><i>blocking</i><br/>Phases 3-6, 8 summary"]
-    Solo_SA2 -->|"03-06.md, 08.md"| Solo_DS2["<b>diagram-specialist</b><br/><i>blocking</i><br/>Phase 7: risk overlay"]
-    Solo_DS2 -->|"07-final-diagram.md"| Solo_RA["<b>report-analyst</b><br/><i>blocking</i><br/>QA + Generate 4 formats"]
+    %% ---------- Solo Path ----------
+    Mode -->|"Small system,<br/>no sensitive data,<br/>no IaC"| Solo_SA1["<b>security-architect</b><br/><i>blocking</i><br/>Phase 1 — reconnaissance"]
+    Solo_SA1 -->|"01-reconnaissance.md<br/>recon.json + coverage seed"| Solo_DS1["<b>diagram-specialist</b><br/><i>blocking</i><br/>Phase 2 — structural DFDs"]
+    Solo_DS1 -->|"02-structural-diagram.md"| Solo_SA2["<b>security-architect</b><br/><i>blocking</i><br/>Phases 3-5 — generative analysis"]
+    Solo_SA2 -->|"03-05.md"| Solo_SAV["<b>security-architect</b><br/><i>blocking · FRESH context</i><br/>Phases 6 + 8 — skeptical validation<br/><i>reads generative output from disk</i>"]
+    Solo_SAV -->|"06.md, 08.md, findings.json"| Solo_DS2["<b>diagram-specialist</b><br/><i>blocking</i><br/>Phase 7 — risk overlay<br/>+ analytical visuals"]
+    Solo_DS2 -->|"07-final-diagram.md"| Solo_Gate{"Manifest Validation Gate<br/><i>deterministic</i>"}
+    Solo_Gate -->|"pass"| Solo_RA["<b>report-analyst</b><br/><i>blocking</i><br/>QA + Generate 4 formats"]
     Solo_RA --> Solo_Done(["Solo Complete<br/><b>report.html, .docx, .pdf, .pptx</b>"])
 
-    %% Team Path
-    Mode -->|"Complex system,<br/>PII/PHI, cloud IaC,<br/>compliance needs"| Team_SA1["<b>security-architect</b><br/><i>blocking</i><br/>Phase 1 only"]
+    %% ---------- Team Path ----------
+    Mode -->|"Complex system,<br/>PII/PHI, cloud IaC,<br/>compliance needs"| Team_SA1["<b>security-architect</b><br/><i>blocking</i><br/>Phase 1 — reconnaissance"]
+    Team_SA1 -->|"01-reconnaissance.md<br/>recon.json + coverage seed"| Team_DS1["<b>diagram-specialist</b><br/><i>blocking</i><br/>Phase 2 — structural DFDs"]
 
-    Team_SA1 -->|"01-reconnaissance.md"| Team_DS1["<b>diagram-specialist</b><br/><i>blocking</i><br/>Phase 2: structural DFDs"]
-    Team_DS1 -->|"02-structural-diagram.md"| Team_SA2["<b>security-architect</b><br/><i>blocking</i><br/>Phases 3-6, 8 summary"]
-    Team_SA2 -->|"03-06.md, 08.md"| Team_DS2["<b>diagram-specialist</b><br/><i>blocking</i><br/>Phase 7: risk overlay"]
+    %% Specialists fan out at the Phase-2 frontier and run concurrently with Phases 3-7
+    Team_DS1 -->|"02-structural-diagram.md<br/><i>(node-id namespace)</i>"| Fork["Parent fans out the 3 specialists<br/>in <b>background</b><br/><i>concurrent with Phases 3-7</i>"]
+    Team_DS1 --> Team_SA2["<b>security-architect</b><br/><i>blocking</i><br/>Phases 3-5 — generative analysis"]
 
-    Team_DS2 -->|"07-final-diagram.md"| Fork["Parent spawns<br/>3 agents in parallel"]
+    Fork --> PA["<b>privacy-agent</b><br/><i>background</i><br/>LINDDUN + regulatory"]
+    Fork --> GRC["<b>grc-agent</b><br/><i>background</i><br/>Cross-framework mapping"]
+    Fork --> CR["<b>code-review-agent</b><br/><i>background</i><br/>CVSS + code evidence"]
 
-    Fork --> PA["<b>privacy-agent</b><br/><i>background</i>"]
-    Fork --> GRC["<b>grc-agent</b><br/><i>background</i>"]
-    Fork --> CR["<b>code-review-agent</b><br/><i>background</i>"]
+    Team_SA2 -->|"03-05.md"| Team_SAV["<b>security-architect</b><br/><i>blocking · FRESH context</i><br/>Phases 6 + 8 — skeptical validation<br/><i>reads generative output from disk,<br/>so review does not inherit anchoring</i>"]
+    Team_SAV -->|"06.md, 08.md, findings.json"| Team_DS2["<b>diagram-specialist</b><br/><i>blocking</i><br/>Phase 7 — risk overlay<br/>+ analytical visuals"]
 
-    PA -->|"privacy-assessment.md"| Join["Parent waits for all 3<br/><i>TaskOutput, block=true</i>"]
-    GRC -->|"compliance-gap-analysis.md"| Join
-    CR -->|"code-security-review.md"| Join
+    VS["<b>validation-specialist</b><br/><i>blocking · spawned by name</i><br/>Cross-validate every track, dedup,<br/>merge coverage.json <i>(single writer)</i>"]
 
-    Join --> VS["<b>validation-specialist</b><br/><i>blocking, as general-purpose</i><br/>Dedup, verify IDs,<br/>severity consistency"]
+    Team_DS2 -->|"07-final-diagram.md"| VS
+    PA -->|"privacy-assessment.md"| VS
+    GRC -->|"compliance-gap-analysis.md"| VS
+    CR -->|"code-security-review.md"| VS
 
-    VS -->|"validation-report.md"| Team_RA["<b>report-analyst</b><br/><i>blocking</i><br/>QA + Consolidate +<br/>Generate 4 formats"]
-
+    VS -->|"validation-report.md"| Team_Gate{"Manifest Validation Gate<br/><i>deterministic</i>"}
+    Team_Gate -->|"pass"| Team_RA["<b>report-analyst</b><br/><i>blocking</i><br/>QA + Consolidate +<br/>Generate 4 formats"]
     Team_RA --> Team_Done(["Team Complete<br/><b>report.html, .docx, .pdf, .pptx</b>"])
 
-    %% Verify
-    Solo_Done --> Verify["Parent verifies all files<br/>exist and are non-empty"]
+    %% ---------- Post ----------
+    Solo_Done --> Verify["Parent verifies every file exists<br/>and is non-empty<br/><i>pipeline-summary.md</i>"]
     Team_Done --> Verify
+
+    Note["<i>Every persona is spawned by its own <b>name</b> as subagent_type, via the <b>Agent</b> tool.<br/>Background spawns notify the parent on completion — there is no TaskOutput tool.</i>"]
 
     classDef start fill:#e0f2fe,stroke:#0284c7,stroke-width:2px,color:#0c4a6e
     classDef decision fill:#fef3c7,stroke:#f59e0b,stroke-width:2px,color:#78350f
     classDef agent fill:#f0fdf4,stroke:#22c55e,stroke-width:1.5px,color:#14532d
     classDef diagram fill:#e0f2fe,stroke:#0284c7,stroke-width:1.5px,color:#0c4a6e
-    classDef post fill:#fef3c7,stroke:#f59e0b,stroke-width:1.5px,color:#78350f
     classDef done fill:#f0fdf4,stroke:#16a34a,stroke-width:2px,color:#14532d
     classDef control fill:#f3e8ff,stroke:#a855f7,stroke-width:1.5px,color:#581c87
+    classDef fresh fill:#fee2e2,stroke:#ef4444,stroke-width:2px,color:#7f1d1d
+    classDef note fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#475569
 
     class Start,Solo_Done,Team_Done,Verify start
-    class Mode decision
+    class Mode,Solo_Gate,Team_Gate decision
     class Solo_SA1,Solo_SA2,Team_SA1,Team_SA2,PA,GRC,CR,Solo_RA,Team_RA agent
     class Solo_DS1,Solo_DS2,Team_DS1,Team_DS2 diagram
-    class Fork,Join control
-    class VS post
+    class Fork,VS control
+    class Solo_SAV,Team_SAV fresh
+    class Note note
