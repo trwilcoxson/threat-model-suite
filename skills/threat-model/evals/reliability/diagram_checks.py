@@ -26,6 +26,7 @@ from __future__ import annotations
 import difflib
 import functools
 import json as _json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -526,6 +527,57 @@ def _node_type_checks(eblocks: list[Block], report_text: str) -> tuple[list[tupl
     return defects, warnings
 
 
+# ---- Browser-free (resvg) raster-tier plain-label constraint (add-offline-render-pipeline) --------
+# Foreign-object / multi-line label markers a BROWSER-FREE rasterizer (resvg / librsvg) DROPS: D2
+# renders `|md ...|` / block-string / `\n`-bearing labels via <foreignObject>, and Mermaid `<br>` line
+# breaks are htmlLabels -> foreignObject too. Rasterized on the fallback tier these come out BLANK while
+# d2/resvg exit 0 — the one silent failure this change exists to prevent.
+_FOREIGN_LABEL = re.compile(
+    r"\|\s*md\b"        # D2 markdown block label:  label: |md ... |
+    r"|\|\s*`"          # D2 code/block-string label: |`...`|
+    r"|<br\s*/?>"       # HTML line break (Mermaid/D2 htmlLabels -> foreignObject)
+    r"|\\n"             # explicit newline escape inside a label -> multi-line
+    r"|```",            # fenced markdown inside a block string
+    re.IGNORECASE,
+)
+
+
+def _fallback_tier_active() -> bool:
+    """True when the browser-free resvg raster tier was DECLARED active by the preflight
+    (`ensure_renderer.sh` -> `TM_RENDER_TIER=fallback`). A run-level CONFIGURATION fact, not model
+    content — reading it keeps the determinism boundary intact: the check inspects the emitted source
+    against the active renderer's KNOWN capability, never a golden diagram. Default (unset) is False, so
+    the flagship (committed Mermaid, full-fidelity browser render) is never subjected to the constraint."""
+    return os.environ.get("TM_RENDER_TIER", "").strip().lower() == "fallback"
+
+
+def _plain_label_checks(eblocks: list, fallback_active: bool) -> list[tuple[str, str]]:
+    """The browser-free (resvg) raster-tier plain-label guard — the ONE failure this change prevents:
+    a `|md|` / multi-line / <foreignObject> label rasterizes BLANK (d2/resvg exit 0), so a broken
+    diagram silently reaches docx/pdf/pptx. When the fallback tier is DECLARED active, such a label must
+    not carry the annotation into the raster — move it to the adjacent machine-parseable matrix and use
+    a plain single-line label.
+
+    ADVISORY (diagram layer) and REFERENCE-FREE: it checks the emitted SOURCE against the ACTIVE
+    renderer's KNOWN capability (resvg drops foreignObject), never against expected label text, and the
+    honest escape hatch (declare no fallback tier / move the annotation to the matrix) is always
+    available. It ABSTAINS ENTIRELY when the fallback tier is not active, so a full-fidelity browser run
+    is never flipped by it."""
+    if not fallback_active:
+        return []                       # tier not active -> abstain (never gate the flagship)
+    defects: list[tuple[str, str]] = []
+    for b in eblocks:
+        for ln in _src(b).splitlines():
+            m = _FOREIGN_LABEL.search(ln)
+            if m:
+                defects.append(("fallback-tier-rich-label",
+                                f"browser-free (resvg) render tier is active but a label uses "
+                                f"'{m.group(0).strip()}' (markdown/multi-line/foreignObject), which "
+                                f"rasterizes BLANK — move the annotation to the adjacent matrix and use "
+                                f"a plain single-line label: {ln.strip()[:80]}"))
+    return defects
+
+
 def analytical_checks(report_text: str, blocks: list, recon: dict | None, findings_doc: dict | None,
                       coverage: dict | None = None) -> dict[str, Any]:
     """Presence/shape/consistency of the analytical & communication visuals.
@@ -862,6 +914,13 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None,
     for code, detail in vt_defects:
         add(code, detail)
     warnings.extend(vt_warnings)
+
+    # browser-free (resvg) raster-tier plain-label guard (add-offline-render-pipeline). ABSTAINS unless
+    # the preflight DECLARED the fallback tier (TM_RENDER_TIER=fallback), so the flagship (committed
+    # Mermaid, full-fidelity browser render) is never flipped. Reference-free: emitted source vs the
+    # active renderer's known incapability (resvg blanks foreignObject), never a golden diagram.
+    for code, detail in _plain_label_checks(eblocks, _fallback_tier_active()):
+        add(code, detail)
 
     # analytical & communication visuals (gated by skill-declared facts; structure-only)
     an = analytical_checks(report_text, eblocks, recon, findings_doc, coverage)

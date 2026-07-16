@@ -184,6 +184,7 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
 ### Solo Workflow
 
 1. **Create output directory**: `mkdir -p {project_root}/threat-model-output`
+   - **Render preflight (fail loud at start)**: run `bash {refs_dir}/../scripts/ensure_renderer.sh {refs_dir}` before spawning any agent. It verifies the offline renderer (`d2`, the active tier's rasterizer, vendored icons + font) and prints `TM_RENDER_TIER=primary|fallback` — export that into the run environment so the render seam and the diagram checks see the declared tier (the fallback tier enforces the plain-single-line-label constraint). A nonzero exit names a missing dependency: stop and fix it here, not five agents deep at report generation. (A legacy Mermaid-only run that authors no `.d2` may skip this; any run that will render `.d2` MUST preflight.)
 
 2. **Spawn `security-architect`** (blocking) — Phase 1 only:
    - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-recon"`
@@ -217,6 +218,7 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
 ### Team Workflow
 
 1. **Create output directory**: `mkdir -p {project_root}/threat-model-output`
+   - **Render preflight (fail loud at start)**: run `bash {refs_dir}/../scripts/ensure_renderer.sh {refs_dir}` before spawning any agent. It verifies the offline renderer (`d2`, the active tier's rasterizer, vendored icons + font) and prints `TM_RENDER_TIER=primary|fallback` — export that into the run environment so the render seam and the diagram checks see the declared tier (the fallback tier enforces the plain-single-line-label constraint). A nonzero exit names a missing dependency: stop and fix it here, not five agents deep at report generation. (A legacy Mermaid-only run that authors no `.d2` may skip this; any run that will render `.d2` MUST preflight.)
 
 2. **Spawn `security-architect`** (blocking) — Phase 1 only:
    - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-recon"`
@@ -265,7 +267,7 @@ See [references/agent-prompts.md](references/agent-prompts.md) for all agent spa
 
 ### Post-Assessment Verification
 
-After the report-analyst completes, run the shipped verification script over the output directory — it checks core outputs + manifests exist, the HTML report is structurally sound (PNG embeds present, no Mermaid CDN/runtime, balanced/closed script tags, body/html closed), and each agent left an Execution Log:
+After the report-analyst completes, run the shipped verification script over the output directory — it checks core outputs + manifests exist, the HTML report is structurally sound (a diagram embed present as an `<img>` PNG **or** an inline offline `<svg>`, no Mermaid CDN/runtime, balanced/closed script tags, body/html closed), and each agent left an Execution Log:
 
 ```bash
 bash "{refs_dir}/../scripts/verify_run.sh" "{output_dir}"

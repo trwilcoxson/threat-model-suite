@@ -224,14 +224,14 @@ This table maps each companion diagram type to the phases that produce and consu
 
 ### Rendering Companion Diagrams
 
-All companion diagrams are rendered to PNG using the same CLI command and config as the primary DFD layers (see mermaid-spec.md §2):
+All companion diagrams render through the **render seam**, not a hand-rolled CLI call. The seam
+dispatches by extension (`.mmd`→mermaid-cli with the same `-w 3000 --scale 2 -b white -c mermaid-config.json`
+args as the primary DFD layers; `.d2`→the offline D2 toolchain), renders every diagram artifact in the
+output dir, and fails loud on a missing renderer / unknown extension / blank raster:
 
 ```bash
-npx -y @mermaid-js/mermaid-cli \
-  -i {file}.mmd \
-  -o {file}.png \
-  -c /path/to/references/mermaid-config.json \
-  -w 3000 -b white --scale 2
+bash /path/to/scripts/render_diagrams.sh {output_dir} /path/to/references
 ```
 
-Companion diagram PNGs are embedded in the consolidated report alongside the primary layer PNGs.
+Companion diagram PNGs (and, for `.d2` sources, inline offline SVGs) are embedded in the consolidated
+report alongside the primary layer artifacts. See `d2-spec.md §1` for the D2 render command the seam runs.

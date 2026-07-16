@@ -610,11 +610,50 @@ def t_node_type_vocab():
     assert any(c == "icon-inconsistency" for c, _ in d), (d, w)
 
 
+def t_plain_label_fallback():
+    """Browser-free (resvg) raster-tier plain-label guard (add-offline-render-pipeline): a `|md|` /
+    multi-line / foreignObject label is REJECTED only when the fallback tier is DECLARED active; a plain
+    single-line label passes; an inactive fallback tier makes the whole check ABSTAIN — so the flagship
+    (committed Mermaid, full-fidelity browser render) is never flipped. Reference-free: emitted source vs
+    the active renderer's known incapability, never a golden diagram."""
+    # multi-line D2 label written with the real `\n` escape (as authored in a .d2 file)
+    rich_d2 = ('# Layer: L1\n'
+               'C5: "Server API\\n(warn) S,T,I,E 4x4=16 HIGH\\nTM-004" { class: highRisk }\n')
+    plain_d2 = ('# Layer: L1\n'
+                'C5: "Server API ALB [managed]" { class: service }\n')
+    rich = [dc.Block("d2", rich_d2)]
+    plain = [dc.Block("d2", plain_d2)]
+
+    # fallback active + rich (multi-line) label -> flagged
+    d = dc._plain_label_checks(rich, fallback_active=True)
+    assert any(c == "fallback-tier-rich-label" for c, _ in d), d
+
+    # fallback active + plain single-line label -> passes
+    assert dc._plain_label_checks(plain, fallback_active=True) == []
+
+    # fallback NOT active -> abstain entirely (even the rich label) — the flagship is never flipped
+    assert dc._plain_label_checks(rich, fallback_active=False) == []
+
+    # a `|md|` D2 block label and a Mermaid `<br>` are both caught on the active tier
+    md = [dc.Block("d2", '# Layer: L1\nN1: |md **bold** | { class: service }\n')]
+    assert any(c == "fallback-tier-rich-label" for c, _ in dc._plain_label_checks(md, True)), md
+    br = [dc.Block("mermaid", 'flowchart TD\n  A["line1<br/>line2"] --> B\n')]
+    assert any(c == "fallback-tier-rich-label" for c, _ in dc._plain_label_checks(br, True)), br
+
+    # a normal Mermaid single-line edge label (`-->|"x"| B`) is NOT a foreignObject -> not flagged
+    edge = [dc.Block("mermaid", 'flowchart TD\n  A -->|"HTTPS [INTERNAL]"| B\n')]
+    assert dc._plain_label_checks(edge, fallback_active=True) == []
+
+    # env-driven default is "not active" -> check() abstains by default (flagship stays green)
+    assert dc._fallback_tier_active() is False
+
+
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
              t_boundary_crossing_matrix, t_atlas_layer, t_atlas_vocab, t_atlas_schema, t_verdict, t_schema,
-             t_mermaid_extractor_identity, t_d2_extractor_parity, t_node_type_vocab]
+             t_mermaid_extractor_identity, t_d2_extractor_parity, t_node_type_vocab,
+             t_plain_label_fallback]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

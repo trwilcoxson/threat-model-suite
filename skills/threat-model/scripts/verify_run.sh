@@ -26,7 +26,10 @@ done
 H="$OUT/report.html"
 if [ -s "$H" ]; then
   echo "== HTML content validation =="
-  imgs=$(grep -c '<img' "$H"); [ "$imgs" -ge 1 ] && ok "PNG embeds present ($imgs <img>)" || bad "report.html has no <img> PNG embeds"
+  # A diagram embed is either a pre-rendered PNG <img> OR an inline offline <svg> (D2, no browser at
+  # render time). Either satisfies the embed check; the Mermaid-CDN/runtime ban below is unchanged.
+  imgs=$(grep -c '<img' "$H"); svgs=$(grep -c '<svg' "$H")
+  if [ "$imgs" -ge 1 ] || [ "$svgs" -ge 1 ]; then ok "diagram embeds present ($imgs <img> PNG, $svgs inline <svg>)"; else bad "report.html has no diagram embed (<img> PNG or inline <svg>)"; fi
   # Mermaid CDN / client-side render, not the mere word "mermaid" (a caption may mention it).
   grep -qiE 'mermaid[^"]*\.(js|min\.js)|cdn[^"]*mermaid|mermaid\.initialize' "$H" \
     && bad "report.html references the Mermaid CDN/runtime — embed pre-rendered PNGs" || ok "no Mermaid CDN"
