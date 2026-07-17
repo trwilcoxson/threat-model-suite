@@ -18,7 +18,7 @@ Usage:
     python3 build_dashboard.py <run_dir> <out.html>
     python3 build_dashboard.py --thin <run_dir> <out.html>   # sparse proof (thinned data)
 """
-import json, sys, os, re, html
+import json, sys, os, re, html, base64, glob
 from collections import Counter, defaultdict
 
 SEV_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
@@ -148,6 +148,87 @@ def parse_structural_mmd(text, valid_ids):
     return node_labels, edges, containers, order
 
 
+# ---------------------------------------------------------------------------
+# EMBED the run's ACTUAL visual-engine diagram (single source of truth, preferred over re-render).
+#
+# When the run carries a rendered STRUCTURAL diagram SVG (the D2 render from recon_to_d2.py /
+# the diagram-specialist — e.g. *L1-architecture.svg), we embed THAT EXACT SVG inline and layer the
+# dashboard's click/tooltip/cross-filter over it. The picture stays pixel-identical to the flow's
+# diagram; only behaviour is added. D2 encodes each shape's fully-qualified key as base64 in the
+# shape's `<g class="…">`; the leaf segment (after the last dot) is the recon element id (C1/D1/E1/
+# X1/R1…). We decode those, keep only real element ids, and inject the link hooks onto that node.
+# A connection's token decodes to "(A -> B)[n]" — skipped (edges stay as the real D2 arrows).
+# ---------------------------------------------------------------------------
+
+_ELEMENT_ID = re.compile(r"^[RCDEX]\d+$")  # role / component / data-store / entry-point / external-dep
+_SVG_G = re.compile(r'<g class="([A-Za-z0-9+/=]+)((?:\s+[A-Za-z0-9_-]+)*)">')
+
+
+def _b64_leaf(token):
+    """Decode a D2 `<g>` class token -> its leaf id, or None if it isn't a plain node key."""
+    try:
+        decoded = base64.b64decode(token, validate=True).decode("utf-8", "replace")
+    except Exception:
+        return None
+    if "-&gt;" in decoded or " -> " in decoded or "(" in decoded:
+        return None  # a connection/edge token, not a node
+    return decoded.split(".")[-1].strip()
+
+
+def structural_svg_path(run_dir):
+    """The run's rendered visual-engine STRUCTURAL diagram SVG (L1 preferred), or None. Never an
+    attack-flow/attack-tree render, and never a non-structural layer — only the structural picture."""
+    if not run_dir or not os.path.isdir(run_dir):
+        return None
+
+    def pick(pat):
+        hits = sorted(p for p in glob.glob(os.path.join(run_dir, pat))
+                      if "attack-flow" not in os.path.basename(p)
+                      and "attack-tree" not in os.path.basename(p))
+        return hits[0] if hits else None
+
+    for pat in ("structural-diagram.svg", "*L1-architecture.svg", "*L1*.svg", "*structural*.svg"):
+        p = pick(pat)
+        if p:
+            return p
+    return None
+
+
+def svg_node_ids(svg_text):
+    """Every element-like leaf id the embedded SVG references — for the reference-free grounding check
+    (the embedded diagram's node ids must be a subset of the recon element ids: no invented nodes)."""
+    ids = set()
+    for tok, _extra in _SVG_G.findall(svg_text):
+        leaf = _b64_leaf(tok)
+        if leaf and _ELEMENT_ID.match(leaf):
+            ids.add(leaf)
+    return ids
+
+
+def embed_structural_svg(svg_text, nodes):
+    """Inline the run's real visual-engine SVG with the dashboard's interactivity layered on: for each
+    D2 shape whose id is a recon element, inject the click/tooltip/cross-filter hooks the template JS
+    reads (data-entity/-fids/-name/-tech/-count). The base picture is untouched — no restyle."""
+    nmap = {n["id"]: n for n in nodes}
+    # give the outer <svg> the id the pan/zoom JS drives; drop any XML prolog (kept inline / offline).
+    svg_text = re.sub(r"^\s*<\?xml[^>]*\?>", "", svg_text).lstrip()
+    svg_text = svg_text.replace("<svg ", '<svg id="diagSVG" ', 1)
+
+    def repl(mobj):
+        leaf = _b64_leaf(mobj.group(1))
+        n = nmap.get(leaf) if leaf else None
+        if not n:
+            return mobj.group(0)
+        attrs = (f' node embed" data-entity="{leaf}" data-fids="{" ".join(n["fids"])}"'
+                 f' data-name="{html.escape(str(n["name"]), quote=True)}"'
+                 f' data-tech="{html.escape(str(n.get("tech", "")), quote=True)}"'
+                 f' data-count="{n["count"]}" tabindex="0"')
+        # splice the extra classes + attrs into the opening tag (close the class attr after them).
+        return f'<g class="{mobj.group(1)}{mobj.group(2)}{attrs}>'
+
+    return _SVG_G.sub(repl, svg_text)
+
+
 def build_structural_graph(recon, findings, run_dir):
     """The single-source-of-truth structural graph: real recon nodes + real diagram edges + zones.
 
@@ -261,7 +342,21 @@ def build_structural_graph(recon, findings, run_dir):
         c = by_id[cid]
         return any(ch in drawn_ids for ch in c["children"]) or any(has_drawn(s, seen | {cid}) for s in subs.get(cid, []))
     containers = [c for c in containers if has_drawn(c["id"])]
-    return {"nodes": nodes, "edges": edges, "containers": containers, "order": order, "source": source}
+    graph = {"nodes": nodes, "edges": edges, "containers": containers, "order": order,
+             "source": source, "diagram_source": "rerender"}
+
+    # Prefer embedding the run's ACTUAL visual-engine SVG over the deterministic re-render.
+    sp = structural_svg_path(run_dir)
+    if sp:
+        try:
+            raw = open(sp, encoding="utf-8").read()
+            graph["svg"] = embed_structural_svg(raw, nodes)
+            graph["svg_file"] = os.path.basename(sp)
+            graph["svg_node_ids"] = sorted(svg_node_ids(raw))
+            graph["diagram_source"] = "embedded-svg"
+        except Exception:
+            pass  # any embed failure degrades to the faithful re-render (never a crash)
+    return graph
 
 
 def build_model(recon, findings, coverage, navigator, run_dir=None):

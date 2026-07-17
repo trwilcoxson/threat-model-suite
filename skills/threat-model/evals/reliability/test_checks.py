@@ -849,6 +849,53 @@ def t_dashboard_flags_fabricated_diagram():
     assert "diagram-edge-not-real" in codes, f"synthesized (non-dataflow) edge must be caught: {codes}"
 
 
+def t_dashboard_embeds_real_visual_engine_svg():
+    """When the run carries the visual-engine's rendered STRUCTURAL SVG (the D2 render), the dashboard
+    EMBEDS that exact SVG (diagram_source=embedded-svg) with click hooks over its real node ids — and
+    the grounding guard CATCHES an embedded SVG that references a node id not in recon. The flagship
+    (no structural SVG, Mermaid only) stays on the deterministic re-render fallback, unchanged."""
+    import base64
+    import build_dashboard as bd
+
+    def b64g(nid, cls):  # a D2-style <g> whose base64 class encodes the fully-qualified node key
+        return f'<g class="{base64.b64encode(nid.encode()).decode()} {cls}"><g class="shape"><rect/></g><text>{nid}</text></g>'
+
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "recon.json").write_text(json.dumps({
+            "system_name": "T", "components": [{"id": "C1", "name": "Api", "evidence": ["e"]}],
+            "data_stores": [{"id": "D1", "name": "Db", "evidence": ["e"]}]}))
+        (d / "findings.json").write_text(json.dumps({
+            "summary_counts": {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0},
+            "findings": [{"id": "TM-001", "title": "x", "severity": "HIGH", "likelihood": 3,
+                          "impact": 4, "asset_refs": ["C1"]}], "kill_chains": []}))
+        (d / "coverage.json").write_text(json.dumps({"items": []}))
+        svg = ('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" data-d2-version="0.7.1" '
+               f'viewBox="0 0 100 100">{b64g("C1","service")}{b64g("D1","datastore")}</svg>')
+        (d / "sys-L1-architecture.svg").write_text(svg)
+
+        assert bd.structural_svg_path(str(d)).endswith("sys-L1-architecture.svg")
+        assert bd.svg_node_ids(svg) == {"C1", "D1"}, "only real element ids are extracted"
+        m = bd.model_for_run(str(d))
+        g = m["graph"]
+        assert g["diagram_source"] == "embedded-svg" and g["svg_file"] == "sys-L1-architecture.svg"
+        assert 'data-d2-version' in g["svg"], "the exact D2 SVG is inlined (not re-rendered)"
+        # click hooks are layered onto the real nodes, and C1's fids are grounded in findings.asset_refs
+        assert 'data-entity="C1" data-fids="TM-001"' in g["svg"], "node C1 wired to its grounded finding"
+        assert dashboard_checks.check(str(d), model=m)["scores"]["dashboard_pass"], "clean embed passes"
+
+        # NEGATIVE: an embedded SVG that invents an element-shaped node id (C9 ∉ recon) must be caught.
+        bad_svg = svg.replace("</svg>", b64g("C9", "service") + "</svg>")
+        (d / "sys-L1-architecture.svg").write_text(bad_svg)
+        codes = {x["code"] for x in dashboard_checks.check(str(d))["defects"]}
+        assert "embed-node-fabricated" in codes, f"invented embedded node must be caught: {codes}"
+
+    # the flagship has no structural SVG (Mermaid only) → the faithful re-render fallback, unchanged.
+    fm = bd.model_for_run(str(_FLAGSHIP))
+    assert fm["graph"]["diagram_source"] == "rerender" and not fm["graph"].get("svg"), \
+        "flagship must keep the deterministic re-render fallback"
+
+
 def t_dashboard_blanks_and_offline():
     """Templated-blanks + offline: an empty run builds + renders without crashing; the flagship render
     loads no external resource; absent optional fields degrade to empty states (no fabrication)."""
@@ -932,6 +979,7 @@ def main():
              t_ragged_matrix_blanks, t_foreign_label_plain_newline, t_d2_crossing_full_path,
              t_recon_type_excludes_styling,
              t_dashboard_grounding_and_consistency, t_dashboard_flags_fabricated_diagram,
+             t_dashboard_embeds_real_visual_engine_svg,
              t_dashboard_blanks_and_offline,
              t_run_plan_exact_match, t_run_plan_gate_stage_and_inert, t_start_gate_scoping]
     for t in tests:

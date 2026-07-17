@@ -94,6 +94,17 @@ def check(run_dir, repo=None, model=None) -> dict:
     g = model["graph"]
     if g["source"] not in ("dataflows", "mermaid", "none"):
         D("diagram-source-invalid", f"unexpected diagram source {g['source']!r}")
+    if g.get("diagram_source") not in ("embedded-svg", "rerender"):
+        D("diagram-render-path-invalid", f"unexpected diagram render path {g.get('diagram_source')!r}")
+    # EMBED path: the picture is the run's REAL visual-engine SVG — its node ids must be a subset of the
+    # recon element ids (no invented nodes). The re-render checks below still cover the fallback path.
+    if g.get("diagram_source") == "embedded-svg":
+        svg_ids = set(g.get("svg_node_ids") or [])
+        if not svg_ids:
+            D("embed-no-nodes", "embedded structural SVG exposed no recon element node ids")
+        bad = svg_ids - recon_ids
+        if bad:
+            D("embed-node-fabricated", f"embedded diagram references non-recon node id(s): {sorted(bad)}")
     for n in g["nodes"]:
         if n["id"] not in recon_ids:
             D("diagram-node-fabricated", f"diagram node {n['id']} is not a recon element")
@@ -136,6 +147,10 @@ def check(run_dir, repo=None, model=None) -> dict:
         bad = set(structural) - real_ids
         if bad:
             D("html-fabricated-id", f"finding ids in structural slots not in findings.json: {sorted(bad)}")
+        # embed path: the run's real D2 SVG must actually be inlined (not linked/substituted).
+        if g.get("diagram_source") == "embedded-svg" and "data-d2-version" not in htmlout \
+                and 'class="embed-view"' not in htmlout:
+            D("embed-svg-missing", "embedded-svg render path but the D2 SVG is not inlined in the HTML")
 
     return {"defects": defects, "scores": {"dashboard_pass": not defects},
             "stats": {"nodes": len(g["nodes"]), "edges": len(g["edges"]), "source": g["source"]}}

@@ -66,8 +66,37 @@ def _grid(ids, x, y, avail_w):
     return pos, rows * (NODE_H + GAP_Y)
 
 
+_DIAG_TOOLBAR = '''<div class="diag-toolbar">
+        <button data-z="in" title="Zoom in">+</button>
+        <button data-z="out" title="Zoom out">−</button>
+        <button data-z="fit" title="Zoom to fit">⤢</button>
+        <button data-z="reset" title="Reset">⟳</button>
+        <span class="diag-hint">scroll to zoom · drag to pan · click a node to pivot</span>
+      </div>'''
+
+
+def sec_diagram_embed(m):
+    """Embed the run's ACTUAL visual-engine SVG (the D2 render the flow emits elsewhere), with the
+    dashboard's pan/zoom + click→cross-filter layered ON TOP. Pixel-identical picture; extra behaviour."""
+    g = m["graph"]
+    linked = len(g.get("svg_node_ids") or [])
+    note = (f'<div class="diag-note">The run\'s actual visual-engine structural diagram '
+            f'(<code>{esc(g.get("svg_file",""))}</code>) — the same D2 render (typed shapes/icons + '
+            f'trust boundaries) the flow embeds in the report. Pan/zoom + click a node to cross-filter.</div>')
+    svg = f'''<div class="diagram embed">
+      {_DIAG_TOOLBAR}
+      <div class="diag-viewport" id="diagVP">
+        <div id="diagView" class="embed-view">{g["svg"]}</div>
+      </div>{note}</div>'''
+    return card("Structural Diagram — interactive", svg, cls="diagram-card",
+                sub="The run's real visual-engine D2 diagram, embedded verbatim — node ids link to findings; click to cross-filter",
+                tag=f"{linked} linked nodes · embedded SVG")
+
+
 def sec_diagram(m):
     g = m["graph"]
+    if g.get("svg"):
+        return sec_diagram_embed(m)
     nodes = {n["id"]: n for n in g["nodes"]}
     if not nodes:
         return card("Structural Diagram", empty("No recon entities emitted"), cls="diagram-card")
@@ -776,6 +805,12 @@ main{max-width:1280px;margin:0 auto;padding:34px clamp(18px,4vw,52px) 80px}
 .diag-viewport:active{cursor:grabbing}
 #diagSVG{width:100%;height:100%;display:block}
 #diagView{transition:transform .12s linear}
+/* embedded real visual-engine SVG: keep D2's picture pixel-identical, only add behaviour */
+#diagView.embed-view{transform-origin:0 0;width:100%;height:100%;will-change:transform}
+.node.embed{cursor:pointer;transition:opacity .2s,filter .2s}
+.node.embed:hover,.node.embed:focus{filter:drop-shadow(0 0 8px var(--cyan));outline:none}
+.filtering .node.embed:not(.hot){opacity:.28}
+.node.embed.hot{filter:drop-shadow(0 0 10px var(--cyan))}
 .lane-cap{fill:var(--text-3);font:600 11px/1 var(--mono);text-transform:uppercase;letter-spacing:.12em}
 .node{cursor:pointer}
 .node .node-box{fill:var(--surface);stroke:var(--border-hi);stroke-width:1.5;transition:stroke .2s,filter .2s}
@@ -979,9 +1014,13 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){clearFocus();closeD
 (function(){
   const vp=$('diagVP');if(!vp)return;
   const view=$('diagView'),svg=$('diagSVG');
+  // rerender = transform an inline SVG <g> (viewBox units); embed = transform an HTML <div> (px).
+  const isSVG=view.namespaceURI==='http://www.w3.org/2000/svg';
   let scale=1,tx=0,ty=0,drag=false,startx=0,starty=0,ox=0,oy=0;
-  const k=()=>svg.viewBox.baseVal.width/vp.clientWidth||1;
-  const apply=()=>view.setAttribute('transform','translate('+tx+' '+ty+') scale('+scale+')');
+  const k=()=>isSVG?(svg.viewBox.baseVal.width/vp.clientWidth||1):1;
+  const apply=()=>isSVG
+    ?view.setAttribute('transform','translate('+tx+' '+ty+') scale('+scale+')')
+    :view.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';
   vp.addEventListener('wheel',e=>{e.preventDefault();scale=Math.min(4,Math.max(.3,scale*(e.deltaY<0?1.12:0.89)));apply();},{passive:false});
   vp.addEventListener('pointerdown',e=>{drag=true;startx=e.clientX;starty=e.clientY;ox=tx;oy=ty;vp.setPointerCapture(e.pointerId);});
   vp.addEventListener('pointermove',e=>{if(!drag)return;tx=ox+(e.clientX-startx)*k();ty=oy+(e.clientY-starty)*k();apply();});
