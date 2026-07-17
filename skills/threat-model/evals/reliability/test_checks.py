@@ -946,12 +946,12 @@ def t_dashboard_embeds_real_visual_engine_svg():
         "flagship must keep the deterministic re-render fallback"
 
 
-def t_dashboard_gallery():
-    """The dashboard surfaces the run's FULL visual-artifact set (L1-L4 / attack trees / flows / SBOM)
-    as a switchable gallery — every rendered SVG embedded verbatim, ordered, sized, node-ids linked to
-    recon. Grounded + templated-with-blanks: only real artifacts appear; a gallery SVG that references a
-    non-recon node id is CAUGHT; the render exposes switch tabs + a zoom-to-fit viewport; the flagship
-    (no SVGs) has an empty gallery and stays clean."""
+def t_dashboard_single_primary_diagram():
+    """The dashboard shows ONE full primary diagram — the L4 risk/threat overlay preferred (all metadata
+    in the image), L1 structural only as fallback — big and interactive, with the OTHER artifacts (L1–L3,
+    attack trees/flows, SBOM) demoted to SECONDARY 'more diagrams' links, NOT a front gallery/switcher.
+    Grounded + templated-with-blanks: only real artifacts appear; a secondary SVG that references a
+    non-recon node id is CAUGHT; the flagship (no SVGs) has no primary embed and stays clean."""
     import base64
     import build_dashboard as bd
     import dashboard_template
@@ -975,35 +975,39 @@ def t_dashboard_gallery():
         (d / "coverage.json").write_text(json.dumps({"items": []}))
         # a run with several real artifacts, out of taxonomy order on disk
         (d / "sys-L1-architecture.svg").write_text(svg(b64g("C1", "service"), b64g("D1", "datastore")))
-        (d / "sys-L4-threat.svg").write_text(svg(b64g("C1", "svcHigh")))
+        (d / "sys-L4-threat.svg").write_text(svg(b64g("C1", "svcHigh"), b64g("D1", "storeHigh")))
         (d / "sys-attack-tree-1.svg").write_text(svg(b64g("root", "goal")))  # no recon ids -> 0 linked
         (d / "sys-sbom.svg").write_text(svg(b64g("D1", "datastore")))
 
         m = bd.model_for_run(str(d))
-        gal = m["graph"]["gallery"]
+        g = m["graph"]
+        # PRIMARY = the L4 risk/threat overlay (preferred over L1), embedded verbatim with node hooks
+        assert g["diagram_source"] == "embedded-svg" and g["svg_file"] == "sys-L4-threat.svg", g.get("svg_file")
+        assert g["svg_kind"] == "risk" and g["svg_label"] == "L4 · Threat Overlay", (g.get("svg_kind"), g.get("svg_label"))
+        assert 'data-d2-version' in g["svg"] and 'data-entity="C1" data-fids="TM-001"' in g["svg"]
+        # the full artifact set is still collected (drives the secondary links), grounded to recon
+        gal = g["gallery"]
         assert [a["label"] for a in gal] == \
             ["L1 · Architecture", "L4 · Threat Overlay", "Attack Tree 1", "SBOM · Dependencies"], gal
-        # each artifact carries its natural size + linked node ids grounded in recon
-        assert gal[0]["node_ids"] == ["C1", "D1"] and gal[2]["node_ids"] == [], gal
-        assert all(a["w"] == 800 and a["h"] == 600 for a in gal)
-        # embedded verbatim: the exact D2 SVGs are inlined, and L1 nodes carry the cross-filter hooks
-        assert 'data-entity="C1" data-fids="TM-001"' in gal[0]["svg"]
-        assert dashboard_checks.check(str(d), model=m)["scores"]["dashboard_pass"], "clean gallery passes"
+        assert dashboard_checks.check(str(d), model=m)["scores"]["dashboard_pass"], "clean single-diagram passes"
 
-        # render exposes the switcher + the zoom-to-fit gallery viewport (not the old single box);
-        # every real artifact's SVG is inlined (inert lazy-mount store) and the live viewport exists.
+        # render: ONE primary embed (big, pan/zoom) + secondary 'more diagrams' links — NOT the old
+        # gallery switcher. The 3 non-primary artifacts (L1/attack-tree/SBOM) are the expandable links.
         htmlout = dashboard_template.render(m)
-        assert 'class="gal-tab' in htmlout and 'id="galVP"' in htmlout and 'id="galInner"' in htmlout, "gallery UI must render"
-        assert htmlout.count('class="gal-src"') == 4, "one inline source per real artifact"
+        assert 'class="embed-view"' in htmlout and 'id="diagVP"' in htmlout, "single primary embed must render"
+        assert 'class="gal-tab' not in htmlout and 'id="galVP"' not in htmlout, "no front gallery/switcher"
+        assert 'class="more-diagrams"' in htmlout, "secondary 'more diagrams' links must render"
+        assert htmlout.count('class="more-item"') == 3, "one secondary link per non-primary artifact"
+        assert "sys-L1-architecture.svg" in htmlout, "L1 demoted to a secondary link, still embedded offline"
 
-        # NEGATIVE: an artifact that invents an element-shaped node id (C9 ∉ recon) is caught
+        # NEGATIVE: a secondary artifact that invents an element-shaped node id (C9 ∉ recon) is caught
         (d / "sys-L1-architecture.svg").write_text(svg(b64g("C1", "service"), b64g("C9", "service")))
         codes = {x["code"] for x in dashboard_checks.check(str(d))["defects"]}
-        assert "gallery-node-fabricated" in codes, f"invented gallery node must be caught: {codes}"
+        assert "gallery-node-fabricated" in codes, f"invented secondary node must be caught: {codes}"
 
-    # the flagship (Mermaid only, no rendered SVGs) -> empty gallery, still clean
+    # the flagship (Mermaid only, no rendered SVGs) -> no primary embed, still clean
     fm = bd.model_for_run(str(_FLAGSHIP))
-    assert fm["graph"]["gallery"] == [], "flagship has no rendered SVGs -> empty gallery (templated blank)"
+    assert fm["graph"]["gallery"] == [] and not fm["graph"].get("svg"), "flagship has no rendered SVGs -> rerender fallback"
     assert not dashboard_checks.check(_FLAGSHIP, model=fm)["defects"], "flagship dashboard stays clean"
 
 
@@ -1259,7 +1263,7 @@ def main():
              t_recon_type_excludes_styling,
              t_dashboard_grounding_and_consistency, t_dashboard_flags_fabricated_diagram,
              t_dashboard_embeds_real_visual_engine_svg,
-             t_dashboard_gallery,
+             t_dashboard_single_primary_diagram,
              t_dashboard_blanks_and_offline,
              t_finding_evidence, t_dashboard_evidence,
              t_run_plan_exact_match, t_run_plan_gate_stage_and_inert, t_start_gate_scoping,

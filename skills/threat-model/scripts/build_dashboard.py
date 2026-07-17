@@ -180,18 +180,23 @@ def _b64_leaf(token):
 
 
 def structural_svg_path(run_dir):
-    """The run's rendered visual-engine STRUCTURAL diagram SVG (L1 preferred), or None. Never an
-    attack-flow/attack-tree render, and never a non-structural layer — only the structural picture."""
+    """The run's rendered visual-engine PRIMARY diagram SVG, or None.
+
+    Prefers the L4 risk/threat overlay (`risk-overlay-diagram.svg` / `*-L4-threat.svg`) — it carries ALL
+    the metadata in the image (risk colors, TM-NNN ids, STRIDE·L×I, CWE/MITRE, threat annotations, attack
+    paths, trust boundaries). Falls back to the structural L1 only if no risk overlay exists. Never an
+    attack-flow/attack-tree/SBOM render — only the full annotated threat-model picture."""
     if not run_dir or not os.path.isdir(run_dir):
         return None
 
     def pick(pat):
         hits = sorted(p for p in glob.glob(os.path.join(run_dir, pat))
-                      if "attack-flow" not in os.path.basename(p)
-                      and "attack-tree" not in os.path.basename(p))
+                      if not any(t in os.path.basename(p)
+                                 for t in ("attack-flow", "attack-tree", "sbom")))
         return hits[0] if hits else None
 
-    for pat in ("structural-diagram.svg", "*L1-architecture.svg", "*L1*.svg", "*structural*.svg"):
+    for pat in ("risk-overlay-diagram.svg", "*L4-threat.svg", "*L4*.svg",         # L4 risk overlay (preferred)
+                "structural-diagram.svg", "*L1-architecture.svg", "*L1*.svg", "*structural*.svg"):  # L1 fallback
         p = pick(pat)
         if p:
             return p
@@ -441,6 +446,9 @@ def build_structural_graph(recon, findings, run_dir):
             graph["svg_file"] = os.path.basename(sp)
             graph["svg_node_ids"] = sorted(svg_node_ids(raw))
             graph["diagram_source"] = "embedded-svg"
+            plabel, pkind, _ = _artifact_meta(os.path.basename(sp))
+            graph["svg_label"] = plabel        # e.g. "L4 · Threat Overlay" / "L1 · Architecture"
+            graph["svg_kind"] = pkind          # "risk" (L4 overlay) | "structural" (L1 fallback)
         except Exception:
             pass  # any embed failure degrades to the faithful re-render (never a crash)
 
