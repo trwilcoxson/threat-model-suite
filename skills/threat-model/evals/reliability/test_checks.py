@@ -550,9 +550,9 @@ _PARITY_D2 = """## Structural
 ```d2
 # Version: 2026-07-15 | Phase: 2 | System: Demo | Layer: L1
 classes: {
-  external: { style: { fill: "#cce5ff" } }
-  svc: { style: { fill: "#f5f5f5" } }
-  store: { shape: cylinder }
+  external: { icon: icons/external-actor.svg; style: { fill: "#cce5ff" } }
+  svc: { icon: icons/service.svg; style: { fill: "#f5f5f5" } }
+  store: { shape: cylinder; icon: icons/datastore.svg }
 }
 R0: "User" { class: external }
 Z1: "Public" {
@@ -658,6 +658,56 @@ def t_plain_label_fallback():
 
     # env-driven default is "not active" -> check() abstains by default (flagship stays green)
     assert dc._fallback_tier_active() is False
+
+
+def t_d2_icon_binding():
+    """Visual-engine icon mandate: a structural/layer D2 diagram must bind its node-type `icon:` on
+    every typed class (hand-authored D2 too — icons render on ALL render tiers). Reference-free +
+    determinism-boundary-safe: it only asserts a vocabulary-icon binding EXISTS, never which glyph.
+    Abstains on runs with no D2; skips pure attack-graph blocks (goal/gate — not the node vocabulary).
+    Also exercises the standalone deterministic injector (scripts/inject_node_icons.py)."""
+    good = ('# Version: x | Layer: L1\n'
+            'classes: {\n'
+            '  service:   { shape: rectangle; icon: icons/service.svg; style: { fill: "#fff" } }\n'
+            '  datastore: { shape: cylinder; icon: icons/datastore.svg; style: { fill: "#eee" } }\n'
+            '}\n'
+            'C1: "api" { class: service }\n'
+            'D1: "db" { class: datastore }\n')
+    # bound icons -> no defect
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", good)])
+    assert d == [], d
+
+    # a typed class missing its icon -> flagged
+    missing = good.replace("shape: rectangle; icon: icons/service.svg;", "shape: rectangle;")
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", missing)])
+    assert any(c == "d2-missing-node-icon" for c, _ in d), d
+
+    # L4 risk-styled class (svcHigh) folds onto 'service' -> still a typed node, icon required
+    l4 = '# Layer: L4\nclasses: {\n  svcHigh: { shape: rectangle; style: { fill: "#f00" } }\n}\nC1: "x" { class: svcHigh }\n'
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", l4)])
+    assert any(c == "d2-missing-node-icon" for c, _ in d), d
+
+    # an icon that isn't a vocabulary node-type glyph -> flagged
+    offvocab = good.replace("icon: icons/service.svg", "icon: icons/logo.svg")
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", offvocab)])
+    assert any(c == "d2-icon-not-in-vocab" for c, _ in d), d
+
+    # pure attack-graph D2 (no node-type classes) -> skipped, no defect
+    tree = '# Type: Attack Tree\nclasses: { goal: { shape: circle } }\nG1: "root" { class: goal }\n'
+    assert dc._d2_icon_binding_checks([dc.Block("d2", tree)]) == ([], [])
+
+    # no D2 in the run at all -> abstain (Mermaid-only / no-diagram runs never flip)
+    assert dc._d2_icon_binding_checks([dc.Block("mermaid", "# Layer: L1\ngraph TD")]) == ([], [])
+
+    # the deterministic injector adds the binding the check wants (folds svcHigh -> service.svg)
+    import importlib.util as _ilu
+    _p = Path(__file__).resolve().parent.parent.parent / "scripts" / "inject_node_icons.py"
+    _spec = _ilu.spec_from_file_location("inject_node_icons", _p)
+    _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+    injected = _mod.inject(l4, "icons")
+    assert "icon: icons/service.svg" in injected, injected
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", injected)])
+    assert d == [], d
 
 
 def t_recon_dataflow_integrity():
@@ -896,6 +946,67 @@ def t_dashboard_embeds_real_visual_engine_svg():
         "flagship must keep the deterministic re-render fallback"
 
 
+def t_dashboard_gallery():
+    """The dashboard surfaces the run's FULL visual-artifact set (L1-L4 / attack trees / flows / SBOM)
+    as a switchable gallery — every rendered SVG embedded verbatim, ordered, sized, node-ids linked to
+    recon. Grounded + templated-with-blanks: only real artifacts appear; a gallery SVG that references a
+    non-recon node id is CAUGHT; the render exposes switch tabs + a zoom-to-fit viewport; the flagship
+    (no SVGs) has an empty gallery and stays clean."""
+    import base64
+    import build_dashboard as bd
+    import dashboard_template
+
+    def b64g(nid, cls):
+        return f'<g class="{base64.b64encode(nid.encode()).decode()} {cls}"><g class="shape"><rect/></g><text>{nid}</text></g>'
+
+    def svg(*gs):
+        return ('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" data-d2-version="0.7.1" '
+                'viewBox="0 0 800 600">' + "".join(gs) + "</svg>")
+
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "recon.json").write_text(json.dumps({
+            "system_name": "T", "components": [{"id": "C1", "name": "Api", "evidence": ["e"]}],
+            "data_stores": [{"id": "D1", "name": "Db", "evidence": ["e"]}]}))
+        (d / "findings.json").write_text(json.dumps({
+            "summary_counts": {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0},
+            "findings": [{"id": "TM-001", "title": "x", "severity": "HIGH", "likelihood": 3,
+                          "impact": 4, "asset_refs": ["C1"]}], "kill_chains": []}))
+        (d / "coverage.json").write_text(json.dumps({"items": []}))
+        # a run with several real artifacts, out of taxonomy order on disk
+        (d / "sys-L1-architecture.svg").write_text(svg(b64g("C1", "service"), b64g("D1", "datastore")))
+        (d / "sys-L4-threat.svg").write_text(svg(b64g("C1", "svcHigh")))
+        (d / "sys-attack-tree-1.svg").write_text(svg(b64g("root", "goal")))  # no recon ids -> 0 linked
+        (d / "sys-sbom.svg").write_text(svg(b64g("D1", "datastore")))
+
+        m = bd.model_for_run(str(d))
+        gal = m["graph"]["gallery"]
+        assert [a["label"] for a in gal] == \
+            ["L1 · Architecture", "L4 · Threat Overlay", "Attack Tree 1", "SBOM · Dependencies"], gal
+        # each artifact carries its natural size + linked node ids grounded in recon
+        assert gal[0]["node_ids"] == ["C1", "D1"] and gal[2]["node_ids"] == [], gal
+        assert all(a["w"] == 800 and a["h"] == 600 for a in gal)
+        # embedded verbatim: the exact D2 SVGs are inlined, and L1 nodes carry the cross-filter hooks
+        assert 'data-entity="C1" data-fids="TM-001"' in gal[0]["svg"]
+        assert dashboard_checks.check(str(d), model=m)["scores"]["dashboard_pass"], "clean gallery passes"
+
+        # render exposes the switcher + the zoom-to-fit gallery viewport (not the old single box);
+        # every real artifact's SVG is inlined (inert lazy-mount store) and the live viewport exists.
+        htmlout = dashboard_template.render(m)
+        assert 'class="gal-tab' in htmlout and 'id="galVP"' in htmlout and 'id="galInner"' in htmlout, "gallery UI must render"
+        assert htmlout.count('class="gal-src"') == 4, "one inline source per real artifact"
+
+        # NEGATIVE: an artifact that invents an element-shaped node id (C9 ∉ recon) is caught
+        (d / "sys-L1-architecture.svg").write_text(svg(b64g("C1", "service"), b64g("C9", "service")))
+        codes = {x["code"] for x in dashboard_checks.check(str(d))["defects"]}
+        assert "gallery-node-fabricated" in codes, f"invented gallery node must be caught: {codes}"
+
+    # the flagship (Mermaid only, no rendered SVGs) -> empty gallery, still clean
+    fm = bd.model_for_run(str(_FLAGSHIP))
+    assert fm["graph"]["gallery"] == [], "flagship has no rendered SVGs -> empty gallery (templated blank)"
+    assert not dashboard_checks.check(_FLAGSHIP, model=fm)["defects"], "flagship dashboard stays clean"
+
+
 def t_dashboard_blanks_and_offline():
     """Templated-blanks + offline: an empty run builds + renders without crashing; the flagship render
     loads no external resource; absent optional fields degrade to empty states (no fabrication)."""
@@ -974,12 +1085,14 @@ def main():
              t_boundary_crossing_matrix, t_atlas_layer, t_atlas_vocab, t_atlas_schema, t_verdict, t_schema,
              t_mermaid_extractor_identity, t_d2_extractor_parity, t_node_type_vocab,
              t_plain_label_fallback,
+             t_d2_icon_binding,
              t_recon_dataflow_integrity, t_recon_node_type_membership, t_recon_semantic_backcompat,
              t_recon_to_d2_smoke,
              t_ragged_matrix_blanks, t_foreign_label_plain_newline, t_d2_crossing_full_path,
              t_recon_type_excludes_styling,
              t_dashboard_grounding_and_consistency, t_dashboard_flags_fabricated_diagram,
              t_dashboard_embeds_real_visual_engine_svg,
+             t_dashboard_gallery,
              t_dashboard_blanks_and_offline,
              t_run_plan_exact_match, t_run_plan_gate_stage_and_inert, t_start_gate_scoping]
     for t in tests:

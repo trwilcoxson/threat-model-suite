@@ -483,6 +483,95 @@ def _load_vocab() -> tuple[frozenset, dict, frozenset]:
     return frozenset(members), icons, frozenset(node_types)
 
 
+# Risk-styled / camelCase D2 class names the layer (L4) + SBOM diagrams use, folded onto the
+# vocabulary node-type whose icon they carry. Mirrors scripts/inject_node_icons.py's FOLD table so
+# the eval recognises `svcHigh`/`dsMed`/`extActor`… as TYPED nodes that must bind a node-type icon.
+_D2_TYPE_FOLD = {
+    "extactor": "external-actor", "extdep": "external-dep", "riskydep": "external-dep",
+    "svc": "service", "svchigh": "service", "svcmed": "service", "svcnone": "service",
+    "ds": "datastore", "dshigh": "datastore", "dsmed": "datastore", "dsnone": "datastore",
+    "pipe": "pipeline", "pipehigh": "pipeline", "pipemed": "pipeline",
+    "queuenone": "queue", "ctrlnone": "control",
+}
+
+_D2_CLASS_LINE = re.compile(r'^\s*([A-Za-z][\w-]*)\s*:\s*\{(.*)\}\s*$')
+
+
+def _d2_class_icons(src: str) -> dict[str, str | None]:
+    """Parse a D2 block's top-level `classes:` block -> {class_name: icon_path_or_None}.
+
+    `_d2_defs` deliberately skips the `classes:` body, but in D2 the node-type icon is bound on the
+    CLASS (every node of a type inherits it), so the icon-binding check reads it here. Single-line
+    class defs only (the eval-facing subset, d2-spec §7); brace-depth tracked so a nested `style: {}`
+    never ends the block early."""
+    out: dict[str, str | None] = {}
+    in_block, depth = False, 0
+    for raw in src.splitlines():
+        line = raw.rstrip()
+        if not in_block:
+            if re.match(r'^\s*classes\s*:\s*\{\s*$', line):
+                in_block, depth = True, 1
+            continue
+        m = _D2_CLASS_LINE.match(line)
+        if m:
+            name, body = m.group(1), m.group(2)
+            im = re.search(r"icon\s*:\s*([^\s;]+)", body)   # path up to whitespace / `;`
+            out[name] = im.group(1) if im else None
+        depth += line.count("{") - line.count("}")
+        if depth <= 0:
+            in_block = False
+    return out
+
+
+def _d2_icon_binding_checks(eblocks: list[Block]) -> tuple[list[tuple[str, str]], list[str]]:
+    """CONSISTENCY (reference-free): a STRUCTURAL/LAYER D2 diagram must bind a node-type `icon:` for
+    every typed class its drawn nodes use — the enhanced visual engine, on hand-authored D2 too, not
+    just the deterministic recon_to_d2 render. Icons render in ALL tiers (the browser-free rsvg
+    fallback only blanks multi-line foreignObject labels, NOT embedded icons), so the binding is
+    mandatory regardless of render tier.
+
+    Reference-free + determinism-boundary-safe: it never asserts WHICH icon a node should be — only
+    that a typed class carries an icon whose file is a vocabulary node-type glyph (`icons/<type>.svg`).
+    Abstains when the run has no D2 (Mermaid-only or no-diagram runs), and skips any block with no
+    typed classes (a pure attack-graph diagram: goal/gate/step — not the structural vocabulary)."""
+    _members, _icons, node_types = _load_vocab()
+    vocab_icon_files = {f"{t}.svg" for t in node_types}
+    d2_blocks = [b for b in eblocks if isinstance(b, Block) and b.engine == "d2"]
+    if not d2_blocks:
+        return [], []                                  # no D2 in this run -> abstain
+    defects: list[tuple[str, str]] = []
+
+    def _resolve(cls: str) -> str | None:
+        low = cls.lower()
+        if low in node_types:
+            return low
+        return _D2_TYPE_FOLD.get(low)
+
+    for b in d2_blocks:
+        src = _src(b)
+        if not re.search(r"Layer:\s*L[1-4]", src):     # only structural/layer diagrams carry node types
+            continue
+        recs = _d2_defs(src)
+        parents = {p for r in recs for p in r["path"]}
+        used = {r["cls"] for r in recs if r["cls"] and r["id"] not in parents}
+        typed_used = {c: _resolve(c) for c in used if _resolve(c)}
+        if not typed_used:                             # no node-type classes here -> skip this block
+            continue
+        class_icons = _d2_class_icons(src)
+        for cls, ntype in sorted(typed_used.items()):
+            icon = class_icons.get(cls)
+            if not icon:
+                defects.append(("d2-missing-node-icon",
+                                f"D2 layer diagram: node-type class '{cls}' ({ntype}) binds no "
+                                f"icon: — hand-authored D2 must bind the vocabulary icon "
+                                f"(icons/{ntype}.svg) so it matches the visual engine (all tiers)"))
+            elif os.path.basename(icon) not in vocab_icon_files:
+                defects.append(("d2-icon-not-in-vocab",
+                                f"D2 layer diagram: class '{cls}' icon '{icon}' is not a node-type "
+                                f"glyph from the vocabulary (references/icons/<type>.svg)"))
+    return defects, []
+
+
 def _node_type_checks(eblocks: list[Block], report_text: str) -> tuple[list[tuple[str, str]], list[str]]:
     """T4-01 / T1-05 node-type vocabulary compliance — a GROUNDING + CONSISTENCY check, ADVISORY
     (diagram layer). It counts typed-vs-untyped nodes and vocabulary membership only; it never
@@ -932,6 +1021,14 @@ def check(report_text: str, recon: dict | None, findings_doc: dict | None,
     for code, detail in vt_defects:
         add(code, detail)
     warnings.extend(vt_warnings)
+
+    # node-type ICON BINDING on hand-authored D2 (visual-engine consistency). Every typed class a
+    # structural/layer D2 diagram draws MUST bind its vocabulary icon (icons/<type>.svg) — icons
+    # render on every tier. Reference-free; abstains on runs with no D2, skips pure attack-graph
+    # blocks. Keeps the determinism boundary: it checks that a binding exists, never which glyph.
+    ib_defects, _ib_warn = _d2_icon_binding_checks(eblocks)
+    for code, detail in ib_defects:
+        add(code, detail)
 
     # browser-free (resvg) raster-tier plain-label guard (add-offline-render-pipeline). ABSTAINS unless
     # the preflight DECLARED the fallback tier (TM_RENDER_TIER=fallback), so the flagship (committed

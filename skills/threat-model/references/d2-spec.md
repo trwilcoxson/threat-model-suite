@@ -22,32 +22,46 @@ d2 --layout elk --theme 0 structural.d2 structural.svg
 - **Icons are local files only.** Reference every icon by a vendored local path — never a remote URL. A
   remote reference breaks offline rendering and silently renders a broken icon while the CLI exits 0 (a
   real 403 was hit in the POC).
+- **Icons render on EVERY tier.** d2 embeds each vendored SVG as a base64 data URI in its own output
+  SVG, so the icons survive both render tiers — the browser-free fallback (`rsvg-convert`/`resvg`) only
+  blanks multi-line **foreignObject labels**, NOT embedded icons. "Fallback tier" therefore never means
+  "no icons": bind the node-type icon regardless of tier; only labels degrade to plain single-line.
 - Re-rendering the same source with the same pinned toolchain yields the same diagram (no human nudging).
 - Inline the resulting SVG into the HTML report (offline, no CDN).
 
-## §2 Symbol / icon taxonomy — the node-type vocabulary
+## §2 Symbol / icon taxonomy — the node-type vocabulary (MANDATORY icon binding)
 
 Node types are the **controlled vocabulary** in `node-type-icons.md` (shared with the Mermaid path).
-Bind each type's icon into a `classes` block so every node of a type inherits its icon deterministically:
+**Every typed class MUST bind its node-type `icon:`** — the vendored local glyph from
+`references/icons/<type>.svg`. This is REQUIRED on hand-authored D2 too, not just the deterministic
+`recon_to_d2.py` render: an un-iconned diagram is the *old plain* look and breaks visual consistency
+with the rest of the flow's diagrams and the dashboard. The diagram eval enforces it
+(`d2-missing-node-icon`).
 
 ```d2
 classes: {
-  external:       { shape: person;   style: { fill: "#cce5ff"; stroke: "#004085" } }
-  service:        { style: { fill: "#f5f5f5"; stroke: "#666666" } }
-  datastore:      { shape: cylinder; style: { fill: "#e2e3e5"; stroke: "#383d41" } }
-  queue:          { shape: queue }
-  external-dep:   { shape: package;  style: { stroke-dash: 3 } }
-  pipeline:       { style: { fill: "#d5dbdb"; stroke: "#7f8c8d" } }
-  # bind the vendored LOCAL icon per type, e.g.  icon: ./icons/datastore.svg
+  external-actor: { shape: person;        icon: ./icons/external-actor.svg; style: { fill: "#cce5ff"; stroke: "#004085" } }
+  service:        { shape: rectangle;      icon: ./icons/service.svg;        style: { fill: "#f5f5f5"; stroke: "#666666" } }
+  datastore:      { shape: cylinder;       icon: ./icons/datastore.svg;      style: { fill: "#e2e3e5"; stroke: "#383d41" } }
+  queue:          { shape: queue;          icon: ./icons/queue.svg }
+  external-dep:   { shape: package;        icon: ./icons/external-dep.svg;   style: { stroke-dash: 3 } }
+  pipeline:       { shape: parallelogram;  icon: ./icons/pipeline.svg;       style: { fill: "#d5dbdb"; stroke: "#7f8c8d" } }
 }
 
-R0: "Anonymous User\n(browser · no credential)" { class: external }
+R0: "Anonymous User\n(browser · no credential)" { class: external-actor }
 D1: "Product Catalog\nDynamoDB [managed]"       { class: datastore }
 ```
 
-- Every drawn node MUST carry a `class:` from the vocabulary. `unknown`/`other` is a passing member —
-  use it rather than inventing a type.
-- Same type → same class → same icon across every diagram (the consistency guarantee).
+- Every drawn node MUST carry a `class:` from the vocabulary, and every typed class MUST carry its
+  vocabulary `icon:`. `unknown`/`other` is a passing member — use it rather than inventing a type.
+- Same type → same class → same icon across every diagram (the consistency guarantee). Risk-styled L4
+  variants (`svcHigh`, `dsMed`, …) still bind the underlying node-type icon (the risk rides the fill).
+- The icon path is resolved by d2 **relative to the .d2 file's own directory** (not the CWD), and
+  embedded offline as a base64 data URI. Icons render on BOTH tiers (see §1).
+- **Deterministic guarantee.** Rather than rely on remembering, run the injector to bind icons onto any
+  hand-authored D2 mechanically: `python3 scripts/inject_node_icons.py <file>.d2 -i` (idempotent; folds
+  the risk/camelCase class names onto their node-type; leaves attack-graph classes untouched). Prefer
+  the fully deterministic `recon_to_d2.py` render for the L1 structural diagram when recon is typed.
 
 ## §3 Trust boundaries = containers
 

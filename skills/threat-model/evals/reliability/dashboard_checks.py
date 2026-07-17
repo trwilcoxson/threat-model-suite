@@ -105,6 +105,17 @@ def check(run_dir, repo=None, model=None) -> dict:
         bad = svg_ids - recon_ids
         if bad:
             D("embed-node-fabricated", f"embedded diagram references non-recon node id(s): {sorted(bad)}")
+    # GALLERY: every embedded artifact is a REAL rendered file the run produced, and any node id it
+    # exposes is a recon element (no fabricated/substitute diagram). Templated-with-blanks: an empty
+    # gallery (a Mermaid-only / no-SVG run) is fine — it just abstains here.
+    for a in (g.get("gallery") or []):
+        fp = os.path.join(run_dir, a.get("file", ""))
+        if not a.get("file") or not os.path.exists(fp):
+            D("gallery-artifact-missing", f"gallery artifact {a.get('file')!r} is not a real file in the run")
+        bad_ids = set(a.get("node_ids") or []) - recon_ids
+        if bad_ids:
+            D("gallery-node-fabricated", f"gallery artifact {a.get('file')} references non-recon node id(s): {sorted(bad_ids)}")
+
     for n in g["nodes"]:
         if n["id"] not in recon_ids:
             D("diagram-node-fabricated", f"diagram node {n['id']} is not a recon element")

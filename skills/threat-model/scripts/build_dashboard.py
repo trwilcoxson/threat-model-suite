@@ -205,14 +205,16 @@ def svg_node_ids(svg_text):
     return ids
 
 
-def embed_structural_svg(svg_text, nodes):
-    """Inline the run's real visual-engine SVG with the dashboard's interactivity layered on: for each
-    D2 shape whose id is a recon element, inject the click/tooltip/cross-filter hooks the template JS
-    reads (data-entity/-fids/-name/-tech/-count). The base picture is untouched — no restyle."""
+def _strip_prolog(svg_text):
+    """Drop any XML prolog so the SVG inlines cleanly (kept inline / offline)."""
+    return re.sub(r"^\s*<\?xml[^>]*\?>", "", svg_text).lstrip()
+
+
+def _inject_node_hooks(svg_text, nodes):
+    """For each D2 shape whose id is a recon element, inject the click/tooltip/cross-filter hooks the
+    template JS reads (data-entity/-fids/-name/-tech/-count). Base picture untouched — no restyle. A
+    node not in `nodes` (e.g. an attack-flow/SBOM glyph with no recon mapping) is left as-is."""
     nmap = {n["id"]: n for n in nodes}
-    # give the outer <svg> the id the pan/zoom JS drives; drop any XML prolog (kept inline / offline).
-    svg_text = re.sub(r"^\s*<\?xml[^>]*\?>", "", svg_text).lstrip()
-    svg_text = svg_text.replace("<svg ", '<svg id="diagSVG" ', 1)
 
     def repl(mobj):
         leaf = _b64_leaf(mobj.group(1))
@@ -227,6 +229,87 @@ def embed_structural_svg(svg_text, nodes):
         return f'<g class="{mobj.group(1)}{mobj.group(2)}{attrs}>'
 
     return _SVG_G.sub(repl, svg_text)
+
+
+def embed_structural_svg(svg_text, nodes):
+    """Inline the run's real visual-engine SVG with the dashboard's interactivity layered on. The outer
+    <svg> gets the id the (legacy single-diagram) pan/zoom JS drives; base picture untouched."""
+    svg_text = _strip_prolog(svg_text)
+    svg_text = svg_text.replace("<svg ", '<svg id="diagSVG" ', 1)
+    return _inject_node_hooks(svg_text, nodes)
+
+
+def embed_gallery_svg(svg_text, nodes):
+    """A gallery slide's SVG: same real visual-engine picture + node hooks, but WITHOUT the shared
+    `diagSVG` id (many slides coexist in one document — ids must stay unique)."""
+    return _inject_node_hooks(_strip_prolog(svg_text), nodes)
+
+
+# ---------------------------------------------------------------------------
+# The run's FULL visual-artifact set — every diagram the flow rendered (L1-L4, attack trees/flows,
+# SBOM), surfaced as a gallery. Deterministic + grounded: we only ever list SVGs the run actually
+# produced (never fabricate a missing layer), each embedded verbatim, node ids linked to recon.
+# ---------------------------------------------------------------------------
+
+_VIEWBOX = re.compile(r'viewBox\s*=\s*"[\d.\-]+\s+[\d.\-]+\s+([\d.]+)\s+([\d.]+)"')
+
+
+def _artifact_meta(base):
+    """(label, kind, sort_order) for a rendered diagram file — the run's own artifact taxonomy."""
+    b = base.lower()
+
+    def _n(pat):
+        mm = re.search(pat, b)
+        return int(mm.group(1)) if mm else 0
+    if "attack-tree" in b:
+        n = _n(r"attack-tree-(\d+)")
+        return (f"Attack Tree {n}" if n else "Attack Tree", "attack-tree", 50 + n)
+    if "attack-flow" in b:
+        n = _n(r"attack-flow-(\d+)")
+        return (f"Attack Flow {n}" if n else "Attack Flow", "attack-flow", 70 + n)
+    if "sbom" in b:
+        return ("SBOM · Dependencies", "sbom", 90)
+    if "l1" in b:
+        return ("L1 · Architecture", "structural", 10)
+    if "l2" in b:
+        return ("L2 · Trust & Identity", "structural", 20)
+    if "l3" in b:
+        return ("L3 · Data", "structural", 30)
+    if "l4" in b:
+        return ("L4 · Threat Overlay", "risk", 40)
+    if "structural" in b:
+        return ("Structural", "structural", 5)
+    return (base, "other", 100)
+
+
+def _svg_natsize(raw):
+    m = _VIEWBOX.search(raw)
+    if m:
+        return round(float(m.group(1))), round(float(m.group(2)))
+    return 1200, 800  # sane default; the viewer fit still works, just less snug
+
+
+def collect_gallery(run_dir, nodes):
+    """Every diagram SVG the run rendered, each embedded verbatim with node hooks + its natural size.
+    Templated-with-blanks: only the artifacts that EXIST are listed (an absent layer is simply not a
+    tab, never a fabricated one). Icons in the sub-directory (icons/*.svg) are not diagrams — the
+    non-recursive glob excludes them."""
+    if not run_dir or not os.path.isdir(run_dir):
+        return []
+    items = []
+    for p in sorted(glob.glob(os.path.join(run_dir, "*.svg"))):
+        base = os.path.basename(p)
+        try:
+            raw = open(p, encoding="utf-8").read()
+        except OSError:
+            continue
+        label, kind, order = _artifact_meta(base)
+        w, h = _svg_natsize(raw)
+        items.append({"id": os.path.splitext(base)[0], "file": base, "label": label, "kind": kind,
+                      "order": order, "w": w, "h": h, "node_ids": sorted(svg_node_ids(raw)),
+                      "svg": embed_gallery_svg(raw, nodes)})
+    items.sort(key=lambda x: (x["order"], _natural(x["file"])))
+    return items
 
 
 def build_structural_graph(recon, findings, run_dir):
@@ -356,6 +439,9 @@ def build_structural_graph(recon, findings, run_dir):
             graph["diagram_source"] = "embedded-svg"
         except Exception:
             pass  # any embed failure degrades to the faithful re-render (never a crash)
+
+    # The FULL visual-artifact set (every layer/overlay/tree/flow/SBOM the run rendered) as a gallery.
+    graph["gallery"] = collect_gallery(run_dir, nodes)
     return graph
 
 
