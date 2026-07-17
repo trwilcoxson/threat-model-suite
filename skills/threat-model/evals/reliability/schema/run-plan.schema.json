@@ -21,6 +21,17 @@
       }
     },
     "confirmed": {"type": "boolean"},
-    "source": {"type": "string", "enum": ["one-shot", "menu"]}
+    "source": {"type": "string", "enum": ["one-shot", "menu"]},
+    "chain": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["portfolio_id", "run_id", "portfolio_path"],
+      "description": "Optional portfolio-chain membership. Absent or null => standalone (default). When present, all three fields are required; the run is upserted into portfolio_path keyed by run_id after the pipeline completes.",
+      "properties": {
+        "portfolio_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "portfolio_path": {"type": "string"}
+      }
+    }
   }
 }

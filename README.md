@@ -64,6 +64,18 @@ docs/        ARCHITECTURE.md, VALIDATION-PATTERNS.md, STRUCTURED-OUTPUT-CONTRACT
   out) and derived, embedded, and validated at every output: the dashboard finding drawer shows the cited code
   snippet / document quote / diagram element with a jump to the related diagram node. Additive and back-compatible
   — evidence-less committed manifests still validate.
+- Opt-in **portfolio meta-view (`portfolio.html`)** — the level *above* the single-product dashboard. It rolls up N
+  per-product runs into one self-contained, offline, byte-deterministic page that reuses the dashboard's own per-run
+  model and exact theme (same product family, not a re-implementation): aggregate posture (worst-of — any member
+  CRITICAL ⇒ portfolio CRITICAL), summed severity, an assessed-weighted coverage roll-up (a member with no coverage
+  ledger reads `unknown`, never green), a deterministic chain map of the products, a riskiest-product ranking, member
+  cards that **drill into each product's own `dashboard.html`**, and grounded cross-product analytics (shared
+  CWE / ATT&CK / STRIDE). Cross-product links are only ever **auto-derived taxonomy overlaps** (same global CWE/ATT&CK/
+  STRIDE id = same node, computed at build) or **declared structural edges** (shared component/datastore/dependency,
+  up/downstream trust, shared risk/kill-chain, common control) between real recon element ids — a dangling or
+  ungrounded endpoint is dropped and reported, never fabricated. Membership + declared edges persist to a
+  `portfolio.json` (`portfolio/v1`); a reference-free check asserts the aggregates reconcile to members and every link
+  is grounded. Inert unless a portfolio is present — single-product runs are unchanged.
 
 ### agents
 The pipeline the skill orchestrates. Each runs in a fresh context, writes a structured output file +
@@ -103,6 +115,12 @@ analytical-visuals included) and **stops for your choice** — or you give a one
 is **denied until `run-plan.json` exists, validates, and is confirmed** (the deny reason carries the menu), so
 there's no accidental full run. The rest of the run then spawns exactly the team and emits exactly the outputs
 you planned.
+
+Step 0 also asks one **opt-in chaining question** (`chain=<portfolio-id>, run-id=<id>`; default standalone, so
+nothing is chained by accident), recorded as an additive optional `chain` block on `run-plan.json`. When set, the
+completed run is upserted (idempotent, keyed by `run_id`) into that portfolio's `portfolio.json` as **membership
+only** — being in the chain and being *linked* to another product are two separate opt-ins. Rebuild the portfolio
+view over the members with `scripts/build_portfolio.py` to get `portfolio.html`.
 
 Before the report is generated, the same hook
 ([`hooks/validate_gate.py`](hooks/validate_gate.py)) runs the deterministic validator over the emitted

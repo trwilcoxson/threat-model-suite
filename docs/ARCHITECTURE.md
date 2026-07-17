@@ -21,7 +21,9 @@ The system transforms a codebase or architecture description into a comprehensiv
 | `report.pdf` | Print-ready PDF |
 | `executive-summary.pptx` | 9-11 slide executive presentation with severity charts and diagram embeds |
 | `dashboard.html` (opt-in) | Single self-contained offline analytics dashboard — severity/risk/coverage/STRIDE-LM/kill-chain/ATT&CK/CWE analytics plus the run's own interactive structural diagram (pan/zoom + click→cross-filter); derived entirely from the run's manifests. Produced only when `dashboard ∈ run-plan.outputs` |
-| `run-plan.json` | The confirmed run selection (`run-plan/v1`: mode, team[], outputs[], confirmed, source) written at Step 0 before any spawn |
+| `run-plan.json` | The confirmed run selection (`run-plan/v1`: mode, team[], outputs[], confirmed, source) written at Step 0 before any spawn; an additive optional `chain` block records opt-in portfolio membership |
+| `portfolio.html` (opt-in, portfolio-level) | Self-contained offline meta-view *above* the per-product dashboard: rolls up N member runs into aggregate posture (worst-of), summed severity, assessed-weighted coverage, a chain map, riskiest-product ranking, and grounded cross-product analytics; member cards drill into each product's own `dashboard.html`. Reuses `build_dashboard.model_for_run` + `dashboard_template.CSS`. Produced by `scripts/build_portfolio.py` over a `portfolio.json` |
+| `portfolio.json` | The persisted relationship model (`portfolio/v1`): membership (real run ids + path locators) and DECLARED typed edges between real recon element ids (`origin: "declared"` + provenance). Runs are upserted (idempotent, keyed by `run_id`) at pipeline end when Step 0 opted them in |
 | Product-grade + analytical visuals | 8 product-grade diagram additions plus analytical charts (severity distribution, risk heatmap) beyond the L1-L4 DFDs |
 | `coverage.json` + coverage profile | Completeness-coverage ledger: every applicable production-grade item resolved to present / partial / absent / not-applicable / unknown, with unknowns surfaced as open questions |
 | `events.ndjson` + `pipeline-summary.md` | Pipeline observability: a `tm.run-event/1` stream projected from each persona's Execution Log ("what agent is doing what") |
@@ -351,6 +353,44 @@ the run match the plan:
 
 **Back-compat.** Every new file/branch is inert on runs lacking `run-plan.json`/`dashboard.html`, so the
 archived flagship and all sample-runs stay green.
+
+### 3.9 The Portfolio / Chain Meta-View (opt-in `portfolio.html`)
+
+The dashboard is the per-product altitude; the **portfolio** is the layer above it — one meta-view that rolls
+up N per-product runs into a single self-contained, offline, byte-deterministic page:
+
+```
+skills/threat-model/scripts/build_portfolio.py <portfolio.json> <out.html>
+  Load membership from portfolio.json (real run ids + path locators)
+  Reuse build_dashboard.model_for_run(<member run_dir>) per member  ← same per-run model
+  Roll up: worst-of posture · summed severity · assessed-weighted coverage · chain map
+           · riskiest-product ranking · cross-product CWE/ATT&CK/STRIDE tables
+  Render skills/threat-model/references/portfolio_template.py in dashboard_template.CSS  ← same theme
+```
+
+**One source of truth, two altitudes.** The portfolio is *not* a re-implementation. It embeds each member via
+the dashboard's own `build_dashboard.model_for_run`, renders in the dashboard's exact `dashboard_template.CSS`,
+and its member cards **drill down into each product's own `dashboard.html`** — same product family, one model,
+viewed at two altitudes. A member with no coverage ledger rolls up as `unknown`, never green.
+
+**Determinism boundary (no fabricated edges).** Cross-product links come in exactly two kinds, each with its own
+grounding rule:
+
+- **Auto-derived taxonomy overlaps** — shared CWE / ATT&CK / STRIDE: same global id = same node, computed at
+  build time by controlled-vocabulary **set-equality**, never stored. This is structure over emitted facts,
+  same as every other eval: the ids are the members' own, the overlap is set intersection, no inference.
+- **Declared structural edges** — `shared_component` / `shared_datastore` / `shared_dependency` /
+  `upstream_trust` / `downstream_trust` / `shared_risk` / `shared_killchain` / `common_control` between real
+  recon element ids, persisted in `portfolio.json` with `origin: "declared"` + provenance. Each endpoint is
+  **validated to resolve** to a real element in a member run; a dangling or ungrounded endpoint is **dropped and
+  reported**, never fabricated.
+
+**Two-level opt-in.** Membership and linkage are separate consents. Step 0 gains an opt-in chaining question
+(`chain=<portfolio-id>, run-id=<id>`, default standalone), recorded as an additive optional `chain` block on
+`run-plan.json`; on pipeline completion the run is upserted (idempotent, keyed by `run_id`) into `portfolio.json`
+as **membership only**. A declared edge is a second, explicit act. A reference-free check (`portfolio_checks.py`,
+wired into `run.py`, inert unless a `portfolio.json` is present) asserts the aggregates reconcile to the members
+and every link is grounded. Schema: `evals/reliability/schema/portfolio.schema.json` (`portfolio/v1`).
 
 ---
 
