@@ -36,7 +36,7 @@ state) and the eval checks structure over that fact — it never infers content 
 | [`add-control-coverage-matrix`](changes/add-control-coverage-matrix/) | `control-coverage` | implemented (live verification pending) |
 | [`add-semantic-source-diagram`](changes/add-semantic-source-diagram/) | `semantic-diagram-source` | implemented (spike proven; adoption pilot pending) |
 
-The last six are the **[visual-engine research program](../docs/research/visual-engine-2026-07/ROADMAP.md)**
+The last seven are the **[visual-engine research program](../docs/research/visual-engine-2026-07/ROADMAP.md)**
 (2026-07), now **implemented** on this branch (the four additive changes fully; the visual-engine pair eval-side,
 with D2-binary/icon-asset vendoring + diagram migration tracked in their `tasks.md`). Seven further workstreams
 are deferred and six were dropped — see the roadmap. OTM was evaluated and not adopted ([OTM-EVAL.md](../docs/research/visual-engine-2026-07/OTM-EVAL.md)); the

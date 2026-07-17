@@ -625,15 +625,15 @@ def t_plain_label_fallback():
     single-line label passes; an inactive fallback tier makes the whole check ABSTAIN — so the flagship
     (committed Mermaid, full-fidelity browser render) is never flipped. Reference-free: emitted source vs
     the active renderer's known incapability, never a golden diagram."""
-    # multi-line D2 label written with the real `\n` escape (as authored in a .d2 file)
+    # a rich D2 label that uses a TRUE foreignObject trigger (an |md markdown block) — resvg blanks it
     rich_d2 = ('# Layer: L1\n'
-               'C5: "Server API\\n(warn) S,T,I,E 4x4=16 HIGH\\nTM-004" { class: highRisk }\n')
+               'C5: |md **Server API** S,T,I,E 4x4=16 HIGH TM-004 | { class: highRisk }\n')
     plain_d2 = ('# Layer: L1\n'
                 'C5: "Server API ALB [managed]" { class: service }\n')
     rich = [dc.Block("d2", rich_d2)]
     plain = [dc.Block("d2", plain_d2)]
 
-    # fallback active + rich (multi-line) label -> flagged
+    # fallback active + rich (foreignObject) label -> flagged
     d = dc._plain_label_checks(rich, fallback_active=True)
     assert any(c == "fallback-tier-rich-label" for c, _ in d), d
 
@@ -743,6 +743,78 @@ def t_recon_to_d2_smoke():
             assert "data:image/svg" in isvg.read_text(), "vendored icons must embed offline as data URIs"
 
 
+def t_ragged_matrix_blanks():
+    """FIX (blank-cell undercount): a ragged markdown row that OMITS trailing cells escaped the
+    per-present-cell blank count. Omitted cells now count as blank against the header width, on BOTH
+    the per-element STRIDE matrix and the boundary-crossing matrix — a row narrower than the header
+    is itself a blank-cell defect."""
+    fdoc = {"findings": [{"id": "TM-001"}]}
+
+    # --- per-element STRIDE matrix: a row with 4 of 8 cells present -> stride-matrix-blanks
+    ragged = ("## STRIDE-per-Element Coverage Matrix\n"
+              "| Element | S | T | R | I | D | E | LM |\n"
+              "|---|---|---|---|---|---|---|----|\n"
+              "| C1 | TM-001 | clean | clean |\n")   # omits I,D,E,LM entirely
+    codes = {d["code"] for d in dc.analytical_checks(ragged, [], _recon(1, 0), fdoc)["defects"]}
+    assert "stride-matrix-blanks" in codes, f"a ragged per-element row must be caught: {codes}"
+    # a fully-populated row does NOT trip it (guard against over-counting)
+    full = ("## STRIDE-per-Element Coverage Matrix\n"
+            "| Element | S | T | R | I | D | E | LM |\n"
+            "|---|---|---|---|---|---|---|----|\n"
+            "| C1 | TM-001 | clean | clean | clean | clean | n-a | clean |\n")
+    codes = {d["code"] for d in dc.analytical_checks(full, [], _recon(1, 0), fdoc)["defects"]}
+    assert "stride-matrix-blanks" not in codes, codes
+
+    # --- boundary-crossing matrix: same ragged guard over the crossing rows
+    dfd = ("flowchart TD\n    %% Version: x | Layer: L1\n"
+           '    R0["User"]:::external\n'
+           '    subgraph Z1["Public"]\n        C4(["ALB"])\n    end\n'
+           '    R0 -->|"HTTP"| C4\n')   # one crossing: R0 (external) -> C4 (public zone)
+    recon = {"components": [{"id": "C4"}], "entry_points": [{"id": "R0"}],
+             "data_stores": [], "trust_boundaries": [], "external_deps": []}
+    bcm_ragged = ("## STRIDE-per-Interaction (Boundary-Crossing) Coverage Matrix\n"
+                  "| Edge (src → dst) | S | T | R | I | D | E | LM |\n"
+                  "|---|---|---|---|---|---|---|----|\n"
+                  "| R0 → C4 | TM-001 | clean |\n")   # omits 6 trailing cells
+    codes = {d["code"] for d in dc.analytical_checks(bcm_ragged, [dfd], recon, fdoc)["defects"]}
+    assert "crossing-matrix-blanks" in codes, f"a ragged crossing row must be caught: {codes}"
+
+
+def t_foreign_label_plain_newline():
+    """FIX (_FOREIGN_LABEL false positive): a plain quoted `\\n` D2 label renders as a multi-line SVG
+    <tspan> (NOT foreignObject) and resvg/rsvg-convert draw it fine, so `\\n` alone must NOT trip the
+    fallback-tier plain-label guard. TRUE foreignObject triggers (|md, block string, <br>) still fire."""
+    nl = [dc.Block("d2", '# Layer: L1\nC5: "Server API\\nALB [managed]" { class: service }\n')]
+    assert dc._plain_label_checks(nl, fallback_active=True) == [], "a plain \\n label is a tspan, not foreignObject"
+    # genuine foreignObject triggers must STILL fire (the guard is not disabled, only the \\n alternative)
+    assert dc._plain_label_checks([dc.Block("d2", '# Layer: L1\nN: |md **x** | { class: service }\n')], True), "|md| must fire"
+    assert dc._plain_label_checks([dc.Block("mermaid", 'flowchart TD\n  A["a<br/>b"] --> B\n')], True), "<br> must fire"
+
+
+def t_d2_crossing_full_path():
+    """FIX (D2 crossing zone-collision): the crossing test compares the FULL container path, not just
+    the innermost container key — so `A.PRIV.x -> B.PRIV.y` (two DIFFERENT `PRIV` containers under
+    different parents) is a real boundary crossing, not a false intra-zone edge."""
+    cross = dc._D2.crossing_edges("# Layer: L1\nA.PRIV.x -> B.PRIV.y: \"flow\"\n")
+    assert ("x", "y") in cross, f"A.PRIV.x -> B.PRIV.y must cross (different parent paths): {cross}"
+    # genuinely the same full path -> NOT a crossing (guard against over-flagging)
+    same = dc._D2.crossing_edges("# Layer: L1\nA.PRIV.x -> A.PRIV.y: \"flow\"\n")
+    assert same == [], f"same container path is intra-zone: {same}"
+
+
+def t_recon_type_excludes_styling():
+    """FIX (recon node-type folds styling classes): a recon `component.type` must be a NODE type, not a
+    diagram STYLING class. `highRisk`/`outOfScope` are valid diagram `:::class` tokens but NOT node
+    types, so they must be flagged as unknown component types; a genuine node type still passes."""
+    for styling in ("highRisk", "outOfScope"):
+        styled = {"components": [{"id": "C1", "name": "a", "evidence": ["e"], "type": styling}]}
+        hits = [d for d in checks.recon_semantic_checks(styled) if d["code"] == "recon-node-type-unknown"]
+        assert hits, f"styling class '{styling}' must NOT pass as a component.type"
+    ok = {"components": [{"id": "C1", "name": "a", "evidence": ["e"], "type": "service"}]}
+    assert not [d for d in checks.recon_semantic_checks(ok) if d["code"] == "recon-node-type-unknown"], \
+        "a genuine node type must still pass"
+
+
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
@@ -750,7 +822,9 @@ def main():
              t_mermaid_extractor_identity, t_d2_extractor_parity, t_node_type_vocab,
              t_plain_label_fallback,
              t_recon_dataflow_integrity, t_recon_node_type_membership, t_recon_semantic_backcompat,
-             t_recon_to_d2_smoke]
+             t_recon_to_d2_smoke,
+             t_ragged_matrix_blanks, t_foreign_label_plain_newline, t_d2_crossing_full_path,
+             t_recon_type_excludes_styling]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

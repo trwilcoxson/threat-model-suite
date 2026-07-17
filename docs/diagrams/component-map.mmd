@@ -5,7 +5,7 @@ flowchart TB
         direction TB
         SKILL["<b>SKILL.md</b><br/>8 phases + orchestration"]
 
-        subgraph RefFiles["references/ — 16 files (14 .md + 2 .json)"]
+        subgraph RefFiles["references/ — 16 .md + 3 .json + icons/"]
             direction TB
             FW["<b>frameworks.md</b><br/>STRIDE-LM, PASTA, MITRE,<br/>CWE, OWASP lookups"]
             AOP["<b>agent-output-protocol.md</b><br/>Standardized finding format"]
@@ -17,7 +17,7 @@ flowchart TB
             PO["<b>pipeline-observability.md</b><br/>Run-event stream spec"]
             FW ~~~ AOP ~~~ RT ~~~ AC ~~~ VCC ~~~ AP ~~~ COV ~~~ PO
 
-            subgraph MermaidRefs["Diagram and Visual System — 7 files"]
+            subgraph MermaidRefs["Diagram and Visual System — 10 files"]
                 direction LR
                 MS["mermaid-spec.md<br/><i>Symbols, edges, classDefs</i>"]
                 ML["mermaid-layers.md<br/><i>4-layer separation</i>"]

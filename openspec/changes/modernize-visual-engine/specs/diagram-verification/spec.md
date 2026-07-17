@@ -45,20 +45,6 @@ or below 10% it SHALL be a warning.
 - **THEN** both map `service` to the same vendored icon, otherwise an icon-inconsistency defect is
   recorded
 
-### Requirement: Edge endpoints resolve to declared nodes
-The eval SHALL verify that every edge endpoint resolves to a node the source declares, so a mistyped
-edge target that an engine would silently auto-create as a phantom node is caught. Duplicate node ids
-SHALL be flagged. This check SHALL be engine-agnostic and reference-free — it resolves ids within the
-source only, never against an external list.
-
-#### Scenario: Phantom node caught
-- **WHEN** an edge names a target id that is not a declared node
-- **THEN** a dangling-endpoint defect is recorded rather than a phantom node being silently accepted
-
-#### Scenario: Duplicate id flagged
-- **WHEN** two nodes are declared with the same id
-- **THEN** a duplicate-id defect is recorded
-
 ### Requirement: Verification stays reference-free across engines
 Every assertion the generalized eval makes SHALL be a property, grounding, consistency, or coverage
 check over the model's own emitted source — well-formedness, id resolution within the source,

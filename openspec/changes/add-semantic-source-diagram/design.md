@@ -23,10 +23,11 @@ operations.
 3. **The transform (`recon_to_d2.py`) owns 100% of presentation and is pure/deterministic.** Sorted
    iteration, no randomness, output-relative icon paths → byte-stable across machines (a self-check asserts
    re-render identity). The agent authors `recon.json`; it never picks a shape, colour, icon or coordinate.
-4. **Every new check is reference-free and inert without `dataflows[]`.** `dataflow-endpoint-integrity`
-   (hard/consistency: endpoints ∈ declared ids), `recon-node-type-unknown` (advisory: `type` ∈ catalog),
-   `dataflow-ungrounded` (advisory: edge has grounding evidence). When `dataflows[]` is absent the checks do
-   not fire, so runs that keep authoring the diagram directly are unaffected.
+4. **Every new check is reference-free and abstains when its OWN source field is absent.**
+   `dataflow-endpoint-integrity` (hard/consistency: endpoints ∈ declared ids) and `dataflow-ungrounded`
+   (advisory: edge has grounding evidence) are inert without `dataflows[]`; `recon-node-type-unknown`
+   (advisory: `type` ∈ catalog) is inert without any `element.type`. Runs that keep authoring the diagram
+   directly emit none of these fields, so they are unaffected.
 
 ## The determinism boundary
 

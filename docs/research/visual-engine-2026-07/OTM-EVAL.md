@@ -37,10 +37,10 @@ dormant single-vendor dependency**. Analytical matrices, attack trees, kill chai
 no OTM form and stay Mermaid-authored either way — OTM narrows the as-code surface, it doesn't unify it.
 
 ## Decisions (2026-07-15)
-- **`modernize-visual-engine` (#5) and `add-offline-render-pipeline` (#6) were never blocked by this** — the
+- **`modernize-visual-engine` (#1) and `add-offline-render-pipeline` (#2) were never blocked by this** — the
   render engine (D2) and the authoring format are orthogonal. Both proceed with D2 as designed.
 - **Semantic-source (`recon.json` + `dataflows[]` → deterministic `recon→D2`) is a queued time-boxed
-  spike**, behind #5's per-engine extractor seam, before committing it as a small new openspec change —
+  spike**, behind #1's per-engine extractor seam, before committing it as a small new openspec change —
   prove render quality ≥ hand-authored D2 and that the JSON checks are strictly simpler, then commit it.
 - **OTM export: skipped (YAGNI).** A one-way `recon+findings → OTM v0.2.0` projection is cheap and
   contract-safe, but the consumer base is effectively IriusRisk customers; revisit only if a real consumer

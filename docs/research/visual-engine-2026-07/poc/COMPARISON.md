@@ -2,14 +2,15 @@
 
 Same threat model (`amazon-ecs-fullstack-app-terraform`, L1 structural DFD, 25 nodes,
 26 typed flows, 3 nested trust zones) authored **as code** in each engine and rendered
-**offline** to PNG. All sources are in this directory.
+**offline** to PNG. The D2 and PlantUML sources are in this directory; the Mermaid baseline is
+the committed flagship source at `docs/examples/amazon-ecs-fullstack-app-terraform/structural-diagram.mmd`.
 
 | # | Image | Engine | Source | Render path | 1-line aesthetic verdict |
 |---|-------|--------|--------|-------------|--------------------------|
-| 00 | `00-baseline-mermaid.png` | **Mermaid** (current) | `00-baseline-mermaid.mmd` | `mmdc` (existing) | Legible but **monochrome** — node *type* shown only by grey/blue box shape+fill; you must read every label to tell an ALB from an ECS task from DynamoDB, and trust boundaries are near-invisible flat-grey rectangles with tiny corner labels. This is exactly the "muddy" the owner described. |
+| 00 | `00-baseline-mermaid.png` | **Mermaid** (current) | `docs/examples/amazon-ecs-fullstack-app-terraform/structural-diagram.mmd` | `mmdc` (existing) | Legible but **monochrome** — node *type* shown only by grey/blue box shape+fill; you must read every label to tell an ALB from an ECS task from DynamoDB, and trust boundaries are near-invisible flat-grey rectangles with tiny corner labels. This is exactly the "muddy" the owner described. |
 | 01 | `01-d2-structural.png` | **D2** (elk layout, theme 4) | `structural.d2` | `d2` CLI (icons inlined) | **Clearest of the set.** Distinct AWS icon per node type (ELB / ECS / CodePipeline / DynamoDB / S3 / ECR / CloudWatch / SNS / VPC), `person` actors, `cylinder` datastores; **tinted, dashed nested trust zones** (purple CI/CD, blue VPC, orange private-subnet, blue public-subnet) read instantly as security zones; edges **colored by semantic type** (orange=build, red=admin, green=async, dashed=control). Best node-type-by-icon distinction + cleanest boundaries. |
 | 02 | `02-plantuml-c4-structural.png` | **PlantUML + C4 + logos sprites** | `structural.puml` | `plantuml` (jar, offline) | Most **corporate-polished**: rich brand/service logos (GitHub, Docker, Terraform, Node.js, CodePipeline, DynamoDB, S3, ECS), C4's clean blue containers, colored dashed nested boundaries **and a built-in legend**. Weakness visible: `dot` routing produces sweeping cross-diagram edges + some label overlap on this dense graph. |
-| 03 | `03-d2-offline-localicons.png` | **D2 (offline proof)** | `offline.d2` + `icons/*.svg` | `d2` CLI, **network blocked** | Adversarial-verification artifact: rendered in 140 ms with `HTTP(S)_PROXY` pointed at a dead port, using **local vendored** `./icons/*.svg`. All icons inlined as base64 → confirms D2 produces a self-contained, fully-offline typed-icon render with zero network. |
+| 03 | `03-d2-offline-localicons.png` | **D2 (offline proof)** | `offline.d2` + `skills/threat-model/references/icons/*.svg` | `d2` CLI, **network blocked** | Adversarial-verification artifact: rendered in 140 ms with `HTTP(S)_PROXY` pointed at a dead port, using the **local vendored** icon set at `skills/threat-model/references/icons/*.svg` (referenced from `offline.d2` by relative path). All icons inlined as base64 → confirms D2 produces a self-contained, fully-offline typed-icon render with zero network. |
 
 ## Which engine best distinguishes node types by icon?
 **D2 and PlantUML both decisively beat the Mermaid baseline** — each gives a distinct, controlled
