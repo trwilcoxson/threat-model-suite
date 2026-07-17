@@ -36,8 +36,23 @@ def _run_dirs(root: Path) -> list[Path]:
     return sorted(p for p in root.iterdir() if p.is_dir() and (p / "findings.json").exists())
 
 
+def _optional_defects(run_dir: Path, stage: str = "post") -> list[dict]:
+    """Defects from the opt-in artifacts — inert unless the artifact is present, so runs that never
+    produced a dashboard / run-plan are wholly unaffected (back-compat). `stage` is "gate" when called
+    from the report-spawn validation gate (outputs not generated yet) and "post" for post-hoc scoring."""
+    extra: list[dict] = []
+    if (run_dir / "dashboard.html").exists():
+        import dashboard_checks
+        extra += dashboard_checks.check(run_dir)["defects"]
+    if (run_dir / "run-plan.json").exists():
+        import run_plan_checks
+        extra += run_plan_checks.check(run_dir, stage=stage)["defects"]
+    return extra
+
+
 def cmd_check(a) -> None:
     res = checks.run_checks(Path(a.run), Path(a.repo))
+    res["defects"] += _optional_defects(Path(a.run), stage="post")
     (Path(a.run) / "scored.json").write_text(json.dumps(res, indent=2))
     s = res["scores"]
     print(f"structure={'pass' if s['structure_pass'] else 'FAIL'} "
@@ -150,9 +165,11 @@ def cmd_validate(a) -> None:
     repo = Path(a.repo) if a.repo else run_dir
     res = checks.run_checks(run_dir, repo)
     cov_res = coverage_checks.check(_load(run_dir / "coverage.json"), repo)
-    defects = res["defects"] + cov_res["defects"]
+    defects = res["defects"] + cov_res["defects"] + _optional_defects(run_dir, stage="gate")
 
-    GATE = {"structure", "consistency", "coverage"}
+    # "dashboard"/"run-plan" join the gate ONLY via defects that _optional_defects emits, which it
+    # emits only when the artifact exists — so a run without them can never be blocked on them.
+    GATE = {"structure", "consistency", "coverage", "dashboard", "run-plan"}
     if a.repo:
         GATE.add("grounding")
     # report.md is the eval-executor's artifact; in the production flow it does not exist yet at

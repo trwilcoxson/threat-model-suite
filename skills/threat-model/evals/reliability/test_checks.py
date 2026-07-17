@@ -14,9 +14,12 @@ import tempfile
 from pathlib import Path
 
 import checks
+import dashboard_checks
 import diagram_checks as dc
 import report
 import schema_checks
+
+_FLAGSHIP = Path(__file__).resolve().parents[4] / "docs/examples/amazon-ecs-fullstack-app-terraform"
 
 # The deterministic recon->D2 transform lives next to the skill scripts, not on the eval path.
 _R2D2 = Path(__file__).resolve().parent.parent.parent / "scripts" / "recon_to_d2.py"
@@ -547,9 +550,9 @@ _PARITY_D2 = """## Structural
 ```d2
 # Version: 2026-07-15 | Phase: 2 | System: Demo | Layer: L1
 classes: {
-  external: { style: { fill: "#cce5ff" } }
-  svc: { style: { fill: "#f5f5f5" } }
-  store: { shape: cylinder }
+  external: { icon: icons/external-actor.svg; style: { fill: "#cce5ff" } }
+  svc: { icon: icons/service.svg; style: { fill: "#f5f5f5" } }
+  store: { shape: cylinder; icon: icons/datastore.svg }
 }
 R0: "User" { class: external }
 Z1: "Public" {
@@ -655,6 +658,56 @@ def t_plain_label_fallback():
 
     # env-driven default is "not active" -> check() abstains by default (flagship stays green)
     assert dc._fallback_tier_active() is False
+
+
+def t_d2_icon_binding():
+    """Visual-engine icon mandate: a structural/layer D2 diagram must bind its node-type `icon:` on
+    every typed class (hand-authored D2 too — icons render on ALL render tiers). Reference-free +
+    determinism-boundary-safe: it only asserts a vocabulary-icon binding EXISTS, never which glyph.
+    Abstains on runs with no D2; skips pure attack-graph blocks (goal/gate — not the node vocabulary).
+    Also exercises the standalone deterministic injector (scripts/inject_node_icons.py)."""
+    good = ('# Version: x | Layer: L1\n'
+            'classes: {\n'
+            '  service:   { shape: rectangle; icon: icons/service.svg; style: { fill: "#fff" } }\n'
+            '  datastore: { shape: cylinder; icon: icons/datastore.svg; style: { fill: "#eee" } }\n'
+            '}\n'
+            'C1: "api" { class: service }\n'
+            'D1: "db" { class: datastore }\n')
+    # bound icons -> no defect
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", good)])
+    assert d == [], d
+
+    # a typed class missing its icon -> flagged
+    missing = good.replace("shape: rectangle; icon: icons/service.svg;", "shape: rectangle;")
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", missing)])
+    assert any(c == "d2-missing-node-icon" for c, _ in d), d
+
+    # L4 risk-styled class (svcHigh) folds onto 'service' -> still a typed node, icon required
+    l4 = '# Layer: L4\nclasses: {\n  svcHigh: { shape: rectangle; style: { fill: "#f00" } }\n}\nC1: "x" { class: svcHigh }\n'
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", l4)])
+    assert any(c == "d2-missing-node-icon" for c, _ in d), d
+
+    # an icon that isn't a vocabulary node-type glyph -> flagged
+    offvocab = good.replace("icon: icons/service.svg", "icon: icons/logo.svg")
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", offvocab)])
+    assert any(c == "d2-icon-not-in-vocab" for c, _ in d), d
+
+    # pure attack-graph D2 (no node-type classes) -> skipped, no defect
+    tree = '# Type: Attack Tree\nclasses: { goal: { shape: circle } }\nG1: "root" { class: goal }\n'
+    assert dc._d2_icon_binding_checks([dc.Block("d2", tree)]) == ([], [])
+
+    # no D2 in the run at all -> abstain (Mermaid-only / no-diagram runs never flip)
+    assert dc._d2_icon_binding_checks([dc.Block("mermaid", "# Layer: L1\ngraph TD")]) == ([], [])
+
+    # the deterministic injector adds the binding the check wants (folds svcHigh -> service.svg)
+    import importlib.util as _ilu
+    _p = Path(__file__).resolve().parent.parent.parent / "scripts" / "inject_node_icons.py"
+    _spec = _ilu.spec_from_file_location("inject_node_icons", _p)
+    _mod = _ilu.module_from_spec(_spec); _spec.loader.exec_module(_mod)
+    injected = _mod.inject(l4, "icons")
+    assert "icon: icons/service.svg" in injected, injected
+    d, _ = dc._d2_icon_binding_checks([dc.Block("d2", injected)])
+    assert d == [], d
 
 
 def t_recon_dataflow_integrity():
@@ -815,16 +868,352 @@ def t_recon_type_excludes_styling():
         "a genuine node type must still pass"
 
 
+def t_dashboard_grounding_and_consistency():
+    """The dashboard is GROUNDED (numbers recount the manifests) and CROSS-OUTPUT consistent (severity ==
+    findings.summary_counts) — and its embedded diagram is the RUN'S real diagram (recon node ids, real
+    dataflow edges), never a fabricated one. Flagship must pass clean."""
+    import build_dashboard as bd
+    res = dashboard_checks.check(_FLAGSHIP)
+    assert not res["defects"], f"flagship dashboard must be clean: {[d['code'] for d in res['defects']]}"
+    m = bd.model_for_run(str(_FLAGSHIP))
+    findings = json.loads((_FLAGSHIP / "findings.json").read_text())
+    # cross-output: dashboard severity == the figures the report shows (summary_counts)
+    for band, n in findings["summary_counts"].items():
+        assert m["severity"][band] == n, f"dashboard severity {band} != report summary_counts"
+    g = m["graph"]
+    assert g["source"] == "mermaid" and len(g["nodes"]) == 23 and len(g["edges"]) == 26
+    recon_ids = {el["id"] for arr in bd.KIND_OF_ARRAY for el in (json.loads((_FLAGSHIP / "recon.json").read_text()).get(arr) or [])}
+    assert all(n["id"] in recon_ids for n in g["nodes"]), "every diagram node must be a recon element"
+
+
+def t_dashboard_flags_fabricated_diagram():
+    """The consistency guard must CATCH a diagram that invents a node or an edge not in the run's real
+    dataflows (the old 'System Map / finding-co-reference edge' failure mode)."""
+    import build_dashboard as bd
+    m = bd.model_for_run(str(_FLAGSHIP))
+    m["graph"]["nodes"].append({"id": "ZZ9", "name": "ghost", "tech": "", "kind": "component",
+                                "sev": "—", "count": 0, "fids": [], "label": "ghost", "evidence": 0})
+    m["graph"]["edges"].append({"a": "C1", "b": "D6", "label": "invented", "etype": "data", "fids": []})
+    codes = {d["code"] for d in dashboard_checks.check(_FLAGSHIP, model=m)["defects"]}
+    assert "diagram-node-fabricated" in codes, f"invented node must be caught: {codes}"
+    assert "diagram-edge-not-real" in codes, f"synthesized (non-dataflow) edge must be caught: {codes}"
+
+
+def t_dashboard_embeds_real_visual_engine_svg():
+    """When the run carries the visual-engine's rendered STRUCTURAL SVG (the D2 render), the dashboard
+    EMBEDS that exact SVG (diagram_source=embedded-svg) with click hooks over its real node ids — and
+    the grounding guard CATCHES an embedded SVG that references a node id not in recon. The flagship
+    (no structural SVG, Mermaid only) stays on the deterministic re-render fallback, unchanged."""
+    import base64
+    import build_dashboard as bd
+
+    def b64g(nid, cls):  # a D2-style <g> whose base64 class encodes the fully-qualified node key
+        return f'<g class="{base64.b64encode(nid.encode()).decode()} {cls}"><g class="shape"><rect/></g><text>{nid}</text></g>'
+
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "recon.json").write_text(json.dumps({
+            "system_name": "T", "components": [{"id": "C1", "name": "Api", "evidence": ["e"]}],
+            "data_stores": [{"id": "D1", "name": "Db", "evidence": ["e"]}]}))
+        (d / "findings.json").write_text(json.dumps({
+            "summary_counts": {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0},
+            "findings": [{"id": "TM-001", "title": "x", "severity": "HIGH", "likelihood": 3,
+                          "impact": 4, "asset_refs": ["C1"]}], "kill_chains": []}))
+        (d / "coverage.json").write_text(json.dumps({"items": []}))
+        svg = ('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" data-d2-version="0.7.1" '
+               f'viewBox="0 0 100 100">{b64g("C1","service")}{b64g("D1","datastore")}</svg>')
+        (d / "sys-L1-architecture.svg").write_text(svg)
+
+        assert bd.structural_svg_path(str(d)).endswith("sys-L1-architecture.svg")
+        assert bd.svg_node_ids(svg) == {"C1", "D1"}, "only real element ids are extracted"
+        m = bd.model_for_run(str(d))
+        g = m["graph"]
+        assert g["diagram_source"] == "embedded-svg" and g["svg_file"] == "sys-L1-architecture.svg"
+        assert 'data-d2-version' in g["svg"], "the exact D2 SVG is inlined (not re-rendered)"
+        # click hooks are layered onto the real nodes, and C1's fids are grounded in findings.asset_refs
+        assert 'data-entity="C1" data-fids="TM-001"' in g["svg"], "node C1 wired to its grounded finding"
+        assert dashboard_checks.check(str(d), model=m)["scores"]["dashboard_pass"], "clean embed passes"
+
+        # NEGATIVE: an embedded SVG that invents an element-shaped node id (C9 ∉ recon) must be caught.
+        bad_svg = svg.replace("</svg>", b64g("C9", "service") + "</svg>")
+        (d / "sys-L1-architecture.svg").write_text(bad_svg)
+        codes = {x["code"] for x in dashboard_checks.check(str(d))["defects"]}
+        assert "embed-node-fabricated" in codes, f"invented embedded node must be caught: {codes}"
+
+    # the flagship has no structural SVG (Mermaid only) → the faithful re-render fallback, unchanged.
+    fm = bd.model_for_run(str(_FLAGSHIP))
+    assert fm["graph"]["diagram_source"] == "rerender" and not fm["graph"].get("svg"), \
+        "flagship must keep the deterministic re-render fallback"
+
+
+def t_dashboard_gallery():
+    """The dashboard surfaces the run's FULL visual-artifact set (L1-L4 / attack trees / flows / SBOM)
+    as a switchable gallery — every rendered SVG embedded verbatim, ordered, sized, node-ids linked to
+    recon. Grounded + templated-with-blanks: only real artifacts appear; a gallery SVG that references a
+    non-recon node id is CAUGHT; the render exposes switch tabs + a zoom-to-fit viewport; the flagship
+    (no SVGs) has an empty gallery and stays clean."""
+    import base64
+    import build_dashboard as bd
+    import dashboard_template
+
+    def b64g(nid, cls):
+        return f'<g class="{base64.b64encode(nid.encode()).decode()} {cls}"><g class="shape"><rect/></g><text>{nid}</text></g>'
+
+    def svg(*gs):
+        return ('<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg" data-d2-version="0.7.1" '
+                'viewBox="0 0 800 600">' + "".join(gs) + "</svg>")
+
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "recon.json").write_text(json.dumps({
+            "system_name": "T", "components": [{"id": "C1", "name": "Api", "evidence": ["e"]}],
+            "data_stores": [{"id": "D1", "name": "Db", "evidence": ["e"]}]}))
+        (d / "findings.json").write_text(json.dumps({
+            "summary_counts": {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0},
+            "findings": [{"id": "TM-001", "title": "x", "severity": "HIGH", "likelihood": 3,
+                          "impact": 4, "asset_refs": ["C1"]}], "kill_chains": []}))
+        (d / "coverage.json").write_text(json.dumps({"items": []}))
+        # a run with several real artifacts, out of taxonomy order on disk
+        (d / "sys-L1-architecture.svg").write_text(svg(b64g("C1", "service"), b64g("D1", "datastore")))
+        (d / "sys-L4-threat.svg").write_text(svg(b64g("C1", "svcHigh")))
+        (d / "sys-attack-tree-1.svg").write_text(svg(b64g("root", "goal")))  # no recon ids -> 0 linked
+        (d / "sys-sbom.svg").write_text(svg(b64g("D1", "datastore")))
+
+        m = bd.model_for_run(str(d))
+        gal = m["graph"]["gallery"]
+        assert [a["label"] for a in gal] == \
+            ["L1 · Architecture", "L4 · Threat Overlay", "Attack Tree 1", "SBOM · Dependencies"], gal
+        # each artifact carries its natural size + linked node ids grounded in recon
+        assert gal[0]["node_ids"] == ["C1", "D1"] and gal[2]["node_ids"] == [], gal
+        assert all(a["w"] == 800 and a["h"] == 600 for a in gal)
+        # embedded verbatim: the exact D2 SVGs are inlined, and L1 nodes carry the cross-filter hooks
+        assert 'data-entity="C1" data-fids="TM-001"' in gal[0]["svg"]
+        assert dashboard_checks.check(str(d), model=m)["scores"]["dashboard_pass"], "clean gallery passes"
+
+        # render exposes the switcher + the zoom-to-fit gallery viewport (not the old single box);
+        # every real artifact's SVG is inlined (inert lazy-mount store) and the live viewport exists.
+        htmlout = dashboard_template.render(m)
+        assert 'class="gal-tab' in htmlout and 'id="galVP"' in htmlout and 'id="galInner"' in htmlout, "gallery UI must render"
+        assert htmlout.count('class="gal-src"') == 4, "one inline source per real artifact"
+
+        # NEGATIVE: an artifact that invents an element-shaped node id (C9 ∉ recon) is caught
+        (d / "sys-L1-architecture.svg").write_text(svg(b64g("C1", "service"), b64g("C9", "service")))
+        codes = {x["code"] for x in dashboard_checks.check(str(d))["defects"]}
+        assert "gallery-node-fabricated" in codes, f"invented gallery node must be caught: {codes}"
+
+    # the flagship (Mermaid only, no rendered SVGs) -> empty gallery, still clean
+    fm = bd.model_for_run(str(_FLAGSHIP))
+    assert fm["graph"]["gallery"] == [], "flagship has no rendered SVGs -> empty gallery (templated blank)"
+    assert not dashboard_checks.check(_FLAGSHIP, model=fm)["defects"], "flagship dashboard stays clean"
+
+
+def t_dashboard_blanks_and_offline():
+    """Templated-blanks + offline: an empty run builds + renders without crashing; the flagship render
+    loads no external resource; absent optional fields degrade to empty states (no fabrication)."""
+    import build_dashboard as bd
+    import dashboard_template
+    empty = bd.build_model({}, {}, {}, None)
+    assert empty["posture"]["band"] == "NO FINDINGS" and empty["graph"]["nodes"] == []
+    assert dashboard_template.render(empty), "empty model must still render"
+    m = bd.model_for_run(str(_FLAGSHIP))
+    for k in ("controls", "cvss", "atlas", "dataflows"):
+        assert m["empty"][k] is True, f"flagship genuinely lacks {k} — must flag empty, not fabricate"
+    htmlout = dashboard_template.render(m)
+    ext = [u for u in re.findall(r'(?:href|src)\s*=\s*["\']([^"\']+)["\']', htmlout)
+           if u.startswith(("http://", "https://", "//"))]
+    assert not ext, f"dashboard must be offline: {ext}"
+
+
+def t_run_plan_exact_match():
+    """run_plan_checks: a run that produced EXACTLY the planned team + outputs passes; a missing planned
+    artifact AND an extra un-planned artifact are both defects; a solo plan with a team is inconsistent."""
+    import run_plan_checks as rp
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "run-plan.json").write_text(json.dumps(
+            {"schema": "run-plan/v1", "mode": "team", "team": ["privacy", "code-review"],
+             "outputs": ["dashboard", "report.pdf"], "confirmed": True}))
+        for f in ("privacy-assessment.md", "code-security-review.md", "dashboard.html", "report.pdf"):
+            (d / f).write_text("x")
+        assert not rp.check(d, "post")["defects"], "exact match must pass"
+        (d / "dashboard.html").unlink()           # planned but missing
+        (d / "report.html").write_text("x")       # produced but not planned
+        (d / "compliance-gap-analysis.md").write_text("x")  # grc ran but not planned
+        codes = {x["code"] for x in rp.check(d, "post")["defects"]}
+        assert {"missing-planned-output", "extra-unplanned-output", "extra-unplanned-specialist"} <= codes, codes
+
+
+def t_run_plan_gate_stage_and_inert():
+    """Gate stage skips planned-but-absent OUTPUTS (report-analyst has not run yet → no deadlock) but
+    still catches extra/team drift; a run with no run-plan.json is wholly inert (back-compat)."""
+    import run_plan_checks as rp
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "run-plan.json").write_text(json.dumps(
+            {"schema": "run-plan/v1", "mode": "solo", "team": [], "outputs": ["report.pdf", "dashboard"], "confirmed": True}))
+        assert not rp.check(d, "gate")["defects"], "gate must not block on outputs not generated yet"
+        assert {"missing-planned-output"} <= {x["code"] for x in rp.check(d, "post")["defects"]}, "post catches missing"
+    with tempfile.TemporaryDirectory() as d2:
+        assert not rp.check(Path(d2), "post")["defects"], "no run-plan.json → inert"
+
+
+def t_start_gate_scoping():
+    """The PreToolUse start gate denies the FIRST recon spawn without a confirmed run-plan, allows it
+    WITH one, and never touches other internal Task spawns (precise scoping — no pipeline wedge)."""
+    gate = Path(__file__).resolve().parents[4] / "hooks" / "validate_gate.py"
+
+    def decide(event):
+        p = subprocess.run(["python3", str(gate)], input=json.dumps(event), capture_output=True, text=True)
+        return "ALLOW" if not p.stdout.strip() else "DENY"
+    with tempfile.TemporaryDirectory() as d:
+        recon = {"tool_name": "Task", "cwd": d, "tool_input": {
+            "subagent_type": "security-architect", "name": "threat-modeler-recon",
+            "prompt": f"Write output to {d}/out/. against the project at /x"}}
+        assert decide(recon) == "DENY", "recon spawn without a run-plan must be denied"
+        out = Path(d) / "out"; out.mkdir()
+        (out / "run-plan.json").write_text(json.dumps(
+            {"schema": "run-plan/v1", "mode": "solo", "team": [], "outputs": ["report.html"], "confirmed": True}))
+        assert decide(recon) == "ALLOW", "recon spawn with a confirmed run-plan must be allowed"
+        other = {"tool_name": "Task", "cwd": d, "tool_input": {
+            "subagent_type": "diagram-specialist", "name": "diagram-specialist", "prompt": "Phase 2"}}
+        assert decide(other) == "ALLOW", "a non-recon internal spawn must never be gated by the start gate"
+
+
+def t_finding_evidence():
+    """Evidence traceability (flow gate): the finding's OWN evidence[] must carry >=1 RESOLVABLE ref
+    (path:line / recon node id) OR an honest no_direct_evidence+justification abstention. Additive/
+    back-compat: absent evidence[] is a non-gating `evidence`-layer FLAG (committed manifests stay green);
+    an unresolvable ref is a `grounding` defect; determinism boundary held (assert resolvability only)."""
+    # schema: evidence is optional + additive; a well-formed item validates; a stray prop is rejected.
+    schema = schema_checks.load_schema("findings.schema.json")
+    base_f = {"id": "TM-001", "title": "t", "stride_lm": ["S"], "likelihood": 3, "impact": 3,
+              "severity": "MEDIUM", "asset_refs": [], "surface_refs": [], "attack_path": "p", "remediation": "r"}
+
+    def doc(f):
+        return {"findings": [f], "summary_counts": {"LOW": 0, "MEDIUM": 1, "HIGH": 0, "CRITICAL": 0},
+                "no_issue_surface": []}
+    assert schema_checks.violations(schema, doc(base_f)) == [], "omitted evidence must validate (back-compat)"
+    assert schema_checks.violations(schema, doc({**base_f, "evidence": [
+        {"ref": "src/app.js:1-3", "kind": "code", "quote": "x"}]})) == [], "well-formed evidence validates"
+    assert schema_checks.violations(schema, doc({**base_f, "evidence": [
+        {"ref": "src/app.js", "no_direct_evidence": False, "justification": None}]})) == [], "nullable fields validate"
+    bad = schema_checks.violations(schema, doc({**base_f, "evidence": [{"ref": "x", "bogus": 1}]}))
+    assert any("bogus" in v for v in bad), bad
+
+    with tempfile.TemporaryDirectory() as td:
+        # run dir and repo are SEPARATE (as in production) so the literal-grep grounding never matches a
+        # ref string that only appears inside the run's own findings.json.
+        run = Path(td) / "run"
+        repo = Path(td) / "repo"
+        run.mkdir()
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "app.js").write_text("const app = express();\napp.use(cors());\napp.listen(80);\n")
+        (run / "recon.json").write_text(json.dumps({
+            "components": [{"id": "C1", "name": "Api", "evidence": ["src/app.js"]}],
+            "data_stores": [], "entry_points": [], "trust_boundaries": [], "external_deps": []}))
+        (run / "report.md").write_text("## findings\n" + "pad " * 200)
+
+        def codes(f):
+            (run / "findings.json").write_text(json.dumps(doc({**f, "asset_refs": ["C1"]})))
+            return {d["code"] for d in checks.run_checks(run, repo)["defects"]}
+
+        # resolvable path:line ref -> no evidence flag, no grounding defect
+        ok = codes({**base_f, "evidence": [{"ref": "src/app.js:2", "kind": "code"}]})
+        assert "finding-evidence-missing" not in ok and "finding-evidence-ungrounded" not in ok, ok
+        # a recon/diagram node id resolves via the recon id universe
+        assert "finding-evidence-ungrounded" not in codes({**base_f, "evidence": [{"ref": "C1", "kind": "diagram"}]})
+        # NO evidence[] -> non-gating `evidence`-layer flag (committed evidence-less manifests stay green)
+        (run / "findings.json").write_text(json.dumps(doc({**base_f, "asset_refs": ["C1"]})))
+        legacy = checks.run_checks(run, repo)["defects"]
+        miss = [d for d in legacy if d["code"] == "finding-evidence-missing"]
+        assert miss and miss[0]["layer"] == "evidence", "missing evidence must be a non-gating evidence-layer flag"
+        # honest abstention passes; without a justification it is flagged
+        assert "finding-evidence-missing" not in codes({**base_f, "evidence": [
+            {"no_direct_evidence": True, "justification": "no code path — architectural gap by omission"}]})
+        assert "no-direct-evidence-without-justification" in codes({**base_f, "evidence": [{"no_direct_evidence": True}]})
+        # an unresolvable ref -> a `grounding` defect (never a silent pass)
+        ungr = codes({**base_f, "evidence": [{"ref": "made/up/ghost.js:9", "kind": "code"}]})
+        assert "finding-evidence-ungrounded" in ungr, ungr
+
+
+def t_dashboard_evidence():
+    """Outputs embed the proof: the dashboard RESOLVES each finding's evidence ref at build -> EXTRACTS
+    the excerpt -> EMBEDS it (snippet + file:line + jump-to-node) — grounded (excerpt matches source),
+    honest no-evidence shown not fabricated, and the validator CATCHES a fabricated/stale excerpt or an
+    unresolvable ref. Flagship (no finding evidence[]) stays clean with an empty embedded-evidence state."""
+    import build_dashboard as bd
+    import dashboard_template
+    with tempfile.TemporaryDirectory() as td:
+        run = Path(td) / "out"
+        run.mkdir()
+        repo = Path(td)
+        (repo / "server").mkdir()
+        (repo / "server" / "index.js").write_text(
+            "app.use(cors());\napp.get('/api/all', (req,res)=>res.json(db.all()));\n// no auth middleware\n")
+        (run / "recon.json").write_text(json.dumps({
+            "system_name": "T", "components": [{"id": "C1", "name": "API", "evidence": ["server/index.js"]}],
+            "data_stores": [], "entry_points": [], "trust_boundaries": [], "external_deps": []}))
+        (run / "findings.json").write_text(json.dumps({
+            "summary_counts": {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 1, "LOW": 0},
+            "findings": [
+                {"id": "TM-001", "title": "No auth", "severity": "HIGH", "likelihood": 3, "impact": 4,
+                 "asset_refs": ["C1"], "surface_refs": [],
+                 "evidence": [{"ref": "server/index.js:1-3", "kind": "code"}]},
+                {"id": "TM-002", "title": "Design gap", "severity": "MEDIUM", "likelihood": 3, "impact": 3,
+                 "asset_refs": ["C1"], "surface_refs": [],
+                 "evidence": [{"no_direct_evidence": True, "justification": "absence of a control — no code to cite"}]}],
+            "kill_chains": []}))
+        (run / "coverage.json").write_text(json.dumps({"items": []}))
+
+        m = bd.model_for_run(str(run), repo=str(repo))
+        ev = m["findings_by_id"]["TM-001"]["evidence"][0]
+        assert ev["resolved"] and ev["node"] == "C1" and "app.use(cors())" in ev["excerpt"], ev
+        assert m["findings_by_id"]["TM-002"]["evidence"][0]["no_direct_evidence"] is True
+        assert m["empty"]["evidence"] is False
+
+        htmlout = dashboard_template.render(m)
+        assert "server/index.js:1-3" in htmlout and "app.use(cors())" in htmlout, "excerpt + ref must be embedded"
+        assert 'class="ev-code' in htmlout and 'jump-node' in htmlout, "snippet block + node jump must render"
+        assert dashboard_checks.check(str(run), repo=str(repo), model=m)["scores"]["dashboard_pass"], "clean embed passes"
+
+        # NEGATIVE 1: a fabricated/stale excerpt (not matching the cited source) is CAUGHT
+        m2 = bd.model_for_run(str(run), repo=str(repo))
+        m2["findings_by_id"]["TM-001"]["evidence"][0]["excerpt"] = "totally invented code line"
+        codes = {d["code"] for d in dashboard_checks.check(str(run), repo=str(repo), model=m2)["defects"]}
+        assert "evidence-excerpt-mismatch" in codes, codes
+
+        # NEGATIVE 2: an unresolvable ref (no honest abstention) is CAUGHT
+        (run / "findings.json").write_text(json.dumps({
+            "summary_counts": {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0},
+            "findings": [{"id": "TM-001", "title": "x", "severity": "HIGH", "likelihood": 3, "impact": 4,
+                          "asset_refs": ["C1"], "surface_refs": [],
+                          "evidence": [{"ref": "made/up/ghost.js:9", "kind": "code"}]}], "kill_chains": []}))
+        codes = {d["code"] for d in dashboard_checks.check(str(run), repo=str(repo))["defects"]}
+        assert "evidence-unresolved" in codes, codes
+
+    # flagship: no finding evidence[] -> empty embedded-evidence state, dashboard still clean
+    fm = bd.model_for_run(str(_FLAGSHIP))
+    assert fm["empty"]["evidence"] is True and all(not v["evidence"] for v in fm["findings_by_id"].values())
+    assert not dashboard_checks.check(_FLAGSHIP, model=fm)["defects"], "flagship dashboard stays clean"
+
+
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
              t_boundary_crossing_matrix, t_atlas_layer, t_atlas_vocab, t_atlas_schema, t_verdict, t_schema,
              t_mermaid_extractor_identity, t_d2_extractor_parity, t_node_type_vocab,
              t_plain_label_fallback,
+             t_d2_icon_binding,
              t_recon_dataflow_integrity, t_recon_node_type_membership, t_recon_semantic_backcompat,
              t_recon_to_d2_smoke,
              t_ragged_matrix_blanks, t_foreign_label_plain_newline, t_d2_crossing_full_path,
-             t_recon_type_excludes_styling]
+             t_recon_type_excludes_styling,
+             t_dashboard_grounding_and_consistency, t_dashboard_flags_fabricated_diagram,
+             t_dashboard_embeds_real_visual_engine_svg,
+             t_dashboard_gallery,
+             t_dashboard_blanks_and_offline,
+             t_finding_evidence, t_dashboard_evidence,
+             t_run_plan_exact_match, t_run_plan_gate_stage_and_inert, t_start_gate_scoping]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

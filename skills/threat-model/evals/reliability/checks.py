@@ -265,6 +265,8 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
     cwe_total = mitre_total = atlas_total = 0
     control_classes = {"mitigated": 0, "accepted-risk": 0, "none": 0, "uncovered": 0}
     controls_total = 0
+    ev_classes = {"grounded": 0, "abstained": 0, "missing": 0, "unresolved": 0}
+    ev_refs_total = 0
     fids: set[str] = set()
     if findings_doc and _require(findings_doc, ["findings", "summary_counts", "no_issue_surface"], d, "findings"):
         for f in findings_doc["findings"]:
@@ -382,6 +384,51 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                 d.add("control", "uncovered-control",
                       f"{fid}: no controls and no control_disposition — control coverage unknown (flag, not a failure)")
 
+            # -- per-finding evidence traceability (the finding's OWN grounded proof). Extends the recon
+            # grounding check: every finding must cite >=1 RESOLVABLE evidence reference (or an honest
+            # `no_direct_evidence` abstention). Additive/back-compat: a manifest with NO evidence[] is a
+            # non-gating `evidence`-layer flag (committed evidence-less manifests stay green); a present
+            # ref that resolves NOWHERE is a `grounding` defect (gated only with --repo, like recon
+            # grounding). Determinism boundary: assert the reference resolves, never dictate its content.
+            ev_list = f.get("evidence") if isinstance(f.get("evidence"), list) else []
+            if not ev_list:
+                ev_classes["missing"] += 1
+                d.add("evidence", "finding-evidence-missing",
+                      f"{fid}: no evidence[] — every finding must cite resolvable proof (path:line / doc / "
+                      "diagram node id) or declare no_direct_evidence + justification (flag, not a failure)")
+            else:
+                has_ok = False
+                for item in ev_list:
+                    if not isinstance(item, dict):
+                        d.add("evidence", "malformed-evidence", f"{fid}: evidence item is not an object")
+                        continue
+                    if item.get("no_direct_evidence"):
+                        if (item.get("justification") or "").strip():
+                            has_ok = True  # honest abstention satisfies the per-finding requirement
+                        else:
+                            d.add("evidence", "no-direct-evidence-without-justification",
+                                  f"{fid}: no_direct_evidence declared but no justification (why no direct evidence exists)")
+                        continue
+                    ref = (item.get("ref") or "").strip()
+                    if not ref:
+                        d.add("evidence", "evidence-without-ref",
+                              f"{fid}: an evidence item is neither a resolvable ref nor an honest no_direct_evidence abstention")
+                        continue
+                    ev_refs_total += 1
+                    # resolvable: a recon/diagram node id, or a path/glob/string that grounds in the repo
+                    if ref in recon_ids or _resolves_in_repo(repo, ref):
+                        has_ok = True
+                    else:
+                        d.add("grounding", "finding-evidence-ungrounded",
+                              f"{fid}: evidence ref '{ref}' resolves nowhere in the source (not a recon id, path, glob, or literal)")
+                if has_ok:
+                    ev_classes["grounded" if any(not (isinstance(i, dict) and i.get("no_direct_evidence"))
+                                                 for i in ev_list) else "abstained"] += 1
+                else:
+                    ev_classes["unresolved"] += 1
+                    d.add("evidence", "finding-evidence-unresolved",
+                          f"{fid}: evidence[] present but no reference resolves and no honest no_direct_evidence abstention")
+
         # summary counts must match reality
         for s in SEVERITIES:
             declared = findings_doc["summary_counts"].get(s)
@@ -443,6 +490,12 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
     # not a gate — uncovered findings are flagged, not failed (same as the coverage-ledger profile).
     covered_frac = round(control_classes["mitigated"] / n_findings, 3) if n_findings else None
     scores["control_coverage"] = {"by_class": control_classes, "covered_frac": covered_frac}
+    # evidence-traceability profile: findings whose OWN evidence resolves (grounded) or is an honest
+    # abstention, over all findings — a profile signal (missing evidence is a flag, not a gate).
+    ev_ok = ev_classes["grounded"] + ev_classes["abstained"]
+    scores["evidence_traceability"] = {
+        "by_class": ev_classes, "refs": ev_refs_total,
+        "traceable_frac": round(ev_ok / n_findings, 3) if n_findings else None}
     return {
         "defects": d.items,
         "stats": {
@@ -458,6 +511,7 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
             "atlas_ids": atlas_total,
             "controls": controls_total,
             "control_coverage": control_classes,
+            "evidence": {"refs": ev_refs_total, "by_class": ev_classes},
             "diagram": diag["stats"],
         },
         "scores": scores,

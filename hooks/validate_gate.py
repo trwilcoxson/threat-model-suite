@@ -55,13 +55,83 @@ def _find_validator() -> Path | None:
 
 
 def _output_dir(tool_input: dict, cwd: str) -> Path:
-    # The report-analyst prompt carries "OUTPUT DIRECTORY: <dir>" — use the exact dir the report will use.
+    # The report-analyst prompt carries "OUTPUT DIRECTORY: <dir>"; the recon (Phase 1) prompt carries
+    # "Write output to <dir>/" / "Output directory: <dir>". Accept any so the same dir is resolved for
+    # both the start gate and the report gate.
     prompt = tool_input.get("prompt", "") or ""
-    m = re.search(r"OUTPUT DIRECTORY:\s*(\S+?)/?\s", prompt)
-    if m:
-        p = Path(m.group(1))
-        return p if p.is_absolute() else Path(cwd) / p
+    # Anchor on whitespace (NOT on '.', which appears inside real paths like /var/.../tmp.XXXX), then
+    # strip any trailing '/' or '.' punctuation (the recon prompt writes "... to <dir>/.").
+    for pat in (r"OUTPUT DIRECTORY:\s*(\S+)", r"Write output to\s+(\S+)", r"Output directory:\s*(\S+)"):
+        m = re.search(pat, prompt)
+        if m:
+            tok = re.sub(r"[/.]+$", "", m.group(1)) or m.group(1)
+            p = Path(tok)
+            return p if p.is_absolute() else Path(cwd) / p
     return Path(cwd) / "threat-model-output"
+
+
+# The selection menu, carried verbatim in the start-gate denial so the model presents it and STOPS.
+_RUN_PLAN_MENU = """\
+Before I start, choose your run plan (nothing runs until you pick):
+
+  MODE      ( ) Solo — threat model + report only
+            ( ) Team — adds specialist agents  [pick specialists below]
+
+  TEAM      [ ] privacy-agent      (PIA / LINDDUN)
+            [ ] grc-agent          (compliance / control mapping)
+            [ ] code-review-agent  (threat-directed code review)
+
+  OUTPUTS   [ ] report.html   [ ] report.docx   [ ] report.pdf
+            [ ] executive-summary.pptx
+            [ ] dashboard  (the product-risk dashboard)
+            [ ] analytical-visuals  (STRIDE/control matrices, ATLAS, diagrams)
+
+Reply e.g.  "team = privacy + code-review, outputs = dashboard + pdf"
+       or   "solo, outputs = all"."""
+
+_MODES = {"solo", "team"}
+_TEAM = {"privacy", "grc", "code-review"}
+_OUTPUTS = {"report.html", "report.docx", "report.pdf", "executive-summary.pptx", "dashboard", "analytical-visuals"}
+
+
+def _run_plan_start_gate(tool_input: dict, cwd: str) -> None:
+    """Deny the FIRST pipeline spawn (Phase 1 recon) unless a validated, confirmed run-plan.json exists —
+    so a Claude user cannot accidentally start an unplanned 8-phase run. `Write` is not gated, so after
+    the user picks, the model writes run-plan.json and re-spawns (no deadlock). Fail-open on any infra
+    error: this gate must never wedge a legitimate run for a reason unrelated to the plan itself."""
+    try:
+        out_dir = _output_dir(tool_input, cwd)
+        plan_path = out_dir / "run-plan.json"
+        if not plan_path.exists():
+            _deny("Run-Plan Selection required — no run has started. Present this menu, STOP for the "
+                  f"user's explicit pick, then write {plan_path} (schema run-plan/v1, confirmed:true) and "
+                  "re-spawn Phase 1. Nothing runs until the user picks.\n\n" + _RUN_PLAN_MENU)
+        try:
+            plan = json.loads(plan_path.read_text())
+        except (OSError, ValueError):
+            _deny(f"{plan_path} is not valid JSON. Rewrite it as a run-plan/v1 object "
+                  "({schema,mode,team,outputs,confirmed}), then re-spawn.\n\n" + _RUN_PLAN_MENU)
+        errs = []
+        if plan.get("schema") != "run-plan/v1":
+            errs.append("schema must be 'run-plan/v1'")
+        if plan.get("mode") not in _MODES:
+            errs.append("mode must be 'solo' or 'team'")
+        if not isinstance(plan.get("team"), list) or set(plan.get("team", [])) - _TEAM:
+            errs.append(f"team must be a subset of {sorted(_TEAM)}")
+        if plan.get("mode") == "solo" and plan.get("team"):
+            errs.append("mode=solo must carry team=[]")
+        outs = plan.get("outputs")
+        if not isinstance(outs, list) or not outs or set(outs) - _OUTPUTS:
+            errs.append(f"outputs must be a non-empty subset of {sorted(_OUTPUTS)}")
+        if errs:
+            _deny("run-plan.json is invalid: " + "; ".join(errs) + ". Fix it, then re-spawn.\n\n" + _RUN_PLAN_MENU)
+        if plan.get("confirmed") is not True:
+            _deny("run-plan.json has confirmed != true. Present the menu, get the user's explicit pick, "
+                  "set confirmed:true, then re-spawn.\n\n" + _RUN_PLAN_MENU)
+    except SystemExit:
+        raise  # _deny/_allow exit — propagate
+    except Exception:
+        _allow()  # any other infra error — never block on our own failure
 
 
 def _project_root(tool_input: dict) -> str | None:
@@ -84,10 +154,19 @@ def main() -> None:
     tool_input = event.get("tool_input", {}) or {}
     subagent = (tool_input.get("subagent_type") or "").lower()
     name = (tool_input.get("name") or "").lower()
+    cwd = event.get("cwd") or os.getcwd()
+
+    # START GATE (Feature 2): the first pipeline spawn is the Phase-1 recon
+    # (subagent security-architect, name threat-modeler-recon). Deny it unless a confirmed run-plan
+    # exists. Scoped precisely to the recon spawn so every OTHER internal Task spawn falls through to
+    # the existing behaviour and is never blocked.
+    if "security-architect" in subagent and "recon" in name:
+        _run_plan_start_gate(tool_input, cwd)  # denies, or falls through to _allow below
+        _allow()
+
     if "report-analyst" not in subagent and "report-generator" not in name:
         _allow()  # not the report-generation spawn — nothing to gate
 
-    cwd = event.get("cwd") or os.getcwd()
     validator = _find_validator()
     if validator is None:
         _allow()  # validator not found (manual/partial install) — fall back to the SKILL.md soft gate

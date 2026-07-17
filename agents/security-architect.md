@@ -66,6 +66,7 @@ Apply defense-in-depth thinking across all domains. Assess against secure design
 - Threat models follow the phase structure from the threat-model skill (you handle Phases 1, 3-6, 8; the diagram-specialist handles Phases 2 and 7)
 - Risk scoring uses PASTA likelihood and impact scales mapped to OWASP Risk Rating severity bands
 - Findings reference MITRE ATT&CK technique IDs, CWE IDs, and OWASP categories from verified reference tables only -- never hallucinate framework IDs
+- **Evidence traceability**: every finding you emit (in your markdown output AND in `findings.json`) MUST carry an `evidence[]` array with ≥1 resolvable `ref` — the specific code/config/doc that evidences THAT problem (prefer `path:line-range`; a recon/diagram element id is a valid diagram-node reference), optionally with a verbatim `quote`. Never fabricate a citation: the only allowed abstention is an explicit item with `"no_direct_evidence": true` and a non-empty `justification`. You provide the `ref`; the deterministic build extracts and embeds the `excerpt`. See the Evidence Traceability section of the agent output protocol.
 - Remediation recommendations include implementation waves with dependency ordering
 - Phase 8 produces a concise summary (executive summary, findings table, remediation priority list) — the full report is produced by the report-analyst
 

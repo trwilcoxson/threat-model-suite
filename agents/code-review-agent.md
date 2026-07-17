@@ -62,6 +62,8 @@ Self-review all proposed fixes: verify they don't introduce new vulnerabilities,
 ## Output Format
 
 > **MANDATORY**: Follow the standardized output protocol at `{refs_dir}/agent-output-protocol.md`. All findings MUST use the `CR-` prefix, include the standardized finding format (Metadata table, Description, Evidence, Attack Scenario, Existing Mitigations, Recommendation), and specify CVSS v3.1 as the scoring system. The validation-specialist will verify compliance.
+>
+> **Evidence traceability (MANDATORY)**: every finding MUST carry an `evidence[]` array with ≥1 resolvable `ref` — the exact `path:line` / `path:line-range` (a diagram/recon element id is a valid diagram-node reference) that evidences the vulnerability, optionally a verbatim `quote` of the offending code. Code findings should almost always cite real code; the only allowed abstention is an explicit item with `"no_direct_evidence": true` and a non-empty `justification` — never fabricate a location. You provide the `ref`; the deterministic build extracts and embeds the `excerpt`. See the protocol's Evidence Traceability section.
 
 ### Code Security Review Report
 

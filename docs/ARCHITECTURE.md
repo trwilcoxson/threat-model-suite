@@ -20,6 +20,8 @@ The system transforms a codebase or architecture description into a comprehensiv
 | `report.docx` | Professional Word document with TOC, cover page, embedded diagram PNGs |
 | `report.pdf` | Print-ready PDF |
 | `executive-summary.pptx` | 9-11 slide executive presentation with severity charts and diagram embeds |
+| `dashboard.html` (opt-in) | Single self-contained offline analytics dashboard — severity/risk/coverage/STRIDE-LM/kill-chain/ATT&CK/CWE analytics plus the run's own interactive structural diagram (pan/zoom + click→cross-filter); derived entirely from the run's manifests. Produced only when `dashboard ∈ run-plan.outputs` |
+| `run-plan.json` | The confirmed run selection (`run-plan/v1`: mode, team[], outputs[], confirmed, source) written at Step 0 before any spawn |
 | Product-grade + analytical visuals | 8 product-grade diagram additions plus analytical charts (severity distribution, risk heatmap) beyond the L1-L4 DFDs |
 | `coverage.json` + coverage profile | Completeness-coverage ledger: every applicable production-grade item resolved to present / partial / absent / not-applicable / unknown, with unknowns surfaced as open questions |
 | `events.ndjson` + `pipeline-summary.md` | Pipeline observability: a `tm.run-event/1` stream projected from each persona's Execution Log ("what agent is doing what") |
@@ -285,6 +287,70 @@ Step 3: Multi-Format Generation
   PDF:   Convert from DOCX via LibreOffice or generate with ReportLab
   PPTX:  python-pptx executive presentation with severity charts + diagram embeds
 ```
+
+### 3.7 The Dashboard Generator (opt-in `dashboard.html`)
+
+When `dashboard ∈ run-plan.outputs`, the report-analyst (Phase 8) runs one pure-Python, offline,
+deterministic generator — no new binary, no CDN or fonts, byte-identical for the same manifests:
+
+```
+skills/threat-model/scripts/build_dashboard.py <run_dir> <out.html>
+  Read only the canonical manifests: recon.json / findings.json / coverage.json
+    (+ any *attack-navigator-layer.json)
+  Derive a model → also written to <out>.model.json
+  Render skills/threat-model/references/dashboard_template.py (inline CSS/JS)
+```
+
+Two properties define it:
+
+- **Single source of truth.** The dashboard **embeds the run's own structural diagram** — the same threat
+  model the report shows. Nodes are recon element ids (`C1/D1/E1/X1/R0…`, so they link to findings
+  natively); edges are the run's **real** dataflows (from `recon.dataflows[]` if present, else parsed from
+  the run's `structural-diagram.mmd`), grouped by the run's real trust zones. It does **not** invent a bespoke
+  node map and does **not** synthesize edges from finding co-reference. Pan/zoom and click→cross-filter are
+  layered over the inline SVG. With no dataflows/diagram, nodes render ungrouped with no invented edges.
+- **Grounding over fabrication.** Every headline number traces to a manifest field; absent fields render as
+  graceful empty states (templated-with-blanks), never fabricated. Analytics sections — severity donut, L×I
+  risk matrix, coverage ledger + taxonomy grid, STRIDE-LM bars, kill-chain step-flows, MITRE ATT&CK chips, CWE
+  bars, component/data-store risk, supply-chain deps, findings accordion — sit alongside permanently-present
+  empty slots (Threat→Control, CVSS, MITRE ATLAS, Data-Flow) that degrade gracefully.
+
+A reference-free eval (`evals/reliability/dashboard_checks.py`) verifies grounding (headline numbers recount
+the manifests), non-fabrication (no diagram node/edge/finding-id that isn't real), diagram consistency (edges ⊆
+the run's real dataflows/diagram, never synthesized), link-grounding, cross-output consistency (dashboard
+severity == `findings.summary_counts`, coverage % from `coverage.json`), and offline operation. It is wired
+into `run.py check`/`validate` **only when `dashboard.html` is present** — inert otherwise.
+
+### 3.8 Upfront Run-Selection (Step 0 + `run-plan.json`)
+
+Before any pipeline agent spawns, the skill presents an explicit menu (MODE Solo/Team; TEAM = any subset of
+privacy/grc/code-review; OUTPUTS = any subset of the six formats, dashboard and analytical-visuals included)
+and **stops for the user's pick** — or parses a one-shot spec (`team=privacy+code-review,
+outputs=dashboard+pdf`). The confirmed pick is written to `{output_dir}/run-plan.json`:
+
+```json
+{"schema": "run-plan/v1", "mode": "...", "team": [], "outputs": [], "confirmed": true, "source": "..."}
+```
+
+The schema is `evals/reliability/schema/run-plan.schema.json` (additive; registered in `schema_checks.py`);
+`team` MUST be `[]` when `mode="solo"`. Three enforcement layers, all reusing existing repo mechanisms, make
+the run match the plan:
+
+- **Layer A — hard START gate** (`hooks/validate_gate.py`, `PreToolUse` on `Task`). DENIES the first pipeline
+  spawn (the `security-architect` / `threat-modeler-recon` Phase-1 spawn) unless `run-plan.json` exists,
+  validates, and has `confirmed: true`; the deny reason carries the menu. `Write` is not gated, so the model
+  writes the plan after the user picks, then spawns — no accidental full run, no deadlock. Scoped precisely to
+  the recon spawn (every other internal `Task` falls through), and fail-open on infra errors. The existing
+  report-analyst manifest gate is preserved and additionally inherits run-plan drift blocking.
+- **Layer B — conditional workflow** (SKILL.md). Specialists spawn iff in `team[]`; the report-analyst emits
+  exactly `outputs[]`. Solo/Team survive as named presets.
+- **Layer C — reference-free `run_plan_checks.py`**. Verifies the run produced EXACTLY the planned team +
+  outputs — a MISSING planned artifact AND an EXTRA un-planned one are both defects. Two stages: `gate` (skips
+  planned-but-not-yet-generated outputs to avoid deadlock at the report gate) and `post` (full). Inert without
+  `run-plan.json`.
+
+**Back-compat.** Every new file/branch is inert on runs lacking `run-plan.json`/`dashboard.html`, so the
+archived flagship and all sample-runs stay green.
 
 ---
 

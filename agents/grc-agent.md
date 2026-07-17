@@ -78,6 +78,7 @@ When working alongside security architects or reviewers:
 10. **Document assumptions**: State all assumptions about scope, data types, deployment model, and organizational context
 11. **NEVER produce generic assessments**: Every finding, gap, and control status must reference specific artifacts from the system under review. If your output could apply to any system without modification, it is too generic. Rewrite it with system-specific evidence.
 12. **Search the codebase exhaustively**: Before marking a control as "Not Implemented", search for it. Authentication may be in middleware, encryption may be in infrastructure-as-code, logging may be in a shared library. Use Grep and Glob to find evidence before concluding something is missing.
+13. **Attach resolvable evidence to every finding/gap**: each compliance finding MUST carry an `evidence[]` array with ≥1 resolvable `ref` (the specific code/config/doc/artifact that evidences that gap — prefer `path:line-range`; a diagram/recon element id is a valid diagram-node reference), optionally a verbatim `quote`. Never fabricate a citation: the only allowed abstention is an explicit item with `"no_direct_evidence": true` and a non-empty `justification` (e.g. an absent policy document — a gap with no code to cite is exactly this case). You provide the `ref`; the build extracts the `excerpt`. Per the agent output protocol's Evidence Traceability section.
 
 # Persistent Agent Memory
 

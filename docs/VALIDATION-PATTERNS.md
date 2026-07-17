@@ -158,6 +158,28 @@ Comprehensive audit of which patterns from the anti-hallucination and bias preve
 
 ---
 
+### 26. Dashboard Grounding & Cross-Output Consistency
+
+**Implementation:** The opt-in `dashboard.html` is derived entirely from the run's canonical manifests, and a reference-free eval reconciles it back to them. Every headline number must recount `recon.json`/`findings.json`/`coverage.json` (grounding); no diagram node/edge/finding-id may appear that isn't real (non-fabrication); the **embedded structural diagram is the run's own diagram, not a substitute** — its edges must be a subset of the run's real dataflows/`structural-diagram.mmd`, never synthesized from finding co-reference (diagram consistency). Cross-output consistency requires dashboard severity == `findings.summary_counts` and coverage % from `coverage.json`. The eval is inert unless `dashboard.html` is present.
+
+**Source Evidence:**
+- [`evals/reliability/dashboard_checks.py`](../skills/threat-model/evals/reliability/dashboard_checks.py) — grounding, non-fabrication, diagram consistency, link-grounding, cross-output consistency, offline
+- [`scripts/build_dashboard.py`](../skills/threat-model/scripts/build_dashboard.py) — deterministic manifests → derived model → template; embeds the run's real diagram
+- [`references/dashboard_template.py`](../skills/threat-model/references/dashboard_template.py) — inline CSS/JS, no CDN/fonts; graceful empty states for absent fields
+
+---
+
+### 27. Run-Plan Match (Planned == Produced, Both Directions)
+
+**Implementation:** The confirmed Step-0 run selection (`run-plan.json`, `run-plan/v1`) is treated as a contract, and a reference-free eval verifies the run produced EXACTLY the planned team + outputs — a MISSING planned artifact AND an EXTRA un-planned one are both defects. Two stages: `gate` (skips planned-but-not-yet-generated outputs to avoid deadlock at the report gate) and `post` (full). The plan is additionally enforced up front by a hard START gate (`hooks/validate_gate.py`) that denies the first pipeline spawn until the plan exists, validates, and is `confirmed`. Inert without `run-plan.json`.
+
+**Source Evidence:**
+- [`evals/reliability/run_plan_checks.py`](../skills/threat-model/evals/reliability/run_plan_checks.py) — planned team + outputs == produced, both directions; `gate`/`post` stages
+- [`evals/reliability/schema/run-plan.schema.json`](../skills/threat-model/evals/reliability/schema/run-plan.schema.json) — `run-plan/v1` schema (`team` == `[]` when `mode="solo"`); registered in `schema_checks.py`
+- [`hooks/validate_gate.py`](../hooks/validate_gate.py) — `PreToolUse` START gate scoped to the recon spawn; fail-open on infra errors
+
+---
+
 ## Partially Implemented Patterns (9)
 
 ### 14. Anchor Stripping

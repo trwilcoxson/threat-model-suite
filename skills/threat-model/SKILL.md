@@ -154,9 +154,66 @@ new analysis). This makes "which persona is doing what" visible live via the ren
 [references/pipeline-observability.md](references/pipeline-observability.md). The stream is presentation
 only; it never drives the analysis.
 
-### Solo vs Team Decision
+### Step 0: Run-Plan Selection (REQUIRED — before any spawn)
 
-**Default: Team mode.** Most real systems benefit from multi-domain analysis. Only use Solo for genuinely simple or narrowly-scoped requests.
+**Nothing runs until the user explicitly picks a run plan.** Before recon, present the choice surface and
+STOP unless the user already specified a plan. This is deterministic (the run produces EXACTLY the picked
+team + outputs) and hard-enforced: the `Task` PreToolUse gate (`hooks/validate_gate.py`) **denies the
+first `security-architect`/`threat-modeler-recon` spawn** unless `{output_dir}/run-plan.json` exists,
+validates against `evals/reliability/schema/run-plan.schema.json`, and has `confirmed: true`. `Write` is
+not gated, so you write the plan after the user picks, then spawn — no accidental full run, no deadlock.
+
+**Two entry paths:**
+
+- **One-shot (specified):** the invocation already carries a plan, e.g.
+  `threat model this repo, team=privacy+code-review, outputs=dashboard+pdf`. Parse it, **echo the resolved
+  plan back for confirmation**, write `run-plan.json` (`source: "one-shot"`), proceed. Shorthands:
+  `mode=solo|team`, `team=privacy,grc,code-review` (or `none`/`all`),
+  `outputs=report.html,report.docx,report.pdf,executive-summary.pptx,dashboard,analytical-visuals` (or `all`).
+- **Menu (unspecified):** print the menu and STOP — emit no spawn:
+
+```
+Before I start, choose your run plan (nothing runs until you pick):
+
+  MODE      ( ) Solo — threat model + report only
+            ( ) Team — adds specialist agents  [pick specialists below]
+
+  TEAM      [ ] privacy-agent      (PIA / LINDDUN)
+            [ ] grc-agent          (compliance / control mapping)
+            [ ] code-review-agent  (threat-directed code review)
+
+  OUTPUTS   [ ] report.html   [ ] report.docx   [ ] report.pdf
+            [ ] executive-summary.pptx
+            [ ] dashboard  (the product-risk dashboard)
+            [ ] analytical-visuals  (STRIDE/control matrices, ATLAS, diagrams)
+
+Reply e.g.  "team = privacy + code-review, outputs = dashboard + pdf"
+       or   "solo, outputs = all".
+```
+
+On the user's pick, `mkdir -p {output_dir}` and **write `{output_dir}/run-plan.json`**:
+
+```json
+{ "schema": "run-plan/v1", "mode": "team", "team": ["privacy", "code-review"],
+  "outputs": ["dashboard", "report.pdf"], "confirmed": true, "source": "one-shot" }
+```
+
+- `team` MUST be `[]` when `mode="solo"`; a subset of `["privacy","grc","code-review"]` otherwise.
+- `outputs` is a non-empty subset of the six formats above.
+- `confirmed: true` records that the user picked (the start gate requires it).
+
+The plan then SHAPES the run deterministically: spawn a specialist **iff** it is in `team[]`, and have the
+report-analyst emit **exactly** `outputs[]`. The determinism boundary is preserved — the menu and schema
+are fixed templates; the *choice* is the user's, and you only transcribe it. **Solo and Team survive as
+named presets** (`mode=solo` ⇒ `team:[]`; `mode=team, team=all, outputs=all` ⇒ the historical full run).
+The reference-free `run_plan_checks` (in `run.py check`/`validate`) then verifies the run produced exactly
+the planned team + outputs — no extra, no missing.
+
+### Solo vs Team Decision (preset guidance for Step 0)
+
+The mode is the user's Step-0 pick. Use this only to *recommend* a preset when the user asks for guidance;
+never auto-start. **Recommend Team** for most real systems (multi-domain analysis); recommend Solo for
+genuinely simple or narrowly-scoped requests.
 
 The decision depends on the SYSTEM, not the user's wording. "Threat model X" does NOT mean Solo — it means assess X and use whichever mode the system's complexity warrants. **Always do lightweight recon first** (scan for IaC, data stores, API routes, cloud services) before deciding.
 
@@ -230,11 +287,11 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
    - `prompt`: See "Diagram-specialist Phase 2 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
    - Reads `01-reconnaissance.md`, writes `02-structural-diagram.md`.
 
-4. **Spawn the 3 specialists in the background** (`run_in_background: true` on all 3) — their dependency frontier is Phase 2 (they need recon + the node-id namespace), so they run **concurrently** with the analysis phases and Phase 7:
-   - **privacy-agent**: `subagent_type`: `"privacy-agent"`, `name`: `"privacy-specialist"`
-   - **grc-agent**: `subagent_type`: `"grc-agent"`, `name`: `"compliance-specialist"`
-   - **code-review-agent**: `subagent_type`: `"code-review-agent"`, `name`: `"code-security-specialist"`
-   - Each reads `01-reconnaissance.md` + `02-structural-diagram.md` (for canonical node ids); prompts in [references/agent-prompts.md](references/agent-prompts.md).
+4. **Spawn ONLY the specialists in `run-plan.json`'s `team[]`** in the background (`run_in_background: true`) — spawn each **iff** its token is present, never the whole set by default. Their dependency frontier is Phase 2 (they need recon + the node-id namespace), so they run **concurrently** with the analysis phases and Phase 7:
+   - if `"privacy" ∈ team` — **privacy-agent**: `subagent_type`: `"privacy-agent"`, `name`: `"privacy-specialist"`
+   - if `"grc" ∈ team` — **grc-agent**: `subagent_type`: `"grc-agent"`, `name`: `"compliance-specialist"`
+   - if `"code-review" ∈ team` — **code-review-agent**: `subagent_type`: `"code-review-agent"`, `name`: `"code-security-specialist"`
+   - Each reads `01-reconnaissance.md` + `02-structural-diagram.md` (for canonical node ids); prompts in [references/agent-prompts.md](references/agent-prompts.md). A specialist NOT in `team[]` is not spawned and its output file must not exist (`run_plan_checks` flags an extra-unplanned specialist as a defect).
 
 5. **Spawn `security-architect`** (blocking) — Phases 3-5 (generative):
    - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-analysis"`
@@ -250,7 +307,7 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
    - `subagent_type`: `"diagram-specialist"`, `name`: `"diagram-specialist-overlay"`
    - `prompt`: See "Diagram-specialist Phase 7 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
 
-8. **Wait for the 3 background specialists** to signal completion (their output files land: `privacy-assessment.md`, `compliance-gap-analysis.md`, `code-security-review.md`), then **spawn `validation-specialist`** (blocking) by name:
+8. **Wait for the specialists you spawned** (those in `team[]`) to signal completion (their output files land: `privacy-assessment.md` / `compliance-gap-analysis.md` / `code-security-review.md`, one per planned specialist), then **spawn `validation-specialist`** (blocking) by name:
    - `subagent_type`: `"validation-specialist"`, `name`: `"validation-specialist"`
    - `prompt`: See "Team — validation-specialist prompt" in [references/agent-prompts.md](references/agent-prompts.md)
    - Reads all outputs, **merges each agent's per-domain coverage states into the single `coverage.json`** (it is the ledger's sole writer), and writes `validation-report.md`.
@@ -258,6 +315,11 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
 9. **Run the Manifest Validation Gate** (see below) over `recon.json`/`findings.json`/`coverage.json`. Only once it passes, **spawn `report-analyst`** (blocking):
    - `subagent_type`: `"report-analyst"`, `name`: `"report-generator"`
    - `prompt`: See "Team — report-analyst prompt" in [references/agent-prompts.md](references/agent-prompts.md)
+   - **Emit exactly `run-plan.json`'s `outputs[]`** — the report-analyst produces only the selected
+     formats. When `"dashboard" ∈ outputs`, it also runs
+     `python3 {refs_dir}/../scripts/build_dashboard.py {output_dir} {output_dir}/dashboard.html` (pure
+     Python, offline — no new binary) to emit the product-risk `dashboard.html` from the run's manifests,
+     embedding the run's own structural diagram. `run_plan_checks` flags any extra/missing output.
 
 ### Spawn Parameter Templates
 
@@ -330,6 +392,10 @@ Inform the user of generated files:
 - `{output_dir}/report.docx` — Word document (editable)
 - `{output_dir}/report.pdf` — PDF (for distribution)
 - `{output_dir}/executive-summary.pptx` — executive presentation (for leadership)
+- `{output_dir}/dashboard.html` — the product-risk **dashboard** (self-contained, offline; analytics +
+  the run's own interactive structural diagram) — produced **only when `"dashboard" ∈ run-plan.outputs`**
+
+Which of these are produced is exactly `run-plan.json`'s `outputs[]` (Step 0) — never more, never fewer.
 
 ## Phase 1 — Reconnaissance
 
@@ -389,8 +455,8 @@ Consult [references/mermaid-spec.md](references/mermaid-spec.md) for symbol taxo
 
 **Engine — Mermaid or D2 (both accepted, one vocabulary).** Every diagram, in either engine, draws from the single node-type vocabulary in [references/node-type-icons.md](references/node-type-icons.md) and renders through the offline seam. Pick per diagram:
 - **Mermaid** (`.mmd`) — the incumbent; author per `mermaid-spec.md` as above. Stays accepted indefinitely; committed worked-examples never break.
-- **D2** (`.d2`) — author per [references/d2-spec.md](references/d2-spec.md): symbol/icon taxonomy (§2), container = trust boundary (§3), typed+annotated edges (§4), the version/layer stamp (§6), and the eval-facing subset (§7). Bind each type's **vendored local icon** through the `classes` block (`icon: <rel>/references/icons/<type>.svg` — local paths only, never a remote URL; d2 embeds them offline as data URIs).
-- **Deterministic D2 from recon (optional, recommended when recon is typed).** When the Phase 1 recon (`01-reconnaissance.md` / its `recon.json`) carries typed elements (`element.type`, `element.zone`) and `dataflows[]`, generate the L1 structural D2 mechanically: `python3 {refs_dir}/../scripts/recon_to_d2.py <recon.json> {output_dir}/{name}-L1-architecture.d2`. The agent authors only *meaning* (types + edges + containment); the script owns 100% of layout, shape, icon binding, and nesting, byte-deterministically (re-running yields identical output). See [references/d2-spec.md](references/d2-spec.md).
+- **D2** (`.d2`) — author per [references/d2-spec.md](references/d2-spec.md): symbol/icon taxonomy (§2), container = trust boundary (§3), typed+annotated edges (§4), the version/layer stamp (§6), and the eval-facing subset (§7). **MANDATORY: bind each type's vendored local icon** through the `classes` block (`icon: <rel>/references/icons/<type>.svg` — local paths only, never a remote URL; d2 embeds them offline as data URIs). This is required on hand-authored D2 too — an un-iconned diagram is the old *plain* look and breaks visual consistency with the flow's other diagrams and the dashboard. Icons render on EVERY tier (the browser-free fallback only blanks multi-line labels, never icons). The diagram eval enforces it (`d2-missing-node-icon`); on hand-authored D2 run `python3 {refs_dir}/../scripts/inject_node_icons.py <file>.d2 -i` to bind icons deterministically (idempotent; folds risk/camelCase class names onto their node-type; leaves attack-graph classes untouched).
+- **Deterministic D2 from recon (STRONGLY PREFERRED — the canonical enhanced structural render).** When the Phase 1 recon (`01-reconnaissance.md` / its `recon.json`) carries typed elements (`element.type`, `element.zone`) and `dataflows[]`, generate the L1 structural D2 mechanically: `python3 {refs_dir}/../scripts/recon_to_d2.py <recon.json> {output_dir}/{name}-L1-architecture.d2`. The agent authors only *meaning* (types + edges + containment); the script owns 100% of layout, shape, icon binding, and nesting, byte-deterministically (re-running yields identical output) — deterministic consistency, not agent discretion. Prefer this whenever recon is typed; to make it always applicable, have Phase 1 recon emit `dataflows[]` + `element.type`. See [references/d2-spec.md](references/d2-spec.md).
 
 **Render** every diagram source in the output dir with `bash {refs_dir}/../scripts/render_diagrams.sh {output_dir}` — it dispatches by extension (`.mmd`→mermaid-cli, `.d2`→d2 SVG for the HTML report + PNG for Office), verifies each raster is non-blank, and fails loud on a missing renderer or a source in an extension no engine handles.
 

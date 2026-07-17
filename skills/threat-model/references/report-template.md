@@ -9,7 +9,7 @@
 - Section IV-A: Coverage & Communication Visuals (STRIDE-per-element matrix, boundary-crossing STRIDE-per-interaction matrix, L×I heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph, threat-to-control coverage matrix — each when applicable)
 - Section V: Asset Inventory (data assets, data flow summary)
 - Section VI: Threat Actor Profiles
-- Section VII: Findings (ordered by severity, standardized format)
+- Section VII: Findings (ordered by severity, standardized format, per-finding embedded evidence reference + excerpt)
 - Section VIII: Remediation Roadmap (waves, dependencies, quick wins)
 - Section IX: Networking & Infrastructure Data (VPC, subnets, security groups, IAM)
 - Section X: Compliance Mapping (conditional — if compliance-gap-analysis.md exists)
@@ -189,6 +189,8 @@ one-line reason. Use these exact headings so they render and verify consistently
 | **Remediation** | _R-NNN_ |
 | **Source** | _threat-model / code-review / privacy / grc_ |
 
+**Evidence**: embed every evidence item from the finding — see the Evidence Embedding Rule below.
+
 **Attack Scenario**:
 1. Step 1 ...
 2. Step 2 ...
@@ -201,6 +203,21 @@ one-line reason. Use these exact headings so they render and verify consistently
 
 If findings come from code-review-agent (CVSS scoring), include additional row:
 | **CVSS v3.1** | _score_ (_vector string_) |
+
+**Evidence Embedding Rule (MANDATORY, per finding)**: the report must be **self-contained and traceable** — matching the dashboard, the reader never needs the repo. For EACH evidence item on the finding, embed BOTH:
+
+1. The **findable reference** — `path:line-range` for code/config, a doc path + locator, or a diagram/recon node id (e.g. `C1`).
+2. The **excerpt** — the actual snippet the deterministic build extracted from that reference: a **fenced code block** for code/config (syntax-lit where the format supports it), a **block quote** for a document quotation, or a reference to the named diagram node for a diagram.
+
+Example (code evidence):
+
+> `Code/server/src/index.js:31-38`
+>
+> ```js
+> app.use(cors());
+> ```
+
+A finding that honestly abstained (its evidence item has `"no_direct_evidence": true`) shows an explicit **"No direct evidence — _justification_"** note in place of a snippet — NEVER a fabricated excerpt. Every non-abstaining finding's embedded excerpt must match its cited source; the output validators check this per finding.
 
 **Finding count at section end**: "Total: N findings (C critical, H high, M medium, L low)"
 — This count MUST match the Executive Summary table exactly.

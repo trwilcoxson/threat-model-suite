@@ -54,6 +54,16 @@ docs/        ARCHITECTURE.md, VALIDATION-PATTERNS.md, STRUCTURED-OUTPUT-CONTRACT
 - A **coverage ledger** so the model attempts every production-grade item and records what it found,
   what's absent, and what it could not determine from the sources (gaps surfaced, not hidden).
 - Output formats: HTML, Word (.docx), PDF, Executive PPTX.
+- Opt-in **`dashboard.html`** — a single self-contained, offline analytics dashboard (no CDN/fonts): severity
+  donut, L×I risk matrix, coverage ledger, STRIDE-LM/kill-chain/ATT&CK/CWE breakdowns, and the run's **own
+  interactive structural diagram** (pan/zoom + click→cross-filter over the same threat model the report shows).
+  Every number traces to the run's manifests; absent data degrades to graceful empty states. Produced only when
+  `dashboard` is in the run plan; all other outputs are unchanged.
+- **Evidence traceability** — every finding carries direct, resolvable evidence (a findable reference plus the
+  proving excerpt), enforced across the agent flow each time (honest `no_direct_evidence` abstention is the only
+  out) and derived, embedded, and validated at every output: the dashboard finding drawer shows the cited code
+  snippet / document quote / diagram element with a jump to the related diagram node. Additive and back-compatible
+  — evidence-less committed manifests still validate.
 
 ### agents
 The pipeline the skill orchestrates. Each runs in a fresh context, writes a structured output file +
@@ -83,7 +93,18 @@ Gate** hook all install together and the hook activates immediately — no `sett
 
 (or, for a single-repo direct install: `/plugin install github:trwilcoxson/threat-model-suite`)
 
-Then: `Run a threat model on <target>`. Before the report is generated, a `PreToolUse` hook
+Then: `Run a threat model on <target>`.
+
+**Step 0 — you pick the run.** Before anything spawns, the skill presents an explicit menu (MODE Solo/Team;
+TEAM = any subset of privacy/grc/code-review; OUTPUTS = any subset of the six formats, dashboard and
+analytical-visuals included) and **stops for your choice** — or you give a one-shot spec like
+`team=privacy+code-review, outputs=dashboard+pdf`. Your confirmed pick is written to
+`{output_dir}/run-plan.json`. The same `PreToolUse` hook enforces a **START gate**: the first pipeline spawn
+is **denied until `run-plan.json` exists, validates, and is confirmed** (the deny reason carries the menu), so
+there's no accidental full run. The rest of the run then spawns exactly the team and emits exactly the outputs
+you planned.
+
+Before the report is generated, the same hook
 ([`hooks/validate_gate.py`](hooks/validate_gate.py)) runs the deterministic validator over the emitted
 `recon.json`/`findings.json`/`coverage.json` and **blocks report generation until they pass**, feeding
 the specific defects back to the analysis agent to fix (the validate → retry-with-specific-feedback loop,
