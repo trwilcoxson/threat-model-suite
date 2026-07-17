@@ -453,6 +453,7 @@ VII. FINDINGS (severity-ordered, deduplicated)
      - Recommended remediation (linked to R-### ID)
      - Confidence level (HIGH/MEDIUM/LOW)
      - Source documents (if from multiple agents)
+     - Embedded evidence (per evidence item on the finding): the findable reference (file:line-range / doc locator / diagram node id) AND its extracted excerpt — a fenced code block for code/config, a block quote for a document quotation. This makes the report self-contained and traceable, matching the dashboard. A finding whose evidence item honestly abstained (`no_direct_evidence`) shows an explicit "No direct evidence — <justification>" note, never a fabricated snippet. See report-template.md Section VII "Evidence Embedding Rule".
 
 VIII. REMEDIATION ROADMAP
      - Summary table: R-ID | Addresses Findings | Priority | Effort | Dependencies
@@ -564,6 +565,7 @@ After generating `consolidated-report.md` and before proceeding to Step 3, verif
 - [ ] **No placeholder text**: No occurrences of TODO, TBD, [INSERT], {placeholder}, or similar
 - [ ] **Cross-reference integrity**: Every finding ID in Section VII appears in Section IV risk mapping table
 - [ ] **Remediation linkage**: Every R-ID in Section VIII is referenced by at least one finding in Section VII
+- [ ] **Evidence embedded per finding**: Every finding in Section VII embeds each evidence item's findable reference AND its excerpt (fenced code block for code/config, block quote for docs); honest `no_direct_evidence` findings show an explicit "No direct evidence" note, never a fabricated snippet — per report-template.md Section VII "Evidence Embedding Rule"
 - [ ] **Threat actor linkage**: Every actor in Section VI is referenced by at least one finding in Section VII
 - [ ] **Table completeness**: No empty cells in required tables (use "N/A" or "—" for intentionally blank)
 - [ ] **Diagram references**: Sections III and IV contain diagram placement markers matching rendered PNG filenames

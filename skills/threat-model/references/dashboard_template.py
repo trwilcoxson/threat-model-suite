@@ -32,6 +32,37 @@ def kpi(label, value, sub="", accent="cyan", suffix=""):
     </div>'''
 
 
+def ev_block(evidence):
+    """Embedded evidence for one finding: the build-extracted excerpt (monospace/quote), the findable
+    reference (file:line), and a jump to the related diagram node. Honest no-evidence / unresolved states
+    are shown explicitly — never a fabricated snippet. Returns '' when the finding has no evidence[]."""
+    if not evidence:
+        return ""
+    rows = []
+    for e in evidence:
+        node = e.get("node")
+        jump = (f'<button class="ev-jump jump-node" data-pivot="entity" data-entity="{esc(node)}" '
+                f'title="Jump to diagram node {esc(node)}">◈ {esc(e.get("node_name") or node)}</button>'
+                if node else "")
+        if e.get("no_direct_evidence"):
+            rows.append(f'<div class="ev-item ev-none"><div class="ev-head"><span class="ev-tag">no direct '
+                        f'evidence</span></div><p class="muted">{esc(e.get("justification") or "—")}</p></div>')
+            continue
+        ref = e.get("ref") or "—"
+        if e.get("unresolved") or (not e.get("excerpt")):
+            rows.append(f'<div class="ev-item ev-unres"><div class="ev-head"><code class="ev-ref">{esc(ref)}</code>'
+                        f'<span class="ev-tag warn">unresolved</span>{jump}</div></div>')
+            continue
+        kind = e.get("kind") or "code"
+        excerpt = esc(e.get("excerpt"))
+        body = (f'<blockquote class="ev-quote">{excerpt}</blockquote>' if kind in ("doc", "diagram")
+                else f'<pre class="ev-code lang-{esc(kind)}"><code>{excerpt}</code></pre>')
+        rows.append(f'<div class="ev-item"><div class="ev-head"><code class="ev-ref">{esc(ref)}</code>'
+                    f'<span class="ev-tag">{esc(kind)}</span>{jump}</div>{body}</div>')
+    return (f'<div class="f-field ev-field"><span>Evidence</span>'
+            f'<div class="evidence-list">{"".join(rows)}</div></div>')
+
+
 def card(title, body, sub="", cls="", tag=""):
     tagh = f'<span class="card-tag">{esc(tag)}</span>' if tag else ""
     subh = f'<div class="card-sub">{esc(sub)}</div>' if sub else ""
@@ -504,6 +535,7 @@ def sec_findings(m):
             <div class="f-field"><span>Attack path</span><p>{esc(f["attack"])}</p></div>
             <div class="f-field"><span>Remediation</span><p>{esc(f["remediation"])}</p></div>
             <div class="f-field"><span>Assets</span><p class="muted">{assets}</p></div>
+            {ev_block(f.get("evidence") or [])}
           </div>
         </details>'''
     return card("Findings & Evidence", f'<div class="findings">{out}</div>',
@@ -529,6 +561,11 @@ def sec_absent(m):
     if e["dataflows"]:
         blocks.append(card("Data-Flow Graph", empty(
             "No typed dataflows surfaced", "recon.dataflows[] absent in this run"), cls="half"))
+    if e.get("evidence"):
+        blocks.append(card("Embedded Evidence", empty(
+            "No per-finding evidence surfaced",
+            "findings[].evidence[] absent in this run — findings ground to recon component refs only"),
+            cls="half"))
     return "".join(blocks)
 
 
@@ -828,6 +865,20 @@ main{max-width:1280px;margin:0 auto;padding:34px clamp(18px,4vw,52px) 80px}
 .f-field{margin-top:10px}
 .f-field span{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);display:block;margin-bottom:3px}
 .f-field p{font-size:13px;color:var(--text-2);line-height:1.5}
+/* embedded evidence (finding -> assured proof: snippet + findable reference + jump-to-node) */
+.evidence-list{display:flex;flex-direction:column;gap:8px}
+.ev-item{background:var(--void,#0b0f16);border:1px solid var(--border);border-radius:9px;overflow:hidden}
+.ev-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:7px 10px;background:color-mix(in srgb,var(--cyan) 6%,transparent);border-bottom:1px solid var(--border)}
+.ev-ref{font-family:var(--mono,ui-monospace,"IBM Plex Mono",Menlo,monospace);font-size:11.5px;color:var(--cyan);word-break:break-all}
+.ev-tag{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-3);border:1px solid var(--border);border-radius:5px;padding:1px 6px}
+.ev-tag.warn{color:var(--amber,#e0a);border-color:var(--amber,#e0a)}
+.ev-jump{margin-left:auto;background:none;border:1px solid var(--border);border-radius:6px;color:var(--teal,#5ec8c8);font-size:11px;cursor:pointer;padding:2px 8px;font-family:inherit}
+.ev-jump:hover{border-color:var(--teal,#5ec8c8);background:color-mix(in srgb,var(--teal,#5ec8c8) 12%,transparent)}
+.ev-code{margin:0;padding:9px 11px;font-family:var(--mono,ui-monospace,"IBM Plex Mono",Menlo,monospace);font-size:11.5px;line-height:1.55;color:var(--text-2);overflow-x:auto;white-space:pre;tab-size:2}
+.ev-code code{color:inherit}
+.ev-quote{margin:0;padding:9px 12px;border-left:3px solid var(--teal,#5ec8c8);font-size:12.5px;color:var(--text-2);line-height:1.55;white-space:pre-wrap}
+.ev-item.ev-none{border-style:dashed}.ev-item.ev-none p,.ev-item.ev-unres{padding:8px 11px;font-size:12px}
+.ev-item.ev-unres{border-color:var(--amber,#e0a)}
 /* footer */
 .foot{max-width:1280px;margin:0 auto;padding:26px clamp(18px,4vw,52px) 60px;border-top:1px solid var(--border);
   font-size:12px;color:var(--text-3);display:flex;flex-wrap:wrap;gap:8px 24px}
@@ -1036,6 +1087,31 @@ function openEntityDrawer(eid){
     +'<span class="sev-pill '+sevCls(f.sev)+'">'+f.sev+'</span><span><b class="f-id">'+id+'</b> '+esc(f.title)+'</span></div>';});
   $('drawerBody').innerHTML=h;openDrawer();
 }
+// embedded evidence for the drawer: the extracted snippet + findable reference + jump-to-diagram-node.
+// Honest no-evidence / unresolved states are shown explicitly — never a fabricated snippet.
+function evHtml(evList){
+  if(!evList||!evList.length)return '<div class="dr-field ev-field"><span>Evidence</span>'
+    +'<p class="muted">No direct evidence embedded for this finding.</p></div>';
+  let h='<div class="dr-field ev-field"><span>Evidence</span><div class="evidence-list">';
+  evList.forEach(e=>{
+    const node=e.node?'<button class="ev-jump jump-node" data-pivot="entity" data-entity="'+esc(e.node)
+      +'" title="Jump to diagram node">◈ '+esc(e.node_name||e.node)+'</button>':'';
+    if(e.no_direct_evidence){h+='<div class="ev-item ev-none"><div class="ev-head"><span class="ev-tag">no direct evidence</span></div>'
+      +'<p class="muted">'+esc(e.justification||'—')+'</p></div>';return;}
+    const ref='<code class="ev-ref node-id">'+esc(e.ref||'—')+'</code>';
+    if(e.unresolved||!e.excerpt){h+='<div class="ev-item ev-unres"><div class="ev-head">'+ref
+      +'<span class="ev-tag warn">unresolved</span>'+node+'</div></div>';return;}
+    const kind=e.kind||'code';
+    const body=(kind==='doc'||kind==='diagram')?'<blockquote class="ev-quote">'+esc(e.excerpt)+'</blockquote>'
+      :'<pre class="ev-code lang-'+esc(kind)+'"><code>'+esc(e.excerpt)+'</code></pre>';
+    h+='<div class="ev-item"><div class="ev-head">'+ref+'<span class="ev-tag">'+esc(kind)+'</span>'+node+'</div>'+body+'</div>';
+  });
+  return h+'</div></div>';
+}
+// jump from a finding's evidence to the related diagram node: cross-highlight it + scroll the diagram in
+function jumpToNode(nid){applyFocus('entity',nid);const vp=$('diagVP');
+  if(vp){vp.scrollIntoView({behavior:'smooth',block:'center'});
+    document.querySelectorAll('[data-entity="'+nid+'"]').forEach(el=>{el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');});}}
 function openFindingDrawer(id){const f=FBI[id];if(!f)return;
   $('drawerTitle').textContent=id;
   const ents=(L.finding_entities?.[id]||[]).map(e=>(L.entity_names?.[e]||e)).join(', ');
@@ -1044,11 +1120,14 @@ function openFindingDrawer(id){const f=FBI[id];if(!f)return;
     +'<div class="dr-field"><span>'+esc(f.title)+'</span><p>'+esc(f.brief||'')+'</p></div>'
     +'<div class="dr-field"><span>STRIDE-LM</span><p>'+(f.stride.join(', ')||'—')+'</p></div>'
     +'<div class="dr-field"><span>CWE / MITRE</span><p>'+(f.cwe.concat(f.mitre).join(', ')||'—')+'</p></div>'
-    +'<div class="dr-field"><span>Touches</span><p>'+esc(ents||'—')+'</p></div>';
+    +'<div class="dr-field"><span>Touches</span><p>'+esc(ents||'—')+'</p></div>'
+    +evHtml(f.evidence);
   openDrawer();
 }
 // unified click routing
 document.addEventListener('click',e=>{
+  const jn=e.target.closest('.jump-node');
+  if(jn){e.preventDefault();e.stopPropagation();jumpToNode(jn.dataset.entity);return;}
   const node=e.target.closest('.node');
   if(node){applyFocus('entity',node.dataset.entity);openEntityDrawer(node.dataset.entity);return;}
   const piv=e.target.closest('[data-pivot]');

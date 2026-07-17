@@ -16,10 +16,14 @@ empty state ("No evidence surfaced"), never a crash or a fabricated value.
 
 Usage:
     python3 build_dashboard.py <run_dir> <out.html>
+    python3 build_dashboard.py --repo <src> <run_dir> <out.html>  # resolve evidence refs against <src>
     python3 build_dashboard.py --thin <run_dir> <out.html>   # sparse proof (thinned data)
 """
 import json, sys, os, re, html, base64, glob
 from collections import Counter, defaultdict
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import evidence as _ev  # shared deterministic evidence resolution + excerpt extraction
 
 SEV_RANK = {"LOW": 1, "MEDIUM": 2, "HIGH": 3, "CRITICAL": 4}
 STRIDE_NAMES = {"S": "Spoofing", "T": "Tampering", "R": "Repudiation",
@@ -445,12 +449,82 @@ def build_structural_graph(recon, findings, run_dir):
     return graph
 
 
-def build_model(recon, findings, coverage, navigator, run_dir=None):
+# ---------------------------------------------------------------------------
+# Evidence traceability: resolve each finding's OWN evidence reference at BUILD time -> extract the
+# excerpt -> embed it (self-contained). The dashboard drawer shows the snippet + the findable reference
+# (file:line) + a jump to the related diagram node. Deterministic presentation of an agent-cited fact:
+# we read the real file the agent pointed at; an unresolved ref degrades to an honest no-evidence state,
+# never a fabricated snippet (mirrors the suite's honest-blank discipline).
+# ---------------------------------------------------------------------------
+
+def _repo_evidence_index(recon):
+    """path -> recon element id, from every element's evidence[] file refs — so a finding's code
+    evidence can jump to the diagram node whose recon evidence cites the same file (finding ⇄ source ⇄
+    node). Line/col suffixes are stripped so `x.js` and `x.js:42` map to the same node."""
+    idx = {}
+    for arr in KIND_OF_ARRAY:
+        for el in recon.get(arr, []) or []:
+            eid = el.get("id")
+            if not eid:
+                continue
+            for ev in el.get("evidence", []) or []:
+                path = re.sub(r":\d+(?::\d+)?$", "", str(ev).strip())
+                idx.setdefault(path, eid)
+    return idx
+
+
+def build_finding_evidence(f, repo, recon_names, path_index, valid_ids, fallback_nodes):
+    """Resolve + extract + link one finding's evidence[] items. Returns a list of embed dicts:
+    {ref, kind, excerpt, resolved, unresolved, no_direct_evidence, justification, node, node_name}.
+    `node` is the diagram element to jump to (the ref's own node id, or the recon element citing the same
+    file, or the finding's first real asset/surface ref)."""
+    default_node = next((e for e in fallback_nodes if e in valid_ids), None)
+    out = []
+    for item in (f.get("evidence") or []):
+        if not isinstance(item, dict):
+            continue
+        e = _ev.extract_item(repo, item, recon_names)
+        node = e.get("node")
+        if not node:
+            path = re.sub(r":\d+(?::\d+)?$", "", (e.get("ref") or "").strip())
+            node = path_index.get(path)
+        if node not in valid_ids:
+            node = default_node
+        e["node"] = node
+        e["node_name"] = recon_names.get(node, node) if node else None
+        out.append({k: e.get(k) for k in ("ref", "kind", "excerpt", "resolved", "unresolved",
+                                          "no_direct_evidence", "justification", "node", "node_name",
+                                          "line_start", "line_end")})
+    return out
+
+
+def build_model(recon, findings, coverage, navigator, run_dir=None, repo=None):
     """All derived analytics. Everything defensive: absent -> None/[] -> empty state."""
     recon = recon or {}
     findings = findings or {}
     coverage = coverage or {}
     F = findings.get("findings", []) or []
+
+    # evidence source: the target repo the agents cited (path:line refs resolve against it). Default to
+    # the run dir's parent (the run's output usually sits inside/next to the source tree), else the run
+    # dir itself; --repo overrides. Absent/None -> extraction degrades to the honest unresolved state.
+    if repo is None and run_dir:
+        parent = os.path.dirname(os.path.abspath(run_dir))
+        repo = parent if os.path.isdir(parent) else run_dir
+    ev_path_index = _repo_evidence_index(recon)
+    ev_valid_ids = {el["id"] for arr in KIND_OF_ARRAY for el in (recon.get(arr, []) or []) if "id" in el}
+    ev_recon_names = {el["id"]: el.get("name", el["id"])
+                      for arr in KIND_OF_ARRAY for el in (recon.get(arr, []) or []) if "id" in el}
+    for arr in ("entry_points", "trust_boundaries", "external_deps", "roles"):
+        for el in recon.get(arr, []) or []:
+            if "id" in el:
+                ev_valid_ids.add(el["id"])
+                ev_recon_names.setdefault(el["id"], el.get("name", el["id"]))
+
+    def _finding_evidence(f):
+        return build_finding_evidence(
+            f, repo, ev_recon_names, ev_path_index, ev_valid_ids,
+            (f.get("asset_refs") or []) + (f.get("surface_refs") or [])) if repo else []
 
     # asset/surface name maps for grounding joins
     assets = {}
@@ -561,9 +635,11 @@ def build_model(recon, findings, coverage, navigator, run_dir=None):
             "remediation": f.get("remediation", ""),
             "assets": [assets.get(a, a) for a in (f.get("asset_refs") or [])],
             "surfaces": [surfaces.get(s, s) for s in (f.get("surface_refs") or [])],
+            "evidence": _finding_evidence(f),
         })
 
     has_controls = any(f.get("controls") for f in F)
+    has_evidence = any(f.get("evidence") for f in F)
     has_cvss = any(f.get("cvss_vector") for f in F)
     has_atlas = any(f.get("atlas") for f in F)
     has_dataflows = bool(recon.get("dataflows"))
@@ -609,7 +685,8 @@ def build_model(recon, findings, coverage, navigator, run_dir=None):
                                 "l": f.get("likelihood"), "i": f.get("impact"),
                                 "stride": f.get("stride_lm", []) or [], "cwe": f.get("cwe") or [],
                                 "mitre": f.get("mitre") or [],
-                                "brief": (f.get("attack_path", "") or "").split(". ")[0]}
+                                "brief": (f.get("attack_path", "") or "").split(". ")[0],
+                                "evidence": _finding_evidence(f)}
                       for f in F}
 
     n = len(F)
@@ -662,7 +739,8 @@ def build_model(recon, findings, coverage, navigator, run_dir=None):
                           "risk": e.get("risk", ""), "manifest": e.get("manifest")} for e in ext],
         "findings": top,
         "empty": {"controls": not has_controls, "cvss": not has_cvss,
-                  "atlas": not has_atlas, "dataflows": not has_dataflows},
+                  "atlas": not has_atlas, "dataflows": not has_dataflows,
+                  "evidence": not has_evidence},
         "graph": graph,
         "links": links,
         "findings_by_id": findings_by_id,
@@ -682,26 +760,30 @@ def _load_all(run_dir):
     return recon, findings, coverage, navigator
 
 
-def model_for_run(run_dir, thin_mode=False):
+def model_for_run(run_dir, thin_mode=False, repo=None):
     recon, findings, coverage, navigator = _load_all(run_dir)
     if thin_mode:
         recon, findings, coverage = thin(recon, findings, coverage)
         navigator = None
-        return build_model(recon, findings, coverage, navigator, run_dir=None)
-    return build_model(recon, findings, coverage, navigator, run_dir=run_dir)
+        return build_model(recon, findings, coverage, navigator, run_dir=None, repo=None)
+    return build_model(recon, findings, coverage, navigator, run_dir=run_dir, repo=repo)
 
 
 def main():
     args = sys.argv[1:]
     thin_mode = False
+    repo = None
     if args and args[0] == "--thin":
         thin_mode = True
         args = args[1:]
+    if len(args) >= 2 and args[0] == "--repo":
+        repo = args[1]
+        args = args[2:]
     if len(args) != 2:
         print(__doc__)
         sys.exit(1)
     run_dir, out = args
-    model = model_for_run(run_dir, thin_mode)
+    model = model_for_run(run_dir, thin_mode, repo=repo)
     with open(os.path.splitext(out)[0] + ".model.json", "w") as f:
         json.dump(model, f, indent=2)
     sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "references"))

@@ -67,6 +67,7 @@ When spawned by the security-architect or working alongside security reviewers:
 
 1. **Read the code/architecture before assessing** — understand the system before identifying privacy risks
 2. **Be specific** — reference exact data fields, code locations, configuration settings, and API endpoints
+2a. **Attach resolvable evidence to every finding** — each privacy finding/issue MUST carry an `evidence[]` array with ≥1 resolvable `ref` (the specific code/config/doc that evidences that problem — prefer `path:line-range`; a diagram/recon element id is a valid diagram-node reference), optionally a verbatim `quote`. Never fabricate a citation: the only allowed abstention is an explicit item with `"no_direct_evidence": true` and a non-empty `justification`. You provide the `ref`; the build extracts the `excerpt`. Per the agent output protocol's Evidence Traceability section.
 3. **Avoid false positives** — if uncertain whether processing constitutes a privacy risk, state your confidence level and the conditions under which it would be problematic
 4. **Consider the full data lifecycle** — privacy risks exist at collection, processing, storage, sharing, and deletion
 5. **Think about data subjects** — real people are affected by privacy failures; ground your analysis in tangible harms

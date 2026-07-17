@@ -27,6 +27,7 @@ _HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(_HERE.parent.parent / "scripts"))
 sys.path.insert(0, str(_HERE.parent.parent / "references"))
 import build_dashboard as bd  # noqa: E402
+import evidence as ev  # noqa: E402  (shared extraction — re-extract to prove the embed matches source)
 
 
 def _real_diagram_edges(recon: dict, run_dir) -> set | None:
@@ -61,7 +62,7 @@ def check(run_dir, repo=None, model=None) -> dict:
     coverage = bd.load(run_dir, "coverage.json") or {}
     F = findings.get("findings", []) or []
     if model is None:
-        model = bd.model_for_run(run_dir)
+        model = bd.model_for_run(run_dir, repo=repo)
 
     # 1 + 5. GROUNDING / CROSS-OUTPUT — every headline number recounts the manifests.
     recount = Counter(f.get("severity") for f in F)
@@ -140,6 +141,39 @@ def check(run_dir, repo=None, model=None) -> dict:
             f = next((x for x in F if x["id"] == fid), None)
             if not f or eid not in set((f.get("asset_refs") or []) + (f.get("surface_refs") or [])):
                 D("link-ungrounded", f"entity {eid} → {fid} not backed by a manifest reference")
+
+    # 8. EVIDENCE TRACEABILITY — every finding's embedded evidence is present, resolvable, and its
+    #    excerpt MATCHES the cited source (re-extract independently: no fabricated excerpt); the jump-to
+    #    node is a real recon element; honest no-evidence is shown explicitly (never a fabricated snippet).
+    #    Reference-free: re-extract from the same source the build read and compare. Templated-with-blanks:
+    #    a finding with NO evidence[] is a flow-gate concern (checks.py), not a dashboard defect here.
+    ev_repo = str(repo) if repo else os.path.dirname(os.path.abspath(run_dir))
+    m_by_id = model.get("findings_by_id", {})
+    recon_names = model.get("links", {}).get("entity_names", {})
+    for f in F:
+        fid = f.get("id")
+        raw_ev = f.get("evidence") or []
+        emb_ev = (m_by_id.get(fid) or {}).get("evidence") or []
+        if not raw_ev:
+            continue
+        for raw, emb in zip(raw_ev, emb_ev):
+            if not isinstance(emb, dict):
+                continue
+            if emb.get("no_direct_evidence"):
+                if not (emb.get("justification") or "").strip():
+                    D("evidence-abstention-unjustified", f"{fid}: no_direct_evidence embedded without a justification")
+                continue
+            node = emb.get("node")
+            if node and node not in recon_ids:
+                D("evidence-node-fabricated", f"{fid}: evidence jump node {node!r} is not a recon element")
+            if not emb.get("resolved"):
+                D("evidence-unresolved", f"{fid}: evidence ref {emb.get('ref')!r} resolves nowhere in the source (no honest abstention)")
+                continue
+            # independent re-extraction from the same source — the embed must not fabricate the excerpt.
+            recheck = ev.extract_item(ev_repo, raw if isinstance(raw, dict) else {}, recon_names)
+            if emb.get("excerpt") and recheck.get("excerpt") and emb["excerpt"] != recheck["excerpt"]:
+                D("evidence-excerpt-mismatch",
+                  f"{fid}: embedded excerpt for {emb.get('ref')!r} does not match the cited source (fabricated/stale excerpt)")
 
     # 6 + 7. OFFLINE + NON-FABRICATION over the rendered HTML.
     try:

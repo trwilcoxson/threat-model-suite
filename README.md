@@ -59,6 +59,11 @@ docs/        ARCHITECTURE.md, VALIDATION-PATTERNS.md, STRUCTURED-OUTPUT-CONTRACT
   interactive structural diagram** (pan/zoom + click→cross-filter over the same threat model the report shows).
   Every number traces to the run's manifests; absent data degrades to graceful empty states. Produced only when
   `dashboard` is in the run plan; all other outputs are unchanged.
+- **Evidence traceability** — every finding carries direct, resolvable evidence (a findable reference plus the
+  proving excerpt), enforced across the agent flow each time (honest `no_direct_evidence` abstention is the only
+  out) and derived, embedded, and validated at every output: the dashboard finding drawer shows the cited code
+  snippet / document quote / diagram element with a jump to the related diagram node. Additive and back-compatible
+  — evidence-less committed manifests still validate.
 
 ### agents
 The pipeline the skill orchestrates. Each runs in a fresh context, writes a structured output file +

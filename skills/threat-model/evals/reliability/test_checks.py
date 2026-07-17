@@ -1079,6 +1079,124 @@ def t_start_gate_scoping():
         assert decide(other) == "ALLOW", "a non-recon internal spawn must never be gated by the start gate"
 
 
+def t_finding_evidence():
+    """Evidence traceability (flow gate): the finding's OWN evidence[] must carry >=1 RESOLVABLE ref
+    (path:line / recon node id) OR an honest no_direct_evidence+justification abstention. Additive/
+    back-compat: absent evidence[] is a non-gating `evidence`-layer FLAG (committed manifests stay green);
+    an unresolvable ref is a `grounding` defect; determinism boundary held (assert resolvability only)."""
+    # schema: evidence is optional + additive; a well-formed item validates; a stray prop is rejected.
+    schema = schema_checks.load_schema("findings.schema.json")
+    base_f = {"id": "TM-001", "title": "t", "stride_lm": ["S"], "likelihood": 3, "impact": 3,
+              "severity": "MEDIUM", "asset_refs": [], "surface_refs": [], "attack_path": "p", "remediation": "r"}
+
+    def doc(f):
+        return {"findings": [f], "summary_counts": {"LOW": 0, "MEDIUM": 1, "HIGH": 0, "CRITICAL": 0},
+                "no_issue_surface": []}
+    assert schema_checks.violations(schema, doc(base_f)) == [], "omitted evidence must validate (back-compat)"
+    assert schema_checks.violations(schema, doc({**base_f, "evidence": [
+        {"ref": "src/app.js:1-3", "kind": "code", "quote": "x"}]})) == [], "well-formed evidence validates"
+    assert schema_checks.violations(schema, doc({**base_f, "evidence": [
+        {"ref": "src/app.js", "no_direct_evidence": False, "justification": None}]})) == [], "nullable fields validate"
+    bad = schema_checks.violations(schema, doc({**base_f, "evidence": [{"ref": "x", "bogus": 1}]}))
+    assert any("bogus" in v for v in bad), bad
+
+    with tempfile.TemporaryDirectory() as td:
+        # run dir and repo are SEPARATE (as in production) so the literal-grep grounding never matches a
+        # ref string that only appears inside the run's own findings.json.
+        run = Path(td) / "run"
+        repo = Path(td) / "repo"
+        run.mkdir()
+        (repo / "src").mkdir(parents=True)
+        (repo / "src" / "app.js").write_text("const app = express();\napp.use(cors());\napp.listen(80);\n")
+        (run / "recon.json").write_text(json.dumps({
+            "components": [{"id": "C1", "name": "Api", "evidence": ["src/app.js"]}],
+            "data_stores": [], "entry_points": [], "trust_boundaries": [], "external_deps": []}))
+        (run / "report.md").write_text("## findings\n" + "pad " * 200)
+
+        def codes(f):
+            (run / "findings.json").write_text(json.dumps(doc({**f, "asset_refs": ["C1"]})))
+            return {d["code"] for d in checks.run_checks(run, repo)["defects"]}
+
+        # resolvable path:line ref -> no evidence flag, no grounding defect
+        ok = codes({**base_f, "evidence": [{"ref": "src/app.js:2", "kind": "code"}]})
+        assert "finding-evidence-missing" not in ok and "finding-evidence-ungrounded" not in ok, ok
+        # a recon/diagram node id resolves via the recon id universe
+        assert "finding-evidence-ungrounded" not in codes({**base_f, "evidence": [{"ref": "C1", "kind": "diagram"}]})
+        # NO evidence[] -> non-gating `evidence`-layer flag (committed evidence-less manifests stay green)
+        (run / "findings.json").write_text(json.dumps(doc({**base_f, "asset_refs": ["C1"]})))
+        legacy = checks.run_checks(run, repo)["defects"]
+        miss = [d for d in legacy if d["code"] == "finding-evidence-missing"]
+        assert miss and miss[0]["layer"] == "evidence", "missing evidence must be a non-gating evidence-layer flag"
+        # honest abstention passes; without a justification it is flagged
+        assert "finding-evidence-missing" not in codes({**base_f, "evidence": [
+            {"no_direct_evidence": True, "justification": "no code path — architectural gap by omission"}]})
+        assert "no-direct-evidence-without-justification" in codes({**base_f, "evidence": [{"no_direct_evidence": True}]})
+        # an unresolvable ref -> a `grounding` defect (never a silent pass)
+        ungr = codes({**base_f, "evidence": [{"ref": "made/up/ghost.js:9", "kind": "code"}]})
+        assert "finding-evidence-ungrounded" in ungr, ungr
+
+
+def t_dashboard_evidence():
+    """Outputs embed the proof: the dashboard RESOLVES each finding's evidence ref at build -> EXTRACTS
+    the excerpt -> EMBEDS it (snippet + file:line + jump-to-node) — grounded (excerpt matches source),
+    honest no-evidence shown not fabricated, and the validator CATCHES a fabricated/stale excerpt or an
+    unresolvable ref. Flagship (no finding evidence[]) stays clean with an empty embedded-evidence state."""
+    import build_dashboard as bd
+    import dashboard_template
+    with tempfile.TemporaryDirectory() as td:
+        run = Path(td) / "out"
+        run.mkdir()
+        repo = Path(td)
+        (repo / "server").mkdir()
+        (repo / "server" / "index.js").write_text(
+            "app.use(cors());\napp.get('/api/all', (req,res)=>res.json(db.all()));\n// no auth middleware\n")
+        (run / "recon.json").write_text(json.dumps({
+            "system_name": "T", "components": [{"id": "C1", "name": "API", "evidence": ["server/index.js"]}],
+            "data_stores": [], "entry_points": [], "trust_boundaries": [], "external_deps": []}))
+        (run / "findings.json").write_text(json.dumps({
+            "summary_counts": {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 1, "LOW": 0},
+            "findings": [
+                {"id": "TM-001", "title": "No auth", "severity": "HIGH", "likelihood": 3, "impact": 4,
+                 "asset_refs": ["C1"], "surface_refs": [],
+                 "evidence": [{"ref": "server/index.js:1-3", "kind": "code"}]},
+                {"id": "TM-002", "title": "Design gap", "severity": "MEDIUM", "likelihood": 3, "impact": 3,
+                 "asset_refs": ["C1"], "surface_refs": [],
+                 "evidence": [{"no_direct_evidence": True, "justification": "absence of a control — no code to cite"}]}],
+            "kill_chains": []}))
+        (run / "coverage.json").write_text(json.dumps({"items": []}))
+
+        m = bd.model_for_run(str(run), repo=str(repo))
+        ev = m["findings_by_id"]["TM-001"]["evidence"][0]
+        assert ev["resolved"] and ev["node"] == "C1" and "app.use(cors())" in ev["excerpt"], ev
+        assert m["findings_by_id"]["TM-002"]["evidence"][0]["no_direct_evidence"] is True
+        assert m["empty"]["evidence"] is False
+
+        htmlout = dashboard_template.render(m)
+        assert "server/index.js:1-3" in htmlout and "app.use(cors())" in htmlout, "excerpt + ref must be embedded"
+        assert 'class="ev-code' in htmlout and 'jump-node' in htmlout, "snippet block + node jump must render"
+        assert dashboard_checks.check(str(run), repo=str(repo), model=m)["scores"]["dashboard_pass"], "clean embed passes"
+
+        # NEGATIVE 1: a fabricated/stale excerpt (not matching the cited source) is CAUGHT
+        m2 = bd.model_for_run(str(run), repo=str(repo))
+        m2["findings_by_id"]["TM-001"]["evidence"][0]["excerpt"] = "totally invented code line"
+        codes = {d["code"] for d in dashboard_checks.check(str(run), repo=str(repo), model=m2)["defects"]}
+        assert "evidence-excerpt-mismatch" in codes, codes
+
+        # NEGATIVE 2: an unresolvable ref (no honest abstention) is CAUGHT
+        (run / "findings.json").write_text(json.dumps({
+            "summary_counts": {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 0, "LOW": 0},
+            "findings": [{"id": "TM-001", "title": "x", "severity": "HIGH", "likelihood": 3, "impact": 4,
+                          "asset_refs": ["C1"], "surface_refs": [],
+                          "evidence": [{"ref": "made/up/ghost.js:9", "kind": "code"}]}], "kill_chains": []}))
+        codes = {d["code"] for d in dashboard_checks.check(str(run), repo=str(repo))["defects"]}
+        assert "evidence-unresolved" in codes, codes
+
+    # flagship: no finding evidence[] -> empty embedded-evidence state, dashboard still clean
+    fm = bd.model_for_run(str(_FLAGSHIP))
+    assert fm["empty"]["evidence"] is True and all(not v["evidence"] for v in fm["findings_by_id"].values())
+    assert not dashboard_checks.check(_FLAGSHIP, model=fm)["defects"], "flagship dashboard stays clean"
+
+
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
@@ -1094,6 +1212,7 @@ def main():
              t_dashboard_embeds_real_visual_engine_svg,
              t_dashboard_gallery,
              t_dashboard_blanks_and_offline,
+             t_finding_evidence, t_dashboard_evidence,
              t_run_plan_exact_match, t_run_plan_gate_stage_and_inert, t_start_gate_scoping]
     for t in tests:
         t()

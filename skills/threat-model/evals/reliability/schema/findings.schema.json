@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Findings manifest — machine-readable mirror of the report's findings",
-  "description": "Emitted by the threat-model run alongside the markdown report. The eval validates structure, internal consistency (severity == band(L x I)), grounding (refs resolve to recon), and coverage — none of which need a per-target answer key. Control-coverage is a reference-free per-finding property (disposition-vs-controls consistency + zero-control flagging with honest abstention), never an answer key that a control is the correct remediation; controls[]/control_disposition/disposition_note are optional and additive so a findings manifest predating them still validates. cvss_vector (optional exploitability decomposition) and atlas[] (optional MITRE ATLAS adversarial-ML technique ids) are likewise additive and nullable — a manifest omitting them still validates.",
+  "description": "Emitted by the threat-model run alongside the markdown report. The eval validates structure, internal consistency (severity == band(L x I)), grounding (refs resolve to recon), and coverage — none of which need a per-target answer key. Control-coverage is a reference-free per-finding property (disposition-vs-controls consistency + zero-control flagging with honest abstention), never an answer key that a control is the correct remediation; controls[]/control_disposition/disposition_note are optional and additive so a findings manifest predating them still validates. cvss_vector (optional exploitability decomposition) and atlas[] (optional MITRE ATLAS adversarial-ML technique ids) are likewise additive and nullable — a manifest omitting them still validates. evidence[] (per-finding grounded proof: a findable reference + honest no_direct_evidence abstention, with a build-extracted excerpt) is additive/optional at the schema level for back-compat but REQUIRED per finding by the run-gate + eval (checks.py) going forward.",
   "type": "object",
   "additionalProperties": false,
   "required": ["findings", "summary_counts", "no_issue_surface"],
@@ -29,6 +29,28 @@
           "surface_refs": { "type": "array", "items": { "type": "string" }, "description": "recon entry_point/trust_boundary/external_dep ids this finding covers" },
           "attack_path":  { "type": "string" },
           "remediation":  { "type": "string" },
+          "evidence": {
+            "type": "array",
+            "description": "grounded, resolvable proof that THIS finding is real — the code/config/doc/diagram that evidences the problem. Additive + OPTIONAL for back-compat (a manifest predating this field still validates); REQUIRED per finding by the flow + run-gate going forward (enforced in checks.py::run_checks, not by the schema, so committed evidence-less manifests still conform). The recon chain (asset_refs -> recon element evidence[]) remains a valid grounding path; this is the finding's OWN problem-specific citation. The output generators add a build-extracted `excerpt`.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "ref": { "type": ["string", "null"],
+                         "description": "findable reference that RESOLVES in the target source: a repo-relative path, path:line, path:line-range, a glob, a doc path+locator, or a recon/diagram node id (C1/D1/E1/X1/TB1). Precise enough to extract an excerpt. null ONLY when no_direct_evidence is true." },
+                "kind": { "enum": ["code", "config", "doc", "diagram", null],
+                          "description": "optional evidence kind; drives excerpt presentation (monospace/syntax-lit for code/config, quotation for doc, node reference for diagram)." },
+                "quote": { "type": ["string", "null"],
+                           "description": "optional verbatim snippet/quotation the agent copied from the cited source; the build re-extracts from `ref` and validates the embedded excerpt against the real source (grounding, no fabricated excerpt)." },
+                "excerpt": { "type": ["string", "null"],
+                             "description": "BUILD-extracted excerpt, populated by the output generators (dashboard/report) at build time from `ref`; agents leave it null/omitted. Its presence lets an offline output embed the proof without the repo." },
+                "no_direct_evidence": { "type": ["boolean", "null"],
+                                        "description": "honest abstention: true iff this finding genuinely has no direct code/config/doc/diagram evidence. The ONLY allowed alternative to a resolvable ref — never fabricate a citation. Requires justification." },
+                "justification": { "type": ["string", "null"],
+                                   "description": "required (non-empty) by the run-gate when no_direct_evidence is true — why no direct evidence exists (mirrors the coverage ledger's unknown-needs-a-note rule)." }
+              }
+            }
+          },
           "controls": {
             "type": "array",
             "description": "addressable control objects that remediate this finding (the machine-readable promotion of free-text remediation). Optional and additive — a finding predating this field simply has none, and the eval flags it as control-coverage-unknown without failing the run.",
