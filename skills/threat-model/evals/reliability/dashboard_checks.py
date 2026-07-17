@@ -100,15 +100,19 @@ def check(run_dir, repo=None, model=None) -> dict:
     # EMBED path: the picture is the run's REAL visual-engine SVG — its node ids must be a subset of the
     # recon element ids (no invented nodes). The re-render checks below still cover the fallback path.
     if g.get("diagram_source") == "embedded-svg":
+        # the PRIMARY diagram must be a REAL rendered file the run produced (not a substitute).
+        pf = g.get("svg_file")
+        if not pf or not os.path.exists(os.path.join(run_dir, pf)):
+            D("primary-diagram-missing", f"primary embedded diagram {pf!r} is not a real file in the run")
         svg_ids = set(g.get("svg_node_ids") or [])
         if not svg_ids:
             D("embed-no-nodes", "embedded structural SVG exposed no recon element node ids")
         bad = svg_ids - recon_ids
         if bad:
             D("embed-node-fabricated", f"embedded diagram references non-recon node id(s): {sorted(bad)}")
-    # GALLERY: every embedded artifact is a REAL rendered file the run produced, and any node id it
-    # exposes is a recon element (no fabricated/substitute diagram). Templated-with-blanks: an empty
-    # gallery (a Mermaid-only / no-SVG run) is fine — it just abstains here.
+    # SECONDARY DIAGRAMS (the 'more diagrams' links): every embedded artifact is a REAL rendered file the
+    # run produced, and any node id it exposes is a recon element (no fabricated/substitute diagram).
+    # Templated-with-blanks: an empty set (a Mermaid-only / no-SVG run) is fine — it just abstains here.
     for a in (g.get("gallery") or []):
         fp = os.path.join(run_dir, a.get("file", ""))
         if not a.get("file") or not os.path.exists(fp):

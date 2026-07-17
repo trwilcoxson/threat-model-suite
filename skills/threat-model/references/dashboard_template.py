@@ -106,75 +106,57 @@ _DIAG_TOOLBAR = '''<div class="diag-toolbar">
       </div>'''
 
 
+def _more_diagrams(m):
+    """The OTHER rendered artifacts (L1–L3, attack trees/flows, SBOM) as SECONDARY links — a small
+    expandable list under the primary diagram, NOT a front gallery. Each opens on demand (native
+    <details>, offline) and mounts its exact verbatim SVG; structural/risk layers keep the node-id
+    cross-filter. The primary diagram (already shown big above) is excluded so nothing is duplicated."""
+    g = m["graph"]
+    primary_file = g.get("svg_file")
+    others = [a for a in (g.get("gallery") or []) if a.get("file") != primary_file]
+    if not others:
+        return ""
+    items = []
+    for a in others:
+        linked = len(a.get("node_ids") or [])
+        badge = f'<span class="more-badge">{linked} linked</span>' if linked else ""
+        items.append(
+            f'<details class="more-item"><summary><b>{esc(a["label"])}</b>'
+            f'<span class="more-file">{esc(a["file"])}</span>{badge}</summary>'
+            f'<div class="more-svg">{a["svg"]}</div></details>')
+    return (f'<details class="more-diagrams"><summary>More diagrams '
+            f'<span class="more-count">{len(others)}</span> — other layers, attack trees/flows, SBOM'
+            f'</summary><div class="more-list">{"".join(items)}</div></details>')
+
+
 def sec_diagram_embed(m):
-    """Embed the run's ACTUAL visual-engine SVG (the D2 render the flow emits elsewhere), with the
-    dashboard's pan/zoom + click→cross-filter layered ON TOP. Pixel-identical picture; extra behaviour."""
+    """The SINGLE primary diagram view: the run's ACTUAL visual-engine SVG (preferring the L4 risk/threat
+    overlay — all metadata in the image; L1 structural fallback), embedded verbatim, big and fit-to-view,
+    with pan/zoom + click→cross-filter layered ON TOP. The other artifacts are demoted to secondary
+    "more diagrams" links below. Pixel-identical picture; extra behaviour."""
     g = m["graph"]
     linked = len(g.get("svg_node_ids") or [])
-    note = (f'<div class="diag-note">The run\'s actual visual-engine structural diagram '
-            f'(<code>{esc(g.get("svg_file",""))}</code>) — the same D2 render (typed shapes/icons + '
-            f'trust boundaries) the flow embeds in the report. Pan/zoom + click a node to cross-filter.</div>')
+    label = g.get("svg_label") or "Structural"
+    is_risk = g.get("svg_kind") == "risk"
+    what = ("the full L4 risk/threat overlay — risk colors, TM-NNN ids, STRIDE·L×I, CWE/MITRE, threat "
+            "annotations, attack paths & trust boundaries, all in the image"
+            if is_risk else "the run's structural diagram (typed shapes/icons + trust boundaries)")
+    note = (f'<div class="diag-note">The run\'s actual visual-engine diagram '
+            f'(<code>{esc(g.get("svg_file",""))}</code>, <b>{esc(label)}</b>) — {what}. The exact SVG the '
+            f'flow embeds in the report. Pan/zoom + click a node to cross-filter.</div>')
     svg = f'''<div class="diagram embed">
       {_DIAG_TOOLBAR}
       <div class="diag-viewport" id="diagVP">
         <div id="diagView" class="embed-view">{g["svg"]}</div>
-      </div>{note}</div>'''
-    return card("Structural Diagram — interactive", svg, cls="diagram-card",
-                sub="The run's real visual-engine D2 diagram, embedded verbatim — node ids link to findings; click to cross-filter",
+      </div>{note}{_more_diagrams(m)}</div>'''
+    return card(f"Threat-Model Diagram — {esc(label)}", svg, cls="diagram-card",
+                sub="The run's real visual-engine diagram, embedded verbatim — all metadata in the image; "
+                    "node ids link to findings; click to cross-filter",
                 tag=f"{linked} linked nodes · embedded SVG")
-
-
-_GAL_TOOLBAR = '''<div class="diag-toolbar gal-toolbar">
-        <button data-z="in" title="Zoom in">+</button>
-        <button data-z="out" title="Zoom out">−</button>
-        <button data-z="fit" title="Zoom to fit">⤢</button>
-        <button data-z="reset" title="Reset">⟳</button>
-        <span class="diag-hint">scroll to zoom · drag to pan · click a linked node to pivot · switch artifacts above</span>
-      </div>'''
-
-
-def sec_diagram_gallery(m):
-    """The run's FULL visual-artifact set as a switchable gallery — L1-L4 structural/risk layers,
-    attack trees, attack flows, SBOM — every one the run rendered, embedded verbatim (the visual
-    engine's real SVGs). Zoom-to-fit on load + on switch; pan/zoom over the active artifact; the
-    structural/risk layers keep the node-id cross-filter. Only artifacts the run produced appear."""
-    g = m["graph"]
-    gallery = g["gallery"]
-    tabs, srcs = [], []
-    for i, a in enumerate(gallery):
-        act = " active" if i == 0 else ""
-        linked = len(a.get("node_ids") or [])
-        badge = f'<span class="gal-badge">{linked}</span>' if linked else ""
-        tabs.append(f'<button class="gal-tab{act}" data-gid="{i}" data-kind="{esc(a["kind"])}" '
-                    f'title="{esc(a["file"])}">{esc(a["label"])}{badge}</button>')
-        # Each artifact's real SVG sits INERT in a text/html store (not parsed/painted) and is mounted
-        # into the live viewport on demand — one SVG live at a time keeps pan/zoom smooth. Still fully
-        # inline + offline (the exact SVG bytes are in the document, just not eagerly rendered).
-        srcs.append(f'<script type="text/html" class="gal-src" data-gid="{i}" data-w="{a["w"]}" '
-                    f'data-h="{a["h"]}">{a["svg"]}</script>')
-    primary = gallery[0]
-    note = (f'<div class="diag-note">The run\'s actual visual-engine diagrams (D2 renders — typed '
-            f'icons + trust boundaries), the exact SVGs the flow embeds elsewhere. '
-            f'<b>{len(gallery)}</b> artifact(s); the structural/risk layers link node ids to findings '
-            f'(click to cross-filter).</div>')
-    body = f'''<div class="gallery">
-      <div class="gal-tabs">{"".join(tabs)}</div>
-      <div class="diagram embed">
-        {_GAL_TOOLBAR}
-        <div class="gal-viewport" id="galVP"><div class="gal-inner" id="galInner"></div></div>
-        {"".join(srcs)}
-        {note}
-      </div></div>'''
-    return card("Visual-Engine Diagrams — interactive gallery", body, cls="diagram-card",
-                sub="Every diagram the run rendered, embedded verbatim — same picture as the report; "
-                    "switch · zoom · click a node to cross-filter",
-                tag=f'{len(gallery)} artifacts · {esc(primary["label"])} shown')
 
 
 def sec_diagram(m):
     g = m["graph"]
-    if g.get("gallery"):
-        return sec_diagram_gallery(m)
     if g.get("svg"):
         return sec_diagram_embed(m)
     nodes = {n["id"]: n for n in g["nodes"]}
@@ -907,23 +889,28 @@ main{max-width:1280px;margin:0 auto;padding:34px clamp(18px,4vw,52px) 80px}
 #diagView{transition:transform .12s linear}
 /* embedded real visual-engine SVG: keep D2's picture pixel-identical, only add behaviour */
 #diagView.embed-view{transform-origin:0 0;width:100%;height:100%;will-change:transform}
-/* ---- full visual-artifact gallery (switch · zoom-to-fit · pan/zoom) ---- */
-.gal-tabs{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 12px}
-.gal-tab{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:9px;
-  background:var(--elevated);border:1px solid var(--border);color:var(--text-3);cursor:pointer;
-  font:600 12px/1 var(--sans);letter-spacing:.01em;transition:.18s}
-.gal-tab:hover{border-color:var(--border-hi);color:var(--text-1)}
-.gal-tab.active{background:color-mix(in srgb,var(--cyan) 14%,var(--elevated));border-color:var(--cyan);
-  color:var(--text-1)}
-.gal-tab[data-kind="risk"].active{background:color-mix(in srgb,var(--high) 16%,var(--elevated));border-color:var(--high)}
-.gal-badge{display:inline-grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:6px;
+/* ---- secondary "more diagrams" links (open/expand on demand — not a front gallery) ---- */
+.more-diagrams{margin-top:14px;border-top:1px solid var(--border);padding-top:12px}
+.more-diagrams>summary{cursor:pointer;font:600 12.5px/1.3 var(--sans);color:var(--text-2);letter-spacing:.01em;
+  list-style:none;display:flex;align-items:center;gap:8px}
+.more-diagrams>summary::-webkit-details-marker{display:none}
+.more-diagrams>summary::before{content:"▸";color:var(--text-3);transition:.15s}
+.more-diagrams[open]>summary::before{transform:rotate(90deg)}
+.more-count{display:inline-grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:6px;
   background:var(--surface);border:1px solid var(--border-hi);font:600 10px/1 var(--mono);color:var(--text-3)}
-.gal-viewport{height:72vh;min-height:560px;border:1px solid var(--border);border-radius:12px;overflow:hidden;
-  position:relative;background:radial-gradient(circle at 30% 10%,color-mix(in srgb,var(--cyan) 6%,transparent),transparent 60%),var(--elevated);
-  cursor:grab;touch-action:none}
-.gal-viewport:active{cursor:grabbing}
-.gal-inner{position:absolute;top:0;left:0;transform-origin:0 0;will-change:transform}
-.gal-inner>svg{display:block;width:100%;height:100%}
+.more-list{display:flex;flex-direction:column;gap:6px;margin-top:10px}
+.more-item{border:1px solid var(--border);border-radius:10px;background:var(--elevated);overflow:hidden}
+.more-item>summary{cursor:pointer;padding:9px 12px;display:flex;align-items:center;gap:10px;
+  font:600 12px/1 var(--sans);color:var(--text-2);list-style:none}
+.more-item>summary::-webkit-details-marker{display:none}
+.more-item>summary::before{content:"+";color:var(--cyan);font:600 14px/1 var(--mono)}
+.more-item[open]>summary::before{content:"−"}
+.more-item[open]>summary{border-bottom:1px solid var(--border)}
+.more-file{font:500 10.5px/1 var(--mono);color:var(--text-3)}
+.more-badge{margin-left:auto;font:600 10px/1 var(--mono);color:var(--text-3);
+  background:var(--surface);border:1px solid var(--border-hi);border-radius:6px;padding:3px 6px}
+.more-svg{max-height:70vh;overflow:auto;padding:10px;background:var(--elevated)}
+.more-svg>svg{display:block;width:100%;height:auto}
 .node.embed{cursor:pointer;transition:opacity .2s,filter .2s}
 .node.embed:hover,.node.embed:focus{filter:drop-shadow(0 0 8px var(--cyan));outline:none}
 .filtering .node.embed:not(.hot){opacity:.28}
@@ -1175,39 +1162,6 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'){clearFocus();closeD
     else if(z==='in')scale=Math.min(4,scale*1.2);
     else if(z==='out')scale=Math.max(.3,scale*0.83);
     apply();});
-})();
-
-// Full visual-artifact gallery: lazy-mount one real SVG at a time, zoom-to-fit on load + on switch.
-(function(){
-  const vp=document.getElementById('galVP');if(!vp)return;
-  const inner=document.getElementById('galInner');
-  const srcs=[...document.querySelectorAll('.gal-src')];if(!srcs.length)return;
-  let curW=1,curH=1,scale=1,tx=0,ty=0,drag=false,sx=0,sy=0,ox=0,oy=0;
-  const apply=()=>{inner.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';};
-  const fit=()=>{scale=Math.min(vp.clientWidth/curW,vp.clientHeight/curH)*0.96;
-    tx=(vp.clientWidth-curW*scale)/2;ty=(vp.clientHeight-curH*scale)/2;apply();};
-  const mount=gid=>{const s=srcs.find(x=>+x.dataset.gid===gid);if(!s)return;
-    curW=+s.dataset.w||vp.clientWidth;curH=+s.dataset.h||vp.clientHeight;
-    inner.style.width=curW+'px';inner.style.height=curH+'px';
-    inner.innerHTML=s.textContent;requestAnimationFrame(fit);};
-  vp.addEventListener('wheel',e=>{e.preventDefault();
-    const f=e.deltaY<0?1.12:0.89,ns=Math.min(8,Math.max(.03,scale*f));
-    const r=vp.getBoundingClientRect(),px=e.clientX-r.left,py=e.clientY-r.top; // zoom toward cursor
-    tx=px-(px-tx)*(ns/scale);ty=py-(py-ty)*(ns/scale);scale=ns;apply();},{passive:false});
-  vp.addEventListener('pointerdown',e=>{drag=true;sx=e.clientX;sy=e.clientY;ox=tx;oy=ty;vp.setPointerCapture(e.pointerId);});
-  vp.addEventListener('pointermove',e=>{if(!drag)return;tx=ox+(e.clientX-sx);ty=oy+(e.clientY-sy);apply();});
-  vp.addEventListener('pointerup',()=>drag=false);vp.addEventListener('pointercancel',()=>drag=false);
-  document.querySelectorAll('.gal-toolbar button').forEach(b=>b.onclick=()=>{const z=b.dataset.z;
-    if(z==='fit'||z==='reset')fit();
-    else if(z==='in'){scale=Math.min(8,scale*1.2);apply();}
-    else if(z==='out'){scale=Math.max(.03,scale*0.83);apply();}});
-  document.querySelectorAll('.gal-tab').forEach(t=>t.onclick=()=>{
-    const gid=+t.dataset.gid;
-    document.querySelectorAll('.gal-tab').forEach(x=>x.classList.toggle('active',+x.dataset.gid===gid));
-    mount(gid);
-  });
-  mount(0);
-  window.addEventListener('load',()=>requestAnimationFrame(fit));
 })();
 """
 
