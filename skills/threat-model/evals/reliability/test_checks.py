@@ -14,9 +14,12 @@ import tempfile
 from pathlib import Path
 
 import checks
+import dashboard_checks
 import diagram_checks as dc
 import report
 import schema_checks
+
+_FLAGSHIP = Path(__file__).resolve().parents[4] / "docs/examples/amazon-ecs-fullstack-app-terraform"
 
 # The deterministic recon->D2 transform lives next to the skill scripts, not on the eval path.
 _R2D2 = Path(__file__).resolve().parent.parent.parent / "scripts" / "recon_to_d2.py"
@@ -815,6 +818,109 @@ def t_recon_type_excludes_styling():
         "a genuine node type must still pass"
 
 
+def t_dashboard_grounding_and_consistency():
+    """The dashboard is GROUNDED (numbers recount the manifests) and CROSS-OUTPUT consistent (severity ==
+    findings.summary_counts) — and its embedded diagram is the RUN'S real diagram (recon node ids, real
+    dataflow edges), never a fabricated one. Flagship must pass clean."""
+    import build_dashboard as bd
+    res = dashboard_checks.check(_FLAGSHIP)
+    assert not res["defects"], f"flagship dashboard must be clean: {[d['code'] for d in res['defects']]}"
+    m = bd.model_for_run(str(_FLAGSHIP))
+    findings = json.loads((_FLAGSHIP / "findings.json").read_text())
+    # cross-output: dashboard severity == the figures the report shows (summary_counts)
+    for band, n in findings["summary_counts"].items():
+        assert m["severity"][band] == n, f"dashboard severity {band} != report summary_counts"
+    g = m["graph"]
+    assert g["source"] == "mermaid" and len(g["nodes"]) == 23 and len(g["edges"]) == 26
+    recon_ids = {el["id"] for arr in bd.KIND_OF_ARRAY for el in (json.loads((_FLAGSHIP / "recon.json").read_text()).get(arr) or [])}
+    assert all(n["id"] in recon_ids for n in g["nodes"]), "every diagram node must be a recon element"
+
+
+def t_dashboard_flags_fabricated_diagram():
+    """The consistency guard must CATCH a diagram that invents a node or an edge not in the run's real
+    dataflows (the old 'System Map / finding-co-reference edge' failure mode)."""
+    import build_dashboard as bd
+    m = bd.model_for_run(str(_FLAGSHIP))
+    m["graph"]["nodes"].append({"id": "ZZ9", "name": "ghost", "tech": "", "kind": "component",
+                                "sev": "—", "count": 0, "fids": [], "label": "ghost", "evidence": 0})
+    m["graph"]["edges"].append({"a": "C1", "b": "D6", "label": "invented", "etype": "data", "fids": []})
+    codes = {d["code"] for d in dashboard_checks.check(_FLAGSHIP, model=m)["defects"]}
+    assert "diagram-node-fabricated" in codes, f"invented node must be caught: {codes}"
+    assert "diagram-edge-not-real" in codes, f"synthesized (non-dataflow) edge must be caught: {codes}"
+
+
+def t_dashboard_blanks_and_offline():
+    """Templated-blanks + offline: an empty run builds + renders without crashing; the flagship render
+    loads no external resource; absent optional fields degrade to empty states (no fabrication)."""
+    import build_dashboard as bd
+    import dashboard_template
+    empty = bd.build_model({}, {}, {}, None)
+    assert empty["posture"]["band"] == "NO FINDINGS" and empty["graph"]["nodes"] == []
+    assert dashboard_template.render(empty), "empty model must still render"
+    m = bd.model_for_run(str(_FLAGSHIP))
+    for k in ("controls", "cvss", "atlas", "dataflows"):
+        assert m["empty"][k] is True, f"flagship genuinely lacks {k} — must flag empty, not fabricate"
+    htmlout = dashboard_template.render(m)
+    ext = [u for u in re.findall(r'(?:href|src)\s*=\s*["\']([^"\']+)["\']', htmlout)
+           if u.startswith(("http://", "https://", "//"))]
+    assert not ext, f"dashboard must be offline: {ext}"
+
+
+def t_run_plan_exact_match():
+    """run_plan_checks: a run that produced EXACTLY the planned team + outputs passes; a missing planned
+    artifact AND an extra un-planned artifact are both defects; a solo plan with a team is inconsistent."""
+    import run_plan_checks as rp
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "run-plan.json").write_text(json.dumps(
+            {"schema": "run-plan/v1", "mode": "team", "team": ["privacy", "code-review"],
+             "outputs": ["dashboard", "report.pdf"], "confirmed": True}))
+        for f in ("privacy-assessment.md", "code-security-review.md", "dashboard.html", "report.pdf"):
+            (d / f).write_text("x")
+        assert not rp.check(d, "post")["defects"], "exact match must pass"
+        (d / "dashboard.html").unlink()           # planned but missing
+        (d / "report.html").write_text("x")       # produced but not planned
+        (d / "compliance-gap-analysis.md").write_text("x")  # grc ran but not planned
+        codes = {x["code"] for x in rp.check(d, "post")["defects"]}
+        assert {"missing-planned-output", "extra-unplanned-output", "extra-unplanned-specialist"} <= codes, codes
+
+
+def t_run_plan_gate_stage_and_inert():
+    """Gate stage skips planned-but-absent OUTPUTS (report-analyst has not run yet → no deadlock) but
+    still catches extra/team drift; a run with no run-plan.json is wholly inert (back-compat)."""
+    import run_plan_checks as rp
+    with tempfile.TemporaryDirectory() as d:
+        d = Path(d)
+        (d / "run-plan.json").write_text(json.dumps(
+            {"schema": "run-plan/v1", "mode": "solo", "team": [], "outputs": ["report.pdf", "dashboard"], "confirmed": True}))
+        assert not rp.check(d, "gate")["defects"], "gate must not block on outputs not generated yet"
+        assert {"missing-planned-output"} <= {x["code"] for x in rp.check(d, "post")["defects"]}, "post catches missing"
+    with tempfile.TemporaryDirectory() as d2:
+        assert not rp.check(Path(d2), "post")["defects"], "no run-plan.json → inert"
+
+
+def t_start_gate_scoping():
+    """The PreToolUse start gate denies the FIRST recon spawn without a confirmed run-plan, allows it
+    WITH one, and never touches other internal Task spawns (precise scoping — no pipeline wedge)."""
+    gate = Path(__file__).resolve().parents[4] / "hooks" / "validate_gate.py"
+
+    def decide(event):
+        p = subprocess.run(["python3", str(gate)], input=json.dumps(event), capture_output=True, text=True)
+        return "ALLOW" if not p.stdout.strip() else "DENY"
+    with tempfile.TemporaryDirectory() as d:
+        recon = {"tool_name": "Task", "cwd": d, "tool_input": {
+            "subagent_type": "security-architect", "name": "threat-modeler-recon",
+            "prompt": f"Write output to {d}/out/. against the project at /x"}}
+        assert decide(recon) == "DENY", "recon spawn without a run-plan must be denied"
+        out = Path(d) / "out"; out.mkdir()
+        (out / "run-plan.json").write_text(json.dumps(
+            {"schema": "run-plan/v1", "mode": "solo", "team": [], "outputs": ["report.html"], "confirmed": True}))
+        assert decide(recon) == "ALLOW", "recon spawn with a confirmed run-plan must be allowed"
+        other = {"tool_name": "Task", "cwd": d, "tool_input": {
+            "subagent_type": "diagram-specialist", "name": "diagram-specialist", "prompt": "Phase 2"}}
+        assert decide(other) == "ALLOW", "a non-recon internal spawn must never be gated by the start gate"
+
+
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
@@ -824,7 +930,10 @@ def main():
              t_recon_dataflow_integrity, t_recon_node_type_membership, t_recon_semantic_backcompat,
              t_recon_to_d2_smoke,
              t_ragged_matrix_blanks, t_foreign_label_plain_newline, t_d2_crossing_full_path,
-             t_recon_type_excludes_styling]
+             t_recon_type_excludes_styling,
+             t_dashboard_grounding_and_consistency, t_dashboard_flags_fabricated_diagram,
+             t_dashboard_blanks_and_offline,
+             t_run_plan_exact_match, t_run_plan_gate_stage_and_inert, t_start_gate_scoping]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

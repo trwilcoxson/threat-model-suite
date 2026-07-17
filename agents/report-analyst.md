@@ -577,7 +577,14 @@ After generating `consolidated-report.md` and before proceeding to Step 3, verif
 
 ### Step 3: Multi-Format Generation
 
-**You have Bash access. You MUST generate all four files yourself.** Do NOT create scripts for someone else to run — execute all generation code within this session. The assessment has no deliverables until report.html, report.docx, report.pdf, and executive-summary.pptx exist.
+**Consult the run plan first.** If `{output_dir}/run-plan.json` exists, generate **exactly** its
+`outputs[]` — no more, no fewer. Each token maps to one artifact: `report.html`→report.html,
+`report.docx`→report.docx, `report.pdf`→report.pdf, `executive-summary.pptx`→executive-summary.pptx,
+`dashboard`→dashboard.html (see Step 3.5), `analytical-visuals`→the Phase-7 matrices/diagrams. Producing
+an un-planned format OR skipping a planned one is a defect the reference-free `run_plan_checks` will flag.
+If there is no `run-plan.json` (legacy run), fall back to generating all four document formats as before.
+
+**You have Bash access. You MUST generate the selected files yourself.** Do NOT create scripts for someone else to run — execute all generation code within this session. The assessment has no deliverables until the planned outputs exist (by default report.html, report.docx, report.pdf, and executive-summary.pptx).
 
 **Python Environment**: On macOS with managed Python, always use a virtual environment:
 ```bash
@@ -670,6 +677,23 @@ Use the `pptx` skill to produce a leadership-ready presentation at `{output_dir}
 - Diagram images are present (not broken references)
 - No placeholder text remains
 - Slide count is 9-11
+
+#### 3.5 Product-Risk Dashboard (dashboard.html) — only when `"dashboard" ∈ run-plan.outputs`
+
+A single self-contained, offline HTML dashboard generated **deterministically** from the run's manifests
+by a pure-Python generator (no new binary, no CDN). It reads ONLY `recon.json` / `findings.json` /
+`coverage.json` (+ any `*attack-navigator-layer.json`) and **embeds the run's own structural diagram** —
+the same threat model the report shows (nodes = recon element ids, edges = the run's real dataflows from
+`recon.dataflows[]` or `structural-diagram.mmd`), with pan/zoom + click→cross-filter. Every number equals
+the manifests (single source of truth). Run it AFTER the manifests exist:
+
+```bash
+python3 {refs_dir}/../scripts/build_dashboard.py {output_dir} {output_dir}/dashboard.html
+```
+
+It also writes `dashboard.model.json` (the derived model, for transparency/self-checks). It never
+fabricates: absent fields render as graceful empty states. Verify it exists and is non-empty; the
+reference-free `dashboard_checks` (grounding + cross-output consistency + offline) gates it.
 
 ### Diagram Rendering
 

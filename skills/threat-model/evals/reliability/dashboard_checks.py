@@ -1,0 +1,146 @@
+"""Reference-free structural + grounding + cross-output checks for the risk dashboard.
+
+These check PROPERTIES over emitted facts — never a golden answer, abstention-friendly:
+  1. GROUNDING          headline numbers are recounts of the manifests (severity/kpi/coverage/heatmap).
+  2. NON-FABRICATION    no finding id in a structural slot, and no diagram node, that isn't real.
+  3. DIAGRAM CONSISTENCY the embedded diagram is the RUN'S diagram: nodes = recon element ids, edges =
+                        the run's REAL dataflows (recon.dataflows[] or structural-diagram.mmd), NOT
+                        synthesized from finding co-reference; source ∈ {dataflows,mermaid,none}.
+  4. LINK-GROUNDING     the cross-filter adjacency matches the manifests (both directions).
+  5. CROSS-OUTPUT       dashboard-derived counts == the figures the report shows for the SAME run
+                        (severity == findings.summary_counts, coverage % from coverage.json states).
+  6. OFFLINE            the rendered HTML loads no external resource (no CDN/font/asset URL).
+  7. TEMPLATED BLANKS   absent fields → empty states, an empty run does not crash.
+
+Determinism boundary preserved: this only re-derives figures from the manifests and compares — no model,
+no answer key. Returns {"defects":[…], "scores":{…}} in the style of checks.py / coverage_checks.py.
+"""
+from __future__ import annotations
+
+import os
+import re
+import sys
+from collections import Counter
+from pathlib import Path
+
+_HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(_HERE.parent.parent / "scripts"))
+sys.path.insert(0, str(_HERE.parent.parent / "references"))
+import build_dashboard as bd  # noqa: E402
+
+
+def _real_diagram_edges(recon: dict, run_dir) -> set | None:
+    """Independently recompute the run's REAL diagram edges from the source of truth (not from the
+    model), so we can prove the model's edges are a subset — i.e. no finding-co-reference synthesis."""
+    recon = recon or {}
+    valid = set()
+    for arr in bd.KIND_OF_ARRAY:
+        for el in recon.get(arr, []) or []:
+            if "id" in el:
+                valid.add(el["id"])
+    dataflows = recon.get("dataflows") or []
+    if dataflows:
+        return {(f.get("source"), f.get("destination")) for f in dataflows
+                if f.get("source") in valid and f.get("destination") in valid}
+    p = os.path.join(run_dir, "structural-diagram.mmd") if run_dir else None
+    if p and os.path.exists(p):
+        _, edges, _, _ = bd.parse_structural_mmd(open(p).read(), valid)
+        return {(e["a"], e["b"]) for e in edges}
+    return None  # no diagram source → edges must be empty (checked by caller)
+
+
+def check(run_dir, repo=None, model=None) -> dict:
+    run_dir = str(run_dir)
+    defects: list[dict] = []
+
+    def D(code, detail):
+        defects.append({"layer": "dashboard", "code": code, "detail": detail})
+
+    recon = bd.load(run_dir, "recon.json") or {}
+    findings = bd.load(run_dir, "findings.json") or {}
+    coverage = bd.load(run_dir, "coverage.json") or {}
+    F = findings.get("findings", []) or []
+    if model is None:
+        model = bd.model_for_run(run_dir)
+
+    # 1 + 5. GROUNDING / CROSS-OUTPUT — every headline number recounts the manifests.
+    recount = Counter(f.get("severity") for f in F)
+    summary = findings.get("summary_counts") or {}
+    for band in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        if model["severity"][band] != recount.get(band, 0):
+            D("severity-ungrounded", f"{band}: dashboard {model['severity'][band]} != findings recount {recount.get(band,0)}")
+        # cross-output: the report shows summary_counts — the dashboard must match it when present
+        if summary and band in summary and model["severity"][band] != summary.get(band, 0):
+            D("severity-report-drift", f"{band}: dashboard {model['severity'][band]} != findings.summary_counts {summary.get(band)}")
+    if model["counts"]["findings"] != len(F):
+        D("findings-count-ungrounded", f"dashboard {model['counts']['findings']} != {len(F)} findings")
+    if model["counts"]["kill_chains"] != len(findings.get("kill_chains", []) or []):
+        D("killchain-count-ungrounded", "kill-chain count != findings.kill_chains")
+    cov_items = coverage.get("items", []) or []
+    if cov_items:
+        applicable = sum(1 for i in cov_items if i.get("state") != "not-applicable")
+        present = sum(1 for i in cov_items if i.get("state") == "present")
+        exp = round(100 * present / applicable, 1) if applicable else None
+        if model["coverage"]["present_pct"] != exp:
+            D("coverage-ungrounded", f"present_pct dashboard {model['coverage']['present_pct']} != {exp}")
+    total_cells = sum(sum(r) for r in model["heatmap"])
+    graded = sum(1 for f in F if isinstance(f.get("likelihood"), int) and isinstance(f.get("impact"), int))
+    if total_cells != graded:
+        D("heatmap-ungrounded", f"heatmap sums {total_cells} != {graded} graded findings")
+
+    # 2 + 3. DIAGRAM CONSISTENCY — the run's real diagram, not a fabricated one.
+    real_ids = {f["id"] for f in F}
+    recon_ids = {el["id"] for arr in bd.KIND_OF_ARRAY for el in (recon.get(arr, []) or []) if "id" in el}
+    g = model["graph"]
+    if g["source"] not in ("dataflows", "mermaid", "none"):
+        D("diagram-source-invalid", f"unexpected diagram source {g['source']!r}")
+    for n in g["nodes"]:
+        if n["id"] not in recon_ids:
+            D("diagram-node-fabricated", f"diagram node {n['id']} is not a recon element")
+        if set(n["fids"]) - real_ids:
+            D("diagram-node-fid-fabricated", f"node {n['id']} cites unknown finding(s)")
+    allowed = _real_diagram_edges(recon, run_dir)
+    for e in g["edges"]:
+        if e["a"] not in recon_ids or e["b"] not in recon_ids:
+            D("diagram-edge-fabricated", f"edge {e['a']}->{e['b']} references a non-recon node")
+        if allowed is not None and (e["a"], e["b"]) not in allowed:
+            D("diagram-edge-not-real", f"edge {e['a']}->{e['b']} is not in the run's real dataflows/diagram (synthesized?)")
+        if set(e.get("fids", [])) - real_ids:
+            D("diagram-edge-fid-fabricated", f"edge {e['a']}->{e['b']} cites unknown finding(s)")
+    if allowed is None and g["edges"]:
+        D("diagram-edges-without-source", "diagram has edges but the run has no dataflows/structural diagram")
+    if g["source"] != "none" and not g["nodes"]:
+        D("diagram-empty-with-source", "a diagram source exists but no nodes were drawn")
+
+    # 4. LINK-GROUNDING — adjacency matches the manifests exactly.
+    for eid, fids in model["links"]["entity_findings"].items():
+        for fid in fids:
+            f = next((x for x in F if x["id"] == fid), None)
+            if not f or eid not in set((f.get("asset_refs") or []) + (f.get("surface_refs") or [])):
+                D("link-ungrounded", f"entity {eid} → {fid} not backed by a manifest reference")
+
+    # 6 + 7. OFFLINE + NON-FABRICATION over the rendered HTML.
+    try:
+        sys.path.insert(0, str(_HERE.parent.parent / "references"))
+        from dashboard_template import render
+        htmlout = render(model)
+    except Exception as e:  # rendering must never be the reason a real run is blocked
+        D("render-error", f"dashboard render raised {type(e).__name__}: {e}")
+        htmlout = ""
+    if htmlout:
+        ext = [u for u in re.findall(r'(?:href|src)\s*=\s*["\']([^"\']+)["\']', htmlout)
+               if u.startswith(("http://", "https://", "//"))]
+        if ext:
+            D("not-offline", f"external resource load(s): {ext[:3]}")
+        structural = re.findall(r'class="(?:f-id|kc-step[^"]*|node-id)"[^>]*>(TM-\d{3})', htmlout)
+        bad = set(structural) - real_ids
+        if bad:
+            D("html-fabricated-id", f"finding ids in structural slots not in findings.json: {sorted(bad)}")
+
+    return {"defects": defects, "scores": {"dashboard_pass": not defects},
+            "stats": {"nodes": len(g["nodes"]), "edges": len(g["edges"]), "source": g["source"]}}
+
+
+if __name__ == "__main__":
+    import json
+    print(json.dumps(check(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None), indent=2))

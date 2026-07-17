@@ -35,6 +35,8 @@ state) and the eval checks structure over that fact — it never infers content 
 | [`add-boundary-crossing-stride-matrix`](changes/add-boundary-crossing-stride-matrix/) | `boundary-crossing-matrix` | implemented (live verification pending) |
 | [`add-control-coverage-matrix`](changes/add-control-coverage-matrix/) | `control-coverage` | implemented (live verification pending) |
 | [`add-semantic-source-diagram`](changes/add-semantic-source-diagram/) | `semantic-diagram-source` | implemented (spike proven; adoption pilot pending) |
+| [`add-deterministic-run-selection`](changes/add-deterministic-run-selection/) | `run-selection` | proposed |
+| [`add-risk-dashboard-artifact`](changes/add-risk-dashboard-artifact/) | `risk-dashboard` | proposed |
 
 The last seven are the **[visual-engine research program](../docs/research/visual-engine-2026-07/ROADMAP.md)**
 (2026-07), now **implemented** on this branch (the four additive changes fully; the visual-engine pair eval-side,
