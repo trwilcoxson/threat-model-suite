@@ -445,6 +445,7 @@ def build_structural_graph(recon, findings, run_dir):
             graph["svg"] = embed_structural_svg(raw, nodes)
             graph["svg_file"] = os.path.basename(sp)
             graph["svg_node_ids"] = sorted(svg_node_ids(raw))
+            graph["svg_w"], graph["svg_h"] = _svg_natsize(raw)  # viewer fits this exact aspect (no letterbox)
             graph["diagram_source"] = "embedded-svg"
             plabel, pkind, _ = _artifact_meta(os.path.basename(sp))
             graph["svg_label"] = plabel        # e.g. "L4 · Threat Overlay" / "L1 · Architecture"

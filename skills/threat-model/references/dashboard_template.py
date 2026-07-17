@@ -200,7 +200,7 @@ def _inspector_html(m, eid):
           <div class="ins-row"><span class="ins-lab">Technology</span><span class="ins-tech">{tech}</span></div></div>
         <div class="ins-sec"><div class="ins-lab">STRIDE-LM</div><div class="ins-strds">{stride}</div></div>
         {note}
-        <div class="ins-sec"><div class="ins-lab">Findings <span class="ins-n">{e["count"]}</span></div>{flist}</div>
+        <div class="ins-sec ins-findings-sec"><div class="ins-lab">Findings <span class="ins-n">{e["count"]}</span></div>{flist}</div>
         {evb}
       </div>
     </aside>'''
@@ -233,13 +233,14 @@ def sec_diagram_embed(m):
     note = (f'<div class="diag-note">The run\'s actual visual-engine diagram '
             f'(<code>{esc(g.get("svg_file",""))}</code>, <b>{esc(label)}</b>) — {what}. The exact SVG the '
             f'flow embeds in the report; the Inspector surfaces each node\'s metadata beside it.</div>')
+    aspect = (f' style="aspect-ratio:{g["svg_w"]}/{g["svg_h"]}"'
+              if g.get("svg_w") and g.get("svg_h") else "")
     body = f'''<div class="diagram embed">
-      <div class="diag-split">
+      <div class="diag-console">
         <div class="diag-main">
           {_DIAG_TOOLBAR}
-          <div class="diag-viewport" id="diagVP">
+          <div class="diag-viewport" id="diagVP"{aspect}>
             <div id="diagView" class="embed-view">{g["svg"]}</div>
-            <div class="diag-vignette" aria-hidden="true"></div>
           </div>
           {_diag_legend()}
         </div>
@@ -1120,20 +1121,17 @@ main{max-width:1280px;margin:0 auto;padding:34px clamp(18px,4vw,52px) 80px}
 .kpi[data-accent=purple]::after{background:radial-gradient(circle,color-mix(in srgb,var(--purple) 26%,transparent),transparent 70%)}
 .kpi[data-accent=amber]::after{background:radial-gradient(circle,color-mix(in srgb,var(--amber) 26%,transparent),transparent 70%)}
 .kpi-val{font-variant-numeric:tabular-nums}
-/* ---- the threat-map console: big glass viewer + Asset Inspector ---- */
-.diag-split{display:grid;grid-template-columns:1.62fr 1fr;gap:18px;align-items:start}
+/* ---- the threat-map console: a big full-width blueprint viewer, Asset Inspector below ---- */
+.diag-console{display:flex;flex-direction:column;gap:16px}
 .diag-main{min-width:0;display:flex;flex-direction:column}
-.diag-viewport{position:relative;height:clamp(520px,58vh,600px);border-radius:14px;
-  border:1px solid var(--border-hi);
-  background:
-    linear-gradient(color-mix(in srgb,var(--text-2) 5%,transparent) 1px,transparent 1px) -1px -1px/30px 30px,
-    linear-gradient(90deg,color-mix(in srgb,var(--text-2) 5%,transparent) 1px,transparent 1px) -1px -1px/30px 30px,
-    radial-gradient(120% 90% at 50% -10%,color-mix(in srgb,var(--cyan) 9%,transparent),transparent 60%),
-    var(--elevated)}
-.diag-vignette{position:absolute;inset:0;pointer-events:none;border-radius:14px;
-  box-shadow:inset 0 1px 0 var(--border-hi),inset 0 0 70px 6px rgba(3,6,12,.42)}
-[data-theme=light] .diag-vignette{box-shadow:inset 0 1px 0 #fff,inset 0 0 60px 6px rgba(20,30,50,.08)}
-#diagView.embed-view{display:flex;align-items:center;justify-content:center;transform-origin:center}
+/* The run's diagram is a light blueprint (light node cards, dark text). Frame it as a clean, lifted
+   sheet; aspect-ratio (inline, from the real SVG dims) sizes the viewport to the diagram so it FILLS
+   edge-to-edge — no letterbox, big icons — sitting on the dark dashboard like a drawing on a desk. */
+.diag-viewport{position:relative;width:100%;height:auto;max-height:min(72vh,680px);border-radius:16px;
+  overflow:hidden;cursor:grab;touch-action:none;background:#fbfcff;border:1px solid var(--border-hi);
+  box-shadow:0 26px 64px -26px rgba(0,0,0,.7),inset 0 0 0 1px rgba(10,20,40,.06),inset 0 1px 0 rgba(255,255,255,.7)}
+.diag-viewport:active{cursor:grabbing}
+#diagView.embed-view{display:flex;align-items:center;justify-content:center;width:100%;height:100%;transform-origin:center}
 .embed-view>svg,.embed-view #diagSVG{width:100%;height:auto;max-height:100%}
 /* legend */
 .diag-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:12px;padding:10px 14px;border-radius:10px;
@@ -1208,7 +1206,14 @@ main{max-width:1280px;margin:0 auto;padding:34px clamp(18px,4vw,52px) 80px}
 .ins-ev{font-family:var(--mono);font-size:11px;color:var(--text-2);background:var(--void);border:1px solid var(--border);
   border-radius:7px;padding:5px 9px;word-break:break-all}
 .ins-blank{font-size:11.5px;color:var(--text-4);font-style:italic;padding:6px 2px}
-@media(max-width:980px){.diag-split{grid-template-columns:1fr}.diag-viewport{height:460px}}
+/* Inspector sits full-width below the map; go horizontal on wide screens (findings beside the summary) */
+@media(min-width:900px){
+  .inspector .ins-card{display:grid;grid-template-columns:minmax(300px,360px) 1fr;gap:14px 28px;align-items:start}
+  .inspector .ins-card>*{grid-column:1}
+  .inspector .ins-head{grid-column:1 / -1}
+  .inspector .ins-findings-sec{grid-column:2;grid-row:2 / span 9}
+  .inspector .ins-flist{max-height:360px}
+}
 /* small chart craft: filled severity pills, donut lift, component-bar gradient, kill-chain depth */
 .donut{filter:drop-shadow(0 10px 30px rgba(0,0,0,.35))}
 .sev-pill.crit{background:color-mix(in srgb,var(--crit) 14%,transparent)}
@@ -1298,7 +1303,7 @@ function renderInspector(eid){
     +'<div class="ins-rows"><div class="ins-row"><span class="ins-lab">Trust zone</span><span>'+zone+'</span></div>'
     +'<div class="ins-row"><span class="ins-lab">Technology</span><span class="ins-tech">'+tech+'</span></div></div>'
     +'<div class="ins-sec"><div class="ins-lab">STRIDE-LM</div><div class="ins-strds">'+stride+'</div></div>'+note
-    +'<div class="ins-sec"><div class="ins-lab">Findings <span class="ins-n">'+e.count+'</span></div>'+flist+'</div>'+evb+'</div>';
+    +'<div class="ins-sec ins-findings-sec"><div class="ins-lab">Findings <span class="ins-n">'+e.count+'</span></div>'+flist+'</div>'+evb+'</div>';
 }
 function highlightNode(eid){document.querySelectorAll('.node.sel').forEach(n=>n.classList.remove('sel'));
   if(!eid)return;document.querySelectorAll('[data-entity="'+(window.CSS&&CSS.escape?CSS.escape(eid):eid)+'"].node').forEach(n=>n.classList.add('sel'));}
