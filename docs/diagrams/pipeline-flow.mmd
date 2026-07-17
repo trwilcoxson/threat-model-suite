@@ -1,7 +1,11 @@
 %%{init: {"theme": "base", "themeVariables": {"primaryColor": "#f5f5f5", "primaryTextColor": "#1a1a2e", "primaryBorderColor": "#555", "lineColor": "#4a4a6a", "secondaryColor": "#e8eaf6", "fontSize": "15px", "fontFamily": "'Segoe UI', 'Helvetica Neue', Arial, sans-serif", "edgeLabelBackground": "#ffffffee", "clusterBkg": "#f8f9fa", "clusterBorder": "#dee2e6"}, "flowchart": {"useMaxWidth": false, "htmlLabels": true, "curve": "basis", "padding": 24, "nodeSpacing": 50, "rankSpacing": 60}}}%%
 
+%% PNG regen needs mmdc / Chromium (env-blocked here) — a maintainer must regenerate pipeline-flow.png after editing this source.
 flowchart TD
-    Start(["User Request"]) --> Recon["Parent does lightweight recon<br/><i>Glob/Grep for IaC, APIs, data stores</i>"]
+    Start(["User Request"]) --> Step0["<b>Step 0 — run selection</b><br/>menu: mode · team · outputs<br/><i>STOP for user pick</i> → run-plan.json"]
+    Step0 --> Plan{"START gate<br/><i>run-plan.json confirmed?</i>"}
+    Plan -->|"deny → show menu"| Step0
+    Plan -->|"pass"| Recon["Parent does lightweight recon<br/><i>Glob/Grep for IaC, APIs, data stores</i>"]
     Recon --> Mode{"Solo or Team?"}
 
     %% ---------- Solo Path ----------
@@ -13,6 +17,7 @@ flowchart TD
     Solo_DS2 -->|"07-final-diagram.md"| Solo_Gate{"Manifest Validation Gate<br/><i>deterministic</i>"}
     Solo_Gate -->|"pass"| Solo_RA["<b>report-analyst</b><br/><i>blocking</i><br/>QA + Generate 4 formats"]
     Solo_RA --> Solo_Done(["Solo Complete<br/><b>report.html, .docx, .pdf, .pptx</b>"])
+    Solo_RA -.->|"if dashboard ∈ run-plan.outputs"| Dash["<b>dashboard.html</b><br/><i>Phase 8 · opt-in</i><br/>offline analytics + run's own diagram"]
 
     %% ---------- Team Path ----------
     Mode -->|"Complex system,<br/>PII/PHI, cloud IaC,<br/>compliance needs"| Team_SA1["<b>security-architect</b><br/><i>blocking</i><br/>Phase 1 — reconnaissance"]
@@ -39,6 +44,7 @@ flowchart TD
     VS -->|"validation-report.md"| Team_Gate{"Manifest Validation Gate<br/><i>deterministic</i>"}
     Team_Gate -->|"pass"| Team_RA["<b>report-analyst</b><br/><i>blocking</i><br/>QA + Consolidate +<br/>Generate 4 formats"]
     Team_RA --> Team_Done(["Team Complete<br/><b>report.html, .docx, .pdf, .pptx</b>"])
+    Team_RA -.->|"if dashboard ∈ run-plan.outputs"| Dash
 
     %% ---------- Post ----------
     Solo_Done --> Verify["Parent verifies every file exists<br/>and is non-empty<br/><i>pipeline-summary.md</i>"]
@@ -56,7 +62,8 @@ flowchart TD
     classDef note fill:#ffffff,stroke:#cbd5e1,stroke-width:1px,color:#475569
 
     class Start,Solo_Done,Team_Done,Verify start
-    class Mode,Solo_Gate,Team_Gate decision
+    class Step0,Dash agent
+    class Mode,Solo_Gate,Team_Gate,Plan decision
     class Solo_SA1,Solo_SA2,Team_SA1,Team_SA2,PA,GRC,CR,Solo_RA,Team_RA agent
     class Solo_DS1,Solo_DS2,Team_DS1,Team_DS2 diagram
     class Fork,VS control

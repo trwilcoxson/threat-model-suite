@@ -1,13 +1,15 @@
 %%{init: {"theme": "base", "themeVariables": {"primaryColor": "#f5f5f5", "primaryTextColor": "#1a1a2e", "primaryBorderColor": "#555", "lineColor": "#4a4a6a", "secondaryColor": "#e8eaf6", "tertiaryColor": "#f5f5f5", "fontSize": "15px", "fontFamily": "'Segoe UI', 'Helvetica Neue', Arial, sans-serif", "edgeLabelBackground": "#ffffffee", "clusterBkg": "#f8f9fa", "clusterBorder": "#dee2e6"}, "flowchart": {"useMaxWidth": false, "htmlLabels": true, "curve": "basis", "padding": 24, "nodeSpacing": 60, "rankSpacing": 70}}}%%
 
+%% PNG regen needs mmdc / Chromium (env-blocked here) — a maintainer must regenerate system-architecture.png after editing this source.
 flowchart TB
     User(["User: Run a threat model"])
 
     subgraph Parent["Parent Conversation — Full Tool Access"]
         direction TB
         SKILL["<b>SKILL.md</b><br/>Orchestration Guide<br/>+ 8-Phase Methodology"]
+        Step0["<b>Step 0 — run selection</b><br/>menu → run-plan.json<br/><i>START gate before first spawn</i>"]
         Decide{"Solo or<br/>Team?"}
-        SKILL --> Decide
+        SKILL --> Step0 --> Decide
     end
 
     subgraph Core["Core Pipeline — Sequential"]
@@ -34,10 +36,11 @@ flowchart TB
 
     subgraph FS["Shared Filesystem: threat-model-output/"]
         direction LR
+        RunPlan["run-plan.json<br/><i>confirmed mode/team/outputs</i>"]
         Phases["01-08<br/>Phase Files"]
         TeamOut["privacy-assessment.md<br/>compliance-gap-analysis.md<br/>code-security-review.md"]
         ValOut["validation-report.md"]
-        Reports["report.html<br/>report.docx<br/>report.pdf<br/>executive-summary.pptx"]
+        Reports["report.html<br/>report.docx<br/>report.pdf<br/>executive-summary.pptx<br/>dashboard.html <i>(opt-in)</i>"]
         ObsFS["events.ndjson<br/>pipeline-summary.md<br/>coverage.json<br/>report-generation-log.md"]
     end
 
@@ -74,6 +77,6 @@ flowchart TB
     class SA,PA,GRC,CR agent
     class DS diagram
     class VS,RA,Gate post
-    class FS,Phases,TeamOut,ValOut,Reports,ObsFS fs
+    class FS,RunPlan,Phases,TeamOut,ValOut,Reports,ObsFS fs
     class Refs,R1,R2,R3,R4 ref
     class User user
