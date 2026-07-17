@@ -32,12 +32,14 @@ with no remote fetch.
   transform and the controlled icon vocabulary, and the render resolves every icon from a local asset
 
 ### Requirement: Structural diagram checks are reference-free JSON property checks
-When a `recon.json` carries `dataflows[]`, the deterministic layer SHALL verify structural properties over
-the JSON rather than over rendered diagram text: every dataflow `source`/`destination` SHALL resolve to a
-declared element id, each `element.type` SHALL be a member of the controlled node-type vocabulary (a
-non-member SHALL be flagged with a suggestion, never silently accepted or auto-corrected), and each
-dataflow SHALL carry grounding evidence. These checks SHALL NOT judge whether an edge or type is the
-*correct* choice, and SHALL be inert when `dataflows[]` is absent.
+When a `recon.json` carries the relevant semantic fields, the deterministic layer SHALL verify structural
+properties over the JSON rather than over rendered diagram text: every dataflow `source`/`destination`
+SHALL resolve to a declared element id, each `element.type` SHALL be a member of the controlled node-type
+vocabulary (a non-member SHALL be flagged with a suggestion, never silently accepted or auto-corrected),
+and each dataflow SHALL carry grounding evidence. These checks SHALL NOT judge whether an edge or type is
+the *correct* choice, and each sub-check SHALL abstain when its OWN field is absent — the dataflow
+endpoint/grounding checks when `dataflows[]` is absent, the node-type check when no `element.type` is
+declared.
 
 #### Scenario: Dangling edge endpoint is caught
 - **WHEN** a dataflow's `source` or `destination` does not resolve to any declared element id
@@ -47,6 +49,7 @@ dataflow SHALL carry grounding evidence. These checks SHALL NOT judge whether an
 - **WHEN** an `element.type` is not a member of the controlled vocabulary
 - **THEN** it is flagged with a fuzzy-match suggestion, while `unknown`/`other` pass as first-class values
 
-#### Scenario: Checks abstain without a semantic source
-- **WHEN** a `recon.json` declares no `dataflows[]`
-- **THEN** none of the semantic-source checks fire, and the run is validated exactly as before
+#### Scenario: Each sub-check abstains when its own field is absent
+- **WHEN** a `recon.json` declares no `dataflows[]` and no `element.type`
+- **THEN** the dataflow endpoint/grounding checks and the node-type check each stay inert, and the run is
+  validated exactly as before

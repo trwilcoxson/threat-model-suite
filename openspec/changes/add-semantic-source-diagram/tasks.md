@@ -14,7 +14,7 @@
 - [x] 3.1 `dataflow-endpoint-integrity` (consistency): every `source`/`destination` ∈ declared element ids
 - [x] 3.2 `recon-node-type-unknown` (advisory): `element.type` ∈ the vocabulary catalog, fuzzy suggestion on a miss
 - [x] 3.3 `dataflow-ungrounded` (advisory): edge grounding evidence present
-- [x] 3.4 All three inert when `dataflows[]` is absent (back-compat)
+- [x] 3.4 Each sub-check inert when its OWN field is absent (endpoint + grounding checks: no `dataflows[]`; node-type check: no `element.type`) — back-compat
 
 ## 4. Render proof
 - [x] 4.1 Augment a copy of the flagship recon with `dataflows[]` + types + zones (committed flagship untouched)

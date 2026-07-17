@@ -13,9 +13,17 @@ and (d) adopt the right elements from the 2024–2026 LLM/agentic-threat-modelin
 - **poc/** — the rendered bake-off of the flagship ECS structural diagram:
   `00-baseline-mermaid.png` (today) vs `01-d2-structural.png` (**recommended engine**) vs
   `02-plantuml-c4-structural.png` (rejected alternate); plus the `.d2`/`.puml` source.
+- **[DRAWIO-EVAL.md](DRAWIO-EVAL.md)** — draw.io / mxGraph evaluated as a diagram engine (verdict inside).
+- **[OTM-EVAL.md](OTM-EVAL.md)** — Open Threat Model evaluated as a semantic source (verdict: not adopted;
+  it pointed to the `recon.json` + `dataflows[]` approach instead).
+- **[SEMANTIC-SOURCE-SPIKE.md](SEMANTIC-SOURCE-SPIKE.md)** — the `recon.json` + `dataflows[]` → deterministic
+  `recon→D2` spike (rendered proof + the regex→JSON check-replacement table).
 
-## The six proposals (this branch)
+## The proposals (this branch)
 `openspec/changes/`: `modernize-visual-engine`, `add-offline-render-pipeline`,
 `add-cvss-decomposed-likelihood`, `add-ai-ml-attack-surface`, `add-boundary-crossing-stride-matrix`,
-`add-control-coverage-matrix`. All pass `openspec validate --strict`. **Design proposals only — no
-implementation.** Review, then approve the ones to build.
+`add-control-coverage-matrix` (plus `add-semantic-source-diagram`, formalized later from the OTM spike).
+All pass `openspec validate --strict`. **Implemented on this branch** — the four additive changes fully;
+the engine pair (`modernize-visual-engine` + `add-offline-render-pipeline`) eval-side, with
+D2-binary/icon-asset vendoring + diagram migration tracked in their `tasks.md`. See
+[`openspec/README.md`](../../../openspec/README.md) for per-change status.

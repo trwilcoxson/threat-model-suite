@@ -78,8 +78,9 @@ Symbols are organized in three tiers. **Core** symbols MUST appear in every base
 > **This taxonomy IS the controlled node-type→icon vocabulary.** Each `classDef` below is a member of
 > the closed vocabulary in [`node-type-icons.md`](./node-type-icons.md): the shape+`classDef` on the
 > Mermaid path and the `class:` on the D2 path are two spellings of the same node type. `external`,
-> `dataStore`, `identity`, `secrets`, `control`, `pipeline`, `externalDep`, `outOfScope`, and `neutral`
-> are the type tokens; `unknown`/`other` is the abstention member. The eval's vocabulary check verifies
+> `dataStore`, `identity`, `secrets`, `control`, `pipeline`, `externalDep`, and `neutral`
+> are the type tokens; `unknown`/`other` is the abstention member (`outOfScope`, like the risk classes,
+> is a styling class, not a node type). The eval's vocabulary check verifies
 > every node carries a token *from this set* and that the same token renders the same icon everywhere —
 > it never dictates *which* type a node is.
 

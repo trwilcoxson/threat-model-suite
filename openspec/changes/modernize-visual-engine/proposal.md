@@ -57,9 +57,6 @@ follow it.
   in the controlled vocabulary, same type → same icon across diagrams (consistency), legend covers used
   types; `unknown`/`other` passes; `>10%` untyped → defect, else warning. It counts typed-vs-untyped
   and vocab membership, **never which type a node is**. (T4-01)
-- **Add an engine-agnostic edge-endpoint integrity check** — every edge endpoint resolves to a declared
-  node, catching the phantom node a typo'd edge target silently auto-creates (observed in the D2 POC);
-  duplicate ids flagged. (T1-06)
 
 ## Capabilities
 
@@ -72,9 +69,10 @@ follow it.
 ### Modified Capabilities
 - `diagram-verification`: extends the existing deterministic diagram checks with a per-engine extractor
   feeding the SAME reference-free property assertions, the node-type vocabulary compliance grounding
-  check, an edge-endpoint integrity check, and an explicit boundary guarantee that verification stays
-  reference-free across engines. <!-- ADDED requirements only; the existing structure/consistency/
-  grounding assertions in diagram_checks.py keep their meaning verbatim. -->
+  check, and an explicit boundary guarantee that verification stays reference-free across engines.
+  (Edge-endpoint integrity — dangling/duplicate-id resolution — is deferred, not delivered here; see
+  tasks.md 4.1/4.2.) <!-- ADDED requirements only; the existing structure/consistency/grounding
+  assertions in diagram_checks.py keep their meaning verbatim. -->
 
 ## Impact
 
@@ -86,7 +84,8 @@ follow it.
   `references/node-type-icons.md` (the versioned vocabulary map + vendored icon set), and
   `references/mermaid-diagrams.md` / `mermaid-review-checklist.md` (engine-neutral wording).
 - Eval: `skills/threat-model/evals/reliability/diagram_checks.py` (per-engine extractor split; new
-  vocabulary-compliance and edge-endpoint checks; property assertions unchanged in meaning).
+  node-type vocabulary-compliance check; property assertions unchanged in meaning). Edge-endpoint
+  integrity is deferred (tasks.md 4), not landed in this pass.
 - Rendering: the diagram render step gains extension dispatch (`.mmd`→mmdc, `.d2`→d2) and vendors the
   icon set + pins the engine — the install/preflight mechanics are owned by the pipeline-integration
   workstream and are a dependency, not part of this change.

@@ -616,6 +616,7 @@ Now that findings are scored and kill chains declared, produce and verify the ri
 **Analytical & communication visuals (conditional — produce each when its precondition holds, else mark NOT APPLICABLE with a one-line reason):**
 - **STRIDE-per-element coverage matrix** — always. Fully populated (every cell a `TM-NNN` / `n/a` / `clean`).
 - **Boundary-crossing STRIDE-per-interaction matrix** — when the DFD has ≥1 edge crossing a trust zone (see analytical-visuals.md §1a). Rows = the crossing edges only (keyed `Edge (src → dst)`); every crossing edge gets exactly one decided row; a single-zone system is marked NOT APPLICABLE.
+- **Threat-to-Control Coverage Matrix** — when ≥1 finding (the defensive dual of the STRIDE matrix; eval `no-control-matrix` fires otherwise). Columns include a Control + a Disposition column; every finding placed, and a zero-control finding's row shows `GAP`.
 - **Likelihood×Impact risk heat map** — when any finding is scored. 5×5 grid, every finding at its own (L,I) cell.
 - **MITRE ATT&CK technique layer** — when any finding carries a MITRE id. Technique table; Navigator JSON layer at ≥5 techniques.
 - **MITRE ATLAS technique layer** — when `has_ai_ml` (see analytical-visuals.md §3a). Reuse the ATT&CK Navigator emitter with `domain: "atlas-atlas"` and `AML.T####` ids; the shown ids are a subset of the findings' own `atlas[]` ids. Not produced on non-AI targets.

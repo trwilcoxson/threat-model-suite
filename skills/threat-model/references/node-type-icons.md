@@ -33,10 +33,10 @@ icons live in the core** (a licensing decision — see §5).
 |------|---------|--------------------------------|---------|
 | `service` | `mdi:server` | `svc` | Application, API, compute, running process-as-service |
 | `process` | `mdi:cog` | — | A DFD process / transformation |
-| `datastore` | `mdi:database` | `store`, `dataStore` | Database, cache, bucket, file store |
+| `datastore` | `mdi:database` | `store`, `datastores` | Database, cache, bucket, file store |
 | `queue` | `mdi:tray-full` | — | Message queue / topic / event bus |
 | `external-actor` | `mdi:account` | `actor`, `external`, `external-entity` | Human/third-party actor outside the trust boundary |
-| `external-dep` | `mdi:package-variant` | `extdep`, `externalDep`, `external-dependency` | Third-party SaaS / API / package dependency |
+| `external-dep` | `mdi:package-variant` | `extdep`, `externaldep`, `external-dependency` | Third-party SaaS / API / package dependency |
 | `identity` | `mdi:account-key` | `iam` | IAM role, service account, IdP |
 | `secret` | `mdi:key` | `secrets`, `kms` | Vault, HSM, KMS, cert authority |
 | `control` | `mdi:shield-check` | — | WAF, IDS, MFA, rate limiter |
@@ -89,7 +89,11 @@ this `references/` dir); **no remote URLs, no AWS/Azure/GCP brand icons**.
   `icon:` against the `.d2` file, not the CWD) and embedded as a base64 data URI at render time (fully
   offline). A missing local icon makes `d2` fail loud (`failed to bundle local images`), so a broken
   path can never silently render blank — unlike a remote URL.
-- **Mermaid path** references the same `icons/<type>.svg` via `@{shape: icon}` (mermaid-spec.md §3).
+- **Mermaid path** does NOT point at the per-type `icons/<type>.svg` files. Mermaid's `@{shape: icon}`
+  resolves an icon-pack **logical id** (`mdi:*`) registered from a **locally-mirrored MDI JSON pack**
+  (`mermaid.registerIconPacks` with the offline `@iconify-json/mdi` JSON — see mermaid-spec.md §3), not a
+  per-type SVG file. The per-type `icons/<type>.svg` files are the **D2** binding target; the two engines
+  share the *vocabulary* (§2), but resolve the glyph through different offline mechanisms.
 
 Still optional / not vendored: a per-cloud-provider logo layer (RDS/KMS/SQS) as a *separate, opt-in*
 set — it improves fidelity but grows the licensing surface, so it stays out of the generic core.

@@ -26,6 +26,7 @@ FONT="${TM_FONT:-$REFS/fonts/SourceSansPro-Regular.ttf}"
 
 fail=0
 bad()  { echo "PREFLIGHT FAIL: $*" >&2; fail=1; }
+warn() { echo "PREFLIGHT WARN: $*" >&2; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
 # --- hard dep: without d2 no D2 diagram renders at all
@@ -33,7 +34,10 @@ have d2 || bad "'d2' binary not found — the D2 render toolchain is not install
 
 # --- vendored, hermetic assets (referenced by LOCAL path so no network fetch happens at render time)
 [ -d "$ICONS" ] || bad "vendored icon set absent ($ICONS) — icons must be local files; a remote icon breaks air-gap and renders broken while exiting 0"
-[ -f "$FONT" ]  || bad "vendored font absent ($FONT) — a pinned local font keeps layout metrics deterministic"
+# The font is OPTIONAL (soft): d2 renders with its default font, and the rasterizer + icons work without
+# a vendored one. Vendoring Source Sans Pro only makes typography consistent across renders — a nicety,
+# not a hard dependency, so its absence WARNS but never blocks the pipeline.
+[ -f "$FONT" ]  || warn "vendored font absent ($FONT) — d2 renders with its default font; vendor Source Sans Pro for consistent typography across renders (optional, not required)"
 
 # --- PNG tier: primary (warmed browser) if its cache is present; else a browser-free rasterizer
 #     (librsvg's rsvg-convert or resvg) drives the fallback tier.

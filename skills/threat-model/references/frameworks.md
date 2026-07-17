@@ -242,7 +242,7 @@ Worked examples (the eval locks these against drift):
 | `AV:N/AC:H/PR:L/UI:N` | 1.620 | 0.42 | **3** |
 | `AV:L/AC:H/PR:H/UI:R` | 0.333 | 0.09 | **1** |
 
-This is the **single source** the reference-free eval implements (`evals/reliability/checks.py` `exploitability_band()`); when a finding carries a `cvss_vector`, the eval recomputes the sub-score over that vector and flags a `cvss-likelihood` defect if it does not band to the finding's own stated Likelihood. It is a **consistency relation, not an answer key** — change the vector and the required band changes with it; it never asserts which Likelihood is "correct". The thresholds are **v1 and tunable** — a recalibration is a one-line edit to the table above, which the eval reads as its source of truth.
+This is the **single source** the reference-free eval implements (`evals/reliability/checks.py` `exploitability_band()`); when a finding carries a `cvss_vector`, the eval recomputes the sub-score over that vector and flags a `cvss-likelihood` defect if it does not band to the finding's own stated Likelihood. It is a **consistency relation, not an answer key** — change the vector and the required band changes with it; it never asserts which Likelihood is "correct". The thresholds are **v1 and tunable**, but note the boundary: `checks.py` is the **single implementation** — the metric weights, `EXPLOIT_MAX`, and the quintile split are **hardcoded there**, not read from this file. This table is **hand-synced documentation** of that code, and the worked examples above are locked against drift by a self-check (`test_checks.py::t_cvss`). A recalibration is therefore a **code change** to `checks.py` mirrored back into this table, not a data edit the eval consumes.
 
 ### Impact Scoring (1-5)
 

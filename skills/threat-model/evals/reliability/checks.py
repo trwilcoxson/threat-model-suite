@@ -59,8 +59,10 @@ _OWASP_LLM_STRICT = re.compile(r"LLM(0[1-9]|10):2025")
 def exploitability_band(vector: str) -> int:
     """Map a CVSS v3.1 exploitability vector to a 1-5 Likelihood band via normalized quintiles.
     Raises ValueError on an unparseable vector.
-    # ponytail: v1 uniform quintile split; upgrade path = recalibrate the five thresholds in
-    # frameworks.md from a corpus of scored runs (a data edit, not a code change)."""
+    # ponytail: v1 uniform quintile split; upgrade path = recalibrate the five thresholds HERE (the
+    # weights + EXPLOIT_MAX + this split are hardcoded in checks.py, the single implementation;
+    # frameworks.md is hand-synced docs) from a corpus of scored runs — a CODE change, re-locked by
+    # the worked-example self-check."""
     m = _CVSS_VECTOR_RE.match((vector or "").strip())
     if not m:
         raise ValueError(f"unparseable CVSS exploitability vector {vector!r}")
@@ -180,7 +182,9 @@ def recon_semantic_checks(recon: dict | None) -> list[dict[str, str]]:
     typed = [(c.get("id", "?"), c["type"]) for c in (recon.get("components") or [])
              if isinstance(c, dict) and (c.get("type") or "").strip()]
     if typed:
-        members, _icons = diagram_checks._load_vocab()   # reuse the one catalog loader, no duplicate list
+        # NODE-TYPE members only (styling classes like highRisk/outOfScope excluded) — a component.type
+        # is a node type, not a diagram styling class, so a styling token must NOT pass here.
+        _all, _icons, members = diagram_checks._load_vocab()
         for cid, tok in typed:
             if tok.lower() in members:
                 continue

@@ -391,9 +391,11 @@ class _D2Extractor:
         return out
 
     def crossing_edges(self, src):
-        """Edges whose endpoints sit in different trust zones. In D2 the zone is encoded by the
-        dotted path: `VPC.PRIV.C7` -> innermost container `PRIV`; a bare id -> the external zone
-        (None). Structural read of the DFD the agent drew; never decides where a zone belongs."""
+        """Edges whose endpoints sit in different trust zones. In D2 the zone is the FULL container
+        path — every dotted segment EXCEPT the leaf id: `VPC.PRIV.C7` -> zone `(VPC, PRIV)`; a bare id
+        -> the external zone (None). Comparing the whole path (not just the innermost container key)
+        keeps `A.PRIV.x -> B.PRIV.y` a crossing: two `PRIV` containers under different parents are
+        different zones. Structural read of the DFD the agent drew; never decides where a zone belongs."""
         out = []
         for line in src.splitlines():
             s = line.strip()
@@ -402,8 +404,8 @@ class _D2Extractor:
             ep = _d2_edge_paths(s)
             if not ep:
                 continue
-            z1 = ep[0].split(".")[-2] if "." in ep[0] else None
-            z2 = ep[1].split(".")[-2] if "." in ep[1] else None
+            z1 = tuple(ep[0].split(".")[:-1]) if "." in ep[0] else None
+            z2 = tuple(ep[1].split(".")[:-1]) if "." in ep[1] else None
             if z1 != z2:
                 out.append((ep[0].split(".")[-1], ep[1].split(".")[-1]))
         return out
@@ -447,9 +449,15 @@ _VOCAB_FALLBACK = {
 
 
 @functools.lru_cache(maxsize=1)
-def _load_vocab() -> tuple[frozenset, dict]:
-    """Return (members, icons). members = every accepted token (types + aliases + styling +
-    unknown/other), lowercased; icons = token -> canonical icon id where one is defined."""
+def _load_vocab() -> tuple[frozenset, dict, frozenset]:
+    """Return (members, icons, node_types).
+      members    = every accepted token (types + aliases + styling classes + unknown/other), lowercased
+                   — the set a diagram `:::class` / D2 `class:` may draw from.
+      icons      = token -> canonical icon id where one is defined.
+      node_types = the node-type tokens + aliases ONLY, EXCLUDING styling classes — the set a recon
+                   `component.type` must belong to. A styling class (highRisk, outOfScope, ...) is a
+                   valid diagram class but is NOT a node type, so it must not pass as a component type
+                   (checks.recon_semantic_checks)."""
     data = _VOCAB_FALLBACK
     try:
         if _VOCAB_JSON.exists():
@@ -457,19 +465,22 @@ def _load_vocab() -> tuple[frozenset, dict]:
     except (OSError, ValueError):
         data = _VOCAB_FALLBACK
     members: set[str] = set()
+    node_types: set[str] = set()
     icons: dict[str, str] = {}
     for t, meta in (data.get("types") or {}).items():
         members.add(t.lower())
+        node_types.add(t.lower())
         icon = (meta or {}).get("icon")
         if icon:
             icons[t.lower()] = icon
         for a in (meta or {}).get("aliases", []) or []:
             members.add(a.lower())
+            node_types.add(a.lower())
             if icon:
                 icons[a.lower()] = icon
     for c in data.get("styling_classes") or []:
         members.add(c.lower())
-    return frozenset(members), icons
+    return frozenset(members), icons, frozenset(node_types)
 
 
 def _node_type_checks(eblocks: list[Block], report_text: str) -> tuple[list[tuple[str, str]], list[str]]:
@@ -479,7 +490,7 @@ def _node_type_checks(eblocks: list[Block], report_text: str) -> tuple[list[tupl
     gracefully: when NO node carries a type token the vocabulary is simply not in use on this
     report, so the whole check is skipped (an honest abstention, mirroring the precondition gates
     elsewhere) — it therefore cannot flip a diagram that carries no type tokens yet."""
-    members, _icons = _load_vocab()
+    members, _icons, _node_types = _load_vocab()   # diagram :::class draws from the full set (incl. styling)
     defects: list[tuple[str, str]] = []
     warnings: list[str] = []
 
@@ -528,15 +539,15 @@ def _node_type_checks(eblocks: list[Block], report_text: str) -> tuple[list[tupl
 
 
 # ---- Browser-free (resvg) raster-tier plain-label constraint (add-offline-render-pipeline) --------
-# Foreign-object / multi-line label markers a BROWSER-FREE rasterizer (resvg / librsvg) DROPS: D2
-# renders `|md ...|` / block-string / `\n`-bearing labels via <foreignObject>, and Mermaid `<br>` line
-# breaks are htmlLabels -> foreignObject too. Rasterized on the fallback tier these come out BLANK while
-# d2/resvg exit 0 — the one silent failure this change exists to prevent.
+# TRUE foreignObject markers a BROWSER-FREE rasterizer (resvg / librsvg) DROPS: D2 renders `|md ...|` /
+# block-string labels via <foreignObject>, and Mermaid `<br>` line breaks are htmlLabels -> foreignObject
+# too. Rasterized on the fallback tier these come out BLANK while d2/resvg exit 0 — the one silent failure
+# this change exists to prevent. A plain quoted `\n` label is NOT flagged: D2 renders it as a multi-line
+# SVG <tspan> (not foreignObject) and resvg/rsvg-convert draw it fine, so `\n` alone is no risk.
 _FOREIGN_LABEL = re.compile(
     r"\|\s*md\b"        # D2 markdown block label:  label: |md ... |
     r"|\|\s*`"          # D2 code/block-string label: |`...`|
     r"|<br\s*/?>"       # HTML line break (Mermaid/D2 htmlLabels -> foreignObject)
-    r"|\\n"             # explicit newline escape inside a label -> multi-line
     r"|```",            # fenced markdown inside a block string
     re.IGNORECASE,
 )
@@ -659,7 +670,11 @@ def analytical_checks(report_text: str, blocks: list, recon: dict | None, findin
         D("no-stride-matrix", "no STRIDE-per-element coverage matrix (table with S,T,R,I,D,E,LM columns)")
     else:
         present.append("stride-matrix")
-        blanks = sum(1 for r in matrix["rows"] for c in r[1:] if not c.strip())
+        # Blank cells = empty present cells + cells the row OMITS entirely (a ragged row shorter than
+        # the header is itself a blank-cell defect — it must not escape the count by not being there).
+        header = matrix["header"]
+        blanks = (sum(1 for r in matrix["rows"] for c in r[1:] if not c.strip())
+                  + sum(max(0, len(header) - len(r)) for r in matrix["rows"]))
         if blanks:
             D("stride-matrix-blanks", f"STRIDE matrix has {blanks} blank cell(s); every cell must be TM-id / n/a / clean")
         body = " ".join(c for r in matrix["rows"] for c in r)
@@ -685,7 +700,10 @@ def analytical_checks(report_text: str, blocks: list, recon: dict | None, findin
               "matrix (table with an Edge/Interaction/src→dst first column + S,T,R,I,D,E,LM columns)")
         else:
             present.append("boundary-crossing-matrix")
-            blanks = sum(1 for r in bcm["rows"] for c in r[1:] if not c.strip())
+            # Same ragged-row guard as the per-element matrix: omitted trailing cells count as blank.
+            bh = bcm["header"]
+            blanks = (sum(1 for r in bcm["rows"] for c in r[1:] if not c.strip())
+                      + sum(max(0, len(bh) - len(r)) for r in bcm["rows"]))
             if blanks:
                 D("crossing-matrix-blanks",
                   f"boundary-crossing matrix has {blanks} blank cell(s); every cell must be TM-id / n-a / clean")
