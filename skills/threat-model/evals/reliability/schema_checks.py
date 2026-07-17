@@ -102,7 +102,8 @@ def violations(schema: dict, data: Any) -> list[str]:
 HERE = Path(__file__).resolve().parent
 
 _SCHEMA_FOR = {"recon.json": "recon.schema.json", "findings.json": "findings.schema.json",
-               "coverage.json": "coverage.schema.json", "run-plan.json": "run-plan.schema.json"}
+               "coverage.json": "coverage.schema.json", "run-plan.json": "run-plan.schema.json",
+               "portfolio.json": "portfolio.schema.json"}
 
 
 def check_sample_runs(root: Path) -> dict:

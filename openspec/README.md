@@ -37,6 +37,7 @@ state) and the eval checks structure over that fact — it never infers content 
 | [`add-semantic-source-diagram`](changes/add-semantic-source-diagram/) | `semantic-diagram-source` | implemented (spike proven; adoption pilot pending) |
 | [`add-deterministic-run-selection`](changes/add-deterministic-run-selection/) | `run-selection` | proposed |
 | [`add-risk-dashboard-artifact`](changes/add-risk-dashboard-artifact/) | `risk-dashboard` | proposed |
+| [`add-portfolio-chain-view`](changes/add-portfolio-chain-view/) | `portfolio-view` (new), `run-selection` (modified) | implemented (live verification pending) |
 
 The last seven are the **[visual-engine research program](../docs/research/visual-engine-2026-07/ROADMAP.md)**
 (2026-07), now **implemented** on this branch (the four additive changes fully; the visual-engine pair eval-side,

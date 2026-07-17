@@ -2,7 +2,7 @@
 
 %% PNG regen needs mmdc / Chromium (env-blocked here) — a maintainer must regenerate pipeline-flow.png after editing this source.
 flowchart TD
-    Start(["User Request"]) --> Step0["<b>Step 0 — run selection</b><br/>menu: mode · team · outputs<br/><i>STOP for user pick</i> → run-plan.json"]
+    Start(["User Request"]) --> Step0["<b>Step 0 — run selection</b><br/>menu: mode · team · outputs · chain <i>(opt-in)</i><br/><i>STOP for user pick</i> → run-plan.json"]
     Step0 --> Plan{"START gate<br/><i>run-plan.json confirmed?</i>"}
     Plan -->|"deny → show menu"| Step0
     Plan -->|"pass"| Recon["Parent does lightweight recon<br/><i>Glob/Grep for IaC, APIs, data stores</i>"]
@@ -46,6 +46,9 @@ flowchart TD
     Team_RA --> Team_Done(["Team Complete<br/><b>report.html, .docx, .pdf, .pptx</b>"])
     Team_RA -.->|"if dashboard ∈ run-plan.outputs"| Dash
 
+    %% ---------- Portfolio meta-view (opt-in, level ABOVE the per-product dashboard) ----------
+    Dash -.->|"if chained (Step-0 opt-in)<br/>upsert run into portfolio.json"| Portfolio["<b>portfolio.html</b> — portfolio meta-view<br/><i>level above the per-product dashboard</i><br/>rolls up N member runs (worst-of posture,<br/>summed severity, assessed-weighted coverage,<br/>chain map, cross-product CWE/ATT&amp;CK/STRIDE)<br/>cards drill into each product's own dashboard.html"]
+
     %% ---------- Post ----------
     Solo_Done --> Verify["Parent verifies every file exists<br/>and is non-empty<br/><i>pipeline-summary.md</i>"]
     Team_Done --> Verify
@@ -63,6 +66,7 @@ flowchart TD
 
     class Start,Solo_Done,Team_Done,Verify start
     class Step0,Dash agent
+    class Portfolio done
     class Mode,Solo_Gate,Team_Gate,Plan decision
     class Solo_SA1,Solo_SA2,Team_SA1,Team_SA2,PA,GRC,CR,Solo_RA,Team_RA agent
     class Solo_DS1,Solo_DS2,Team_DS1,Team_DS2 diagram

@@ -1197,6 +1197,55 @@ def t_dashboard_evidence():
     assert not dashboard_checks.check(_FLAGSHIP, model=fm)["defects"], "flagship dashboard stays clean"
 
 
+def t_portfolio_reconciliation():
+    """Portfolio meta-view: a reconciling portfolio passes; a drifted aggregate, a dangling rendered edge,
+    an uncovered-as-a-number, and a non-worst-of posture each get caught. Reference-free — properties over
+    the emitted model, no answer key. Inert without a portfolio.json (asserted last)."""
+    import copy
+    import portfolio_checks as pc  # side-effect: puts scripts/ + references/ on sys.path
+    import build_portfolio as bp
+
+    repo = str(Path(__file__).resolve().parents[4])
+    pf = {"schema": "portfolio/v1", "id": "chain:test", "name": "Test",
+          "members": [
+              {"run_id": "crapi", "path": "skills/threat-model/evals/reliability/sample-runs/crapi/run1"},
+              {"run_id": "nodegoat", "path": "skills/threat-model/evals/reliability/sample-runs/nodegoat/run1"},
+          ]}
+    with tempfile.TemporaryDirectory() as d:
+        m = bp.build_portfolio_model(pf, repo, str(Path(d) / "member-dashboards"))
+
+    # POSITIVE: aggregates reconcile by construction and the pure check is clean.
+    agg = {k: sum(mem["severity"][k] for mem in m["members"]) for k in ("CRITICAL", "HIGH", "MEDIUM", "LOW")}
+    assert agg == m["severity"], "aggregate must equal member sum"
+    assert pc.reconcile(m) == [], f"reconciling portfolio must pass, got {pc.reconcile(m)}"
+
+    # NEGATIVE: a drifted aggregate is caught.
+    bad = copy.deepcopy(m); bad["severity"]["HIGH"] += 3
+    assert any(x["code"] == "severity-drift" for x in pc.reconcile(bad)), "drifted aggregate not caught"
+
+    # NEGATIVE: a kept edge with an endpoint that is not a real element id is caught.
+    bad = copy.deepcopy(m)
+    bad["edges"].append({"id": "BAD-1", "source": {"run": "crapi", "element": "X404"},
+                         "target": {"run": "nodegoat", "element": "X404"}})
+    assert any(x["code"] == "edge-dangling-rendered" for x in pc.reconcile(bad)), "dangling rendered edge not caught"
+
+    # NEGATIVE: an uncovered member reported as a coverage number (not unknown) is caught.
+    bad = copy.deepcopy(m)
+    bad["members"][0]["coverage_applicable"] = 0
+    bad["members"][0]["coverage_pct"] = 88.0
+    assert any(x["code"] == "uncovered-not-unknown" for x in pc.reconcile(bad)), "uncovered-as-green not caught"
+
+    # NEGATIVE: a member is CRITICAL but the portfolio posture is not worst-of.
+    bad = copy.deepcopy(m)
+    bad["members"][0]["severity"]["CRITICAL"] += 1
+    bad["posture"]["band"] = "MODERATE"
+    assert any(x["code"] == "posture-not-worst-of" for x in pc.reconcile(bad)), "non-worst-of posture not caught"
+
+    # INERT: a directory with no portfolio.json yields no defects (back-compat for every existing run).
+    with tempfile.TemporaryDirectory() as d:
+        assert pc.check(d)["defects"] == [], "portfolio check must abstain when no portfolio.json is present"
+
+
 def main():
     tests = [t_attackflow, t_legendedges, t_contentsniff_layer, t_contentsniff_auth,
              t_grounding, t_layersize, t_sectionkeyword, t_cvss, t_control, t_control_matrix,
@@ -1213,7 +1262,8 @@ def main():
              t_dashboard_gallery,
              t_dashboard_blanks_and_offline,
              t_finding_evidence, t_dashboard_evidence,
-             t_run_plan_exact_match, t_run_plan_gate_stage_and_inert, t_start_gate_scoping]
+             t_run_plan_exact_match, t_run_plan_gate_stage_and_inert, t_start_gate_scoping,
+             t_portfolio_reconciliation]
     for t in tests:
         t()
         print(f"ok  {t.__name__}")

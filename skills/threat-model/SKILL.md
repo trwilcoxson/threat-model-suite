@@ -170,6 +170,9 @@ not gated, so you write the plan after the user picks, then spawn — no acciden
   plan back for confirmation**, write `run-plan.json` (`source: "one-shot"`), proceed. Shorthands:
   `mode=solo|team`, `team=privacy,grc,code-review` (or `none`/`all`),
   `outputs=report.html,report.docx,report.pdf,executive-summary.pptx,dashboard,analytical-visuals` (or `all`).
+  **Chaining (opt-in, default standalone):** `chain=<portfolio-id>, run-id=<this-run's-id>` adds the run to
+  a portfolio/chain (e.g. `…, chain=acme-security-portfolio, run-id=crapi`). `chain=none` or omitted ⇒
+  standalone. `run-id` defaults to the output dir's basename; it must be unique within the portfolio.
 - **Menu (unspecified):** print the menu and STOP — emit no spawn:
 
 ```
@@ -187,20 +190,48 @@ Before I start, choose your run plan (nothing runs until you pick):
             [ ] dashboard  (the product-risk dashboard)
             [ ] analytical-visuals  (STRIDE/control matrices, ATLAS, diagrams)
 
+  CHAIN     (•) Standalone — this run is its own product (default)
+            ( ) Add to a portfolio/chain — combine with related product runs
+                 → portfolio id: __________   (existing id, or a new one to create)
+                 → this product's run id in the chain: __________  (defaults to the output dir name)
+
 Reply e.g.  "team = privacy + code-review, outputs = dashboard + pdf"
-       or   "solo, outputs = all".
+       or   "solo, outputs = all"
+       or   "team = all, outputs = dashboard, chain = acme-portfolio, run-id = crapi".
 ```
 
 On the user's pick, `mkdir -p {output_dir}` and **write `{output_dir}/run-plan.json`**:
 
 ```json
 { "schema": "run-plan/v1", "mode": "team", "team": ["privacy", "code-review"],
-  "outputs": ["dashboard", "report.pdf"], "confirmed": true, "source": "one-shot" }
+  "outputs": ["dashboard", "report.pdf"], "confirmed": true, "source": "one-shot",
+  "chain": { "portfolio_id": "acme-security-portfolio", "run_id": "crapi",
+             "portfolio_path": "../portfolio.json" } }
 ```
 
 - `team` MUST be `[]` when `mode="solo"`; a subset of `["privacy","grc","code-review"]` otherwise.
 - `outputs` is a non-empty subset of the six formats above.
 - `confirmed: true` records that the user picked (the start gate requires it).
+- `chain` is **omitted (or `null`) for a standalone run** (the default). When the user opts in, all three
+  sub-fields are required — the existing start gate validates it against `run-plan.schema.json`; no new gate,
+  no second stop. Chaining rides the same fact that already prevents an accidental start.
+
+**Post-run membership upsert (only when `chain` is set).** After the pipeline completes and the manifests
+are emitted, join the run to its portfolio deterministically — membership only, never a relationship:
+
+1. If `chain.portfolio_path` doesn't exist, create it as a `portfolio/v1` file (`schema`, `id` =
+   `chain.portfolio_id`, `name`, `members: []`).
+2. **Upsert** `members[]` keyed by `chain.run_id`: add `{run_id, label, path}` if new, or update the existing
+   entry's `path` in place (idempotent — a re-run never duplicates a member). `path` is the run's output dir
+   relative to the portfolio file.
+3. **Never write `relationships[]`.** Declared cross-product edges are a separate, explicit, provenance-bearing
+   act (real element ids on both ends — see [scripts/build_portfolio.py](scripts/build_portfolio.py) and the
+   `portfolio/v1` schema). Joining a chain never invents an edge (two-level opt-in: be in the chain, then be
+   linked).
+4. Optionally regenerate the portfolio meta-view:
+   `python3 skills/threat-model/scripts/build_portfolio.py <portfolio.json> <out.html> --repo <repo-root>` —
+   a self-contained offline `portfolio.html` that rolls up every member (aggregate posture, chain map, ranked
+   member cards drilling into each product's `dashboard.html`, grounded shared-CWE/ATT&CK tables).
 
 The plan then SHAPES the run deterministically: spawn a specialist **iff** it is in `team[]`, and have the
 report-analyst emit **exactly** `outputs[]`. The determinism boundary is preserved — the menu and schema

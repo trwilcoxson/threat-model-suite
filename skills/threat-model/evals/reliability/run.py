@@ -47,6 +47,9 @@ def _optional_defects(run_dir: Path, stage: str = "post") -> list[dict]:
     if (run_dir / "run-plan.json").exists():
         import run_plan_checks
         extra += run_plan_checks.check(run_dir, stage=stage)["defects"]
+    if (run_dir / "portfolio.json").exists():
+        import portfolio_checks
+        extra += portfolio_checks.check(run_dir)["defects"]
     return extra
 
 
@@ -169,7 +172,7 @@ def cmd_validate(a) -> None:
 
     # "dashboard"/"run-plan" join the gate ONLY via defects that _optional_defects emits, which it
     # emits only when the artifact exists — so a run without them can never be blocked on them.
-    GATE = {"structure", "consistency", "coverage", "dashboard", "run-plan"}
+    GATE = {"structure", "consistency", "coverage", "dashboard", "run-plan", "portfolio"}
     if a.repo:
         GATE.add("grounding")
     # report.md is the eval-executor's artifact; in the production flow it does not exist yet at
