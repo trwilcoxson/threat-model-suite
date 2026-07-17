@@ -129,11 +129,100 @@ def _more_diagrams(m):
             f'</summary><div class="more-list">{"".join(items)}</div></details>')
 
 
+# ---------- Asset Inspector: surface every selected node's agent metadata beside the map ----------
+# The metadata the agents already emitted (in component_risk / links / findings_by_id / recon) is
+# trapped "in the image" of the raw SVG. The Inspector lifts it OUT: for the selected recon element it
+# shows id, name, kind/type, trust zone, risk band + max L×I, its findings (each scrolls to it below),
+# STRIDE-LM, and the element's own evidence/annotations. Reshape only; absent field -> honest blank.
+
+KIND_LABEL = {"component": "Component", "store": "Data store", "entry": "Entry point",
+              "external": "External dependency", "actor": "Actor / role", "boundary": "Trust boundary"}
+# stroke-only type glyphs (styled via CSS: fill:none; stroke:currentColor) — a small typed cue per kind.
+_GLYPH = {
+    "component": '<rect x="3.5" y="5" width="13" height="10" rx="1.6"/><path d="M3.5 8.5h13"/>',
+    "store": '<ellipse cx="10" cy="5.5" rx="6.5" ry="2.4"/><path d="M3.5 5.5v9c0 1.3 2.9 2.4 6.5 2.4s6.5-1.1 6.5-2.4v-9"/>',
+    "entry": '<path d="M11.5 3.5H4.5v13h7"/><path d="M8 10h8.5"/><path d="M13.5 6.5 17 10l-3.5 3.5"/>',
+    "external": '<path d="M10 2.5 16.8 6.3v7.4L10 17.5 3.2 13.7V6.3z"/><path d="M10 2.5v15"/>',
+    "actor": '<circle cx="10" cy="6.5" r="3"/><path d="M4.5 16.5c0-3 2.5-4.6 5.5-4.6s5.5 1.6 5.5 4.6"/>',
+    "boundary": '<rect x="3.5" y="3.5" width="13" height="13" rx="2" stroke-dasharray="3 2.4"/>',
+}
+
+
+def _glyph(kind):
+    return f'<svg class="ins-glyph" viewBox="0 0 20 20" aria-hidden="true">{_GLYPH.get(kind, _GLYPH["component"])}</svg>'
+
+
+def _inspector_html(m, eid):
+    """Server-baked Asset Inspector for one entity (grounded, visible without JS). JS re-renders the
+    same shape on node click via renderInspector()."""
+    em = m.get("entity_meta") or {}
+    fbi = m.get("findings_by_id") or {}
+    hint = ('<div class="ins-hint">Click any node on the map to inspect its risk, findings &amp; evidence '
+            '· <b>showing the highest-risk asset</b></div>')
+    e = em.get(eid)
+    if not e:
+        return (f'<aside class="inspector" id="inspector" data-eid="">{hint}'
+                f'{empty("No linkable assets", "recon emitted no diagram-linked elements")}</aside>')
+    sev = SEV_CLASS.get(e["sev"], "none")
+    typ = f' · {esc(e["type"])}' if e.get("type") else ""
+    stride = "".join(f'<span class="ins-strd">{esc(s)}</span>' for s in e["stride"]) or '<span class="muted">—</span>'
+    rows = ""
+    for fid in e["fids"]:
+        f = fbi.get(fid) or {}
+        fs = SEV_CLASS.get(f.get("sev"), "none")
+        risk = (f.get("l") or 0) * (f.get("i") or 0)
+        rows += (f'<button class="ins-f" data-pivot="finding" data-fid="{esc(fid)}">'
+                 f'<span class="ins-f-stripe {fs}"></span><code class="ins-fid">{esc(fid)}</code>'
+                 f'<span class="ins-f-title">{esc(f.get("title") or "")}</span>'
+                 f'<span class="ins-f-score">L{esc(f.get("l"))}·I{esc(f.get("i"))} <b>{risk}</b></span></button>')
+    flist = f'<div class="ins-flist">{rows}</div>' if rows else '<div class="ins-blank">No findings reference this asset</div>'
+    ev = "".join(f'<code class="ins-ev">{esc(r)}</code>' for r in e["evidence"])
+    evb = ('<div class="ins-sec"><div class="ins-lab">Evidence / annotations</div>'
+           + (f'<div class="ins-evs">{ev}</div>' if ev else '<div class="ins-blank">No evidence surfaced on this element</div>')
+           + '</div>')
+    note = (f'<div class="ins-sec"><div class="ins-lab">Risk note</div><p class="ins-note">{esc(e["note"])}</p></div>'
+            if e.get("note") else "")
+    zone = esc(e["zone"]) if e.get("zone") else '<span class="muted">—</span>'
+    tech = esc(e["tech"]) if e.get("tech") else '<span class="muted">—</span>'
+    return f'''<aside class="inspector" id="inspector" data-eid="{esc(eid)}">
+      {hint}
+      <div class="ins-card">
+        <div class="ins-head"><span class="ins-gwrap {sev}">{_glyph(e["kind"])}</span>
+          <div class="ins-titles"><div class="ins-name">{esc(e["name"])}</div>
+            <div class="ins-sub"><code class="ins-id">{esc(eid)}</code>
+              <span class="ins-kind">{esc(KIND_LABEL.get(e["kind"], e["kind"]))}{typ}</span></div></div></div>
+        <div class="ins-stats">
+          <div class="ins-stat {sev}"><b class="ins-band">{esc(e["sev"])}</b><span>risk band</span></div>
+          <div class="ins-stat"><b>{e["score"]}</b><span>max L×I</span></div>
+          <div class="ins-stat"><b>{e["count"]}</b><span>findings</span></div></div>
+        <div class="ins-rows">
+          <div class="ins-row"><span class="ins-lab">Trust zone</span><span>{zone}</span></div>
+          <div class="ins-row"><span class="ins-lab">Technology</span><span class="ins-tech">{tech}</span></div></div>
+        <div class="ins-sec"><div class="ins-lab">STRIDE-LM</div><div class="ins-strds">{stride}</div></div>
+        {note}
+        <div class="ins-sec"><div class="ins-lab">Findings <span class="ins-n">{e["count"]}</span></div>{flist}</div>
+        {evb}
+      </div>
+    </aside>'''
+
+
+def _diag_legend():
+    """Compact always-visible key so the map is self-explaining (risk ramp · flow types · trust zone)."""
+    ramp = "".join(f'<span class="lg-item"><i class="lg-sw {c}"></i>{lab}</span>'
+                   for c, lab in (("crit", "Critical"), ("high", "High"), ("med", "Medium"), ("low", "Low")))
+    flows = "".join(f'<span class="lg-item"><i class="lg-line {c}"></i>{lab}</span>'
+                    for c, lab in (("data", "Data"), ("control", "Control"), ("admin", "Admin"), ("build", "Build")))
+    return (f'<div class="diag-legend"><div class="lg-grp"><span class="lg-t">Risk</span>{ramp}</div>'
+            f'<div class="lg-grp"><span class="lg-t">Flow</span>{flows}</div>'
+            f'<div class="lg-grp"><span class="lg-t">Zone</span>'
+            f'<span class="lg-item"><i class="lg-zone"></i>Trust boundary</span></div></div>')
+
+
 def sec_diagram_embed(m):
-    """The SINGLE primary diagram view: the run's ACTUAL visual-engine SVG (preferring the L4 risk/threat
-    overlay — all metadata in the image; L1 structural fallback), embedded verbatim, big and fit-to-view,
-    with pan/zoom + click→cross-filter layered ON TOP. The other artifacts are demoted to secondary
-    "more diagrams" links below. Pixel-identical picture; extra behaviour."""
+    """The SINGLE primary diagram view, now a threat-map CONSOLE: the run's ACTUAL visual-engine SVG
+    (preferring the L4 risk/threat overlay; L1 fallback) embedded verbatim in a big glass viewer, paired
+    with a live Asset Inspector that lifts each node's agent metadata OUT of the image. Pan/zoom +
+    click→inspect+cross-filter layered on top; other artifacts demoted to secondary links below."""
     g = m["graph"]
     linked = len(g.get("svg_node_ids") or [])
     label = g.get("svg_label") or "Structural"
@@ -143,15 +232,22 @@ def sec_diagram_embed(m):
             if is_risk else "the run's structural diagram (typed shapes/icons + trust boundaries)")
     note = (f'<div class="diag-note">The run\'s actual visual-engine diagram '
             f'(<code>{esc(g.get("svg_file",""))}</code>, <b>{esc(label)}</b>) — {what}. The exact SVG the '
-            f'flow embeds in the report. Pan/zoom + click a node to cross-filter.</div>')
-    svg = f'''<div class="diagram embed">
-      {_DIAG_TOOLBAR}
-      <div class="diag-viewport" id="diagVP">
-        <div id="diagView" class="embed-view">{g["svg"]}</div>
+            f'flow embeds in the report; the Inspector surfaces each node\'s metadata beside it.</div>')
+    body = f'''<div class="diagram embed">
+      <div class="diag-split">
+        <div class="diag-main">
+          {_DIAG_TOOLBAR}
+          <div class="diag-viewport" id="diagVP">
+            <div id="diagView" class="embed-view">{g["svg"]}</div>
+            <div class="diag-vignette" aria-hidden="true"></div>
+          </div>
+          {_diag_legend()}
+        </div>
+        {_inspector_html(m, m.get("top_entity"))}
       </div>{note}{_more_diagrams(m)}</div>'''
-    return card(f"Threat-Model Diagram — {esc(label)}", svg, cls="diagram-card",
-                sub="The run's real visual-engine diagram, embedded verbatim — all metadata in the image; "
-                    "node ids link to findings; click to cross-filter",
+    return card(f"Threat-Model Diagram — {esc(label)}", body, cls="diagram-card",
+                sub="The run's real visual-engine diagram, embedded verbatim — the Asset Inspector lifts "
+                    "every node's risk, findings, STRIDE &amp; evidence out of the image; click to explore",
                 tag=f"{linked} linked nodes · embedded SVG")
 
 
@@ -573,7 +669,8 @@ def render(m):
         f'<div class="grid grid-2 absent-grid">{sec_absent(m)}</div>',
     ])
     data_js = json.dumps({"generated_by": m["generated_by"], "merged_by": m["merged_by"],
-                          "links": m["links"], "findings": m["findings_by_id"]})
+                          "links": m["links"], "findings": m["findings_by_id"],
+                          "entities": m.get("entity_meta", {}), "top": m.get("top_entity")})
     repl = {
         "%%TITLE%%": esc(m["system_name"]), "%%DESC%%": esc(m["description"]),
         "%%PATTERN%%": esc(m["pattern"] or "system"), "%%GENERATED%%": esc(m["generated"] or "—"),
@@ -986,6 +1083,144 @@ main{max-width:1280px;margin:0 auto;padding:34px clamp(18px,4vw,52px) 80px}
 .dr-field span{font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-3);display:block;margin-bottom:3px}
 .dr-field p{font-size:13px;color:var(--text-2);line-height:1.5}
 .dr-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+
+/* ============================ PREMIUM PASS (depth · gauge · threat-map console) ============================ */
+/* depth: glass cards with a top highlight + layered shadow + faint surface gradient (theme-aware via tokens) */
+.card{background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 92%,var(--elevated)),var(--surface));
+  box-shadow:var(--shadow),inset 0 1px 0 var(--border-hi)}
+.card::after{content:'';position:absolute;inset:0 0 auto 0;height:1px;pointer-events:none;
+  background:linear-gradient(90deg,transparent,var(--border-hi) 20%,var(--border-hi) 80%,transparent)}
+.card-head h2{font-size:16.5px;letter-spacing:-.015em}
+/* commanding hero: two columns (copy + radial posture gauge) */
+.hero{display:grid;grid-template-columns:1fr auto;gap:clamp(22px,4vw,56px);align-items:center}
+.hero-copy{min-width:0}
+.hero h1{text-wrap:balance}
+.posture-gauge{position:relative;width:clamp(168px,20vw,208px);aspect-ratio:1;flex:none;color:var(--none)}
+.posture-gauge.crit{color:var(--crit)} .posture-gauge.high{color:var(--high)}
+.posture-gauge.med{color:var(--med)} .posture-gauge.low{color:var(--low)} .posture-gauge.none{color:var(--none)}
+.pg-halo{position:absolute;inset:6%;border-radius:50%;z-index:0;
+  background:radial-gradient(circle,color-mix(in srgb,currentColor 26%,transparent),transparent 68%);filter:blur(22px);opacity:.75}
+.posture-gauge svg{position:relative;z-index:1;width:100%;height:100%;transform:rotate(-90deg)}
+.posture-gauge circle{fill:none;stroke-width:8}
+.pg-track{stroke:var(--elevated)}
+.pg-arc{stroke:currentColor;stroke-linecap:round;stroke-dasharray:100;stroke-dashoffset:100;
+  transition:stroke-dashoffset 1.7s var(--ease) .35s;filter:drop-shadow(0 0 9px currentColor)}
+.posture-gauge.in .pg-arc{stroke-dashoffset:calc(100 - var(--score))}
+.pg-center{position:absolute;inset:0;z-index:2;display:grid;place-content:center;text-align:center;gap:1px}
+.pg-score{font-family:var(--serif);font-size:clamp(40px,5vw,56px);line-height:.85;color:var(--text-1)}
+.pg-band{font-family:var(--mono);font-size:11.5px;font-weight:600;letter-spacing:.09em}
+.pg-cap{font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.16em}
+/* KPI: severity-tinted glow behind the number, content above it */
+.kpi>*{position:relative;z-index:1}
+.kpi::after{content:'';position:absolute;right:-24%;top:-64%;width:130px;height:130px;border-radius:50%;z-index:0;
+  pointer-events:none;filter:blur(26px);opacity:.55;
+  background:radial-gradient(circle,color-mix(in srgb,var(--cyan) 24%,transparent),transparent 70%)}
+.kpi[data-accent=red]::after{background:radial-gradient(circle,color-mix(in srgb,var(--crit) 30%,transparent),transparent 70%)}
+.kpi[data-accent=teal]::after{background:radial-gradient(circle,color-mix(in srgb,var(--teal) 26%,transparent),transparent 70%)}
+.kpi[data-accent=purple]::after{background:radial-gradient(circle,color-mix(in srgb,var(--purple) 26%,transparent),transparent 70%)}
+.kpi[data-accent=amber]::after{background:radial-gradient(circle,color-mix(in srgb,var(--amber) 26%,transparent),transparent 70%)}
+.kpi-val{font-variant-numeric:tabular-nums}
+/* ---- the threat-map console: big glass viewer + Asset Inspector ---- */
+.diag-split{display:grid;grid-template-columns:1.62fr 1fr;gap:18px;align-items:start}
+.diag-main{min-width:0;display:flex;flex-direction:column}
+.diag-viewport{position:relative;height:clamp(520px,58vh,600px);border-radius:14px;
+  border:1px solid var(--border-hi);
+  background:
+    linear-gradient(color-mix(in srgb,var(--text-2) 5%,transparent) 1px,transparent 1px) -1px -1px/30px 30px,
+    linear-gradient(90deg,color-mix(in srgb,var(--text-2) 5%,transparent) 1px,transparent 1px) -1px -1px/30px 30px,
+    radial-gradient(120% 90% at 50% -10%,color-mix(in srgb,var(--cyan) 9%,transparent),transparent 60%),
+    var(--elevated)}
+.diag-vignette{position:absolute;inset:0;pointer-events:none;border-radius:14px;
+  box-shadow:inset 0 1px 0 var(--border-hi),inset 0 0 70px 6px rgba(3,6,12,.42)}
+[data-theme=light] .diag-vignette{box-shadow:inset 0 1px 0 #fff,inset 0 0 60px 6px rgba(20,30,50,.08)}
+#diagView.embed-view{display:flex;align-items:center;justify-content:center;transform-origin:center}
+.embed-view>svg,.embed-view #diagSVG{width:100%;height:auto;max-height:100%}
+/* legend */
+.diag-legend{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:12px;padding:10px 14px;border-radius:10px;
+  background:var(--elevated);border:1px solid var(--border);font-size:11.5px;color:var(--text-2)}
+.lg-grp{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.lg-t{font:600 10px/1 var(--mono);text-transform:uppercase;letter-spacing:.12em;color:var(--text-3)}
+.lg-item{display:inline-flex;align-items:center;gap:6px}
+.lg-sw{width:11px;height:11px;border-radius:3px;flex:none}
+.lg-sw.crit{background:var(--crit)} .lg-sw.high{background:var(--high)} .lg-sw.med{background:var(--med)} .lg-sw.low{background:var(--low)}
+.lg-line{width:18px;height:0;border-top:2px solid var(--border-hi);flex:none}
+.lg-line.control{border-top-style:dashed} .lg-line.admin{border-top:2px dashed var(--crit)} .lg-line.build{border-top-color:var(--amber)}
+.lg-zone{width:16px;height:11px;border:1px dashed var(--border-hi);border-radius:3px;flex:none;
+  background:color-mix(in srgb,var(--cyan) 6%,transparent)}
+/* selected node on the embedded map */
+.node.embed.sel{filter:drop-shadow(0 0 12px var(--cyan)) drop-shadow(0 0 4px var(--cyan))}
+.node.sel .node-box{stroke:var(--cyan);stroke-width:2.5}
+/* ---- Asset Inspector panel ---- */
+.inspector{background:linear-gradient(180deg,color-mix(in srgb,var(--surface) 86%,var(--elevated)),var(--surface));
+  border:1px solid var(--border-hi);border-radius:14px;padding:14px 15px;display:flex;flex-direction:column;gap:12px;
+  box-shadow:inset 0 1px 0 var(--border-hi)}
+.ins-hint{font-size:11.5px;color:var(--text-3);line-height:1.45}
+.ins-hint b{color:var(--cyan);font-weight:600}
+.ins-card{display:flex;flex-direction:column;gap:13px}
+.ins-head{display:flex;align-items:center;gap:12px}
+.ins-gwrap{width:44px;height:44px;flex:none;border-radius:11px;display:grid;place-items:center;color:var(--text-2);
+  background:var(--elevated);border:1px solid var(--border-hi)}
+.ins-gwrap.crit{color:var(--crit);border-color:color-mix(in srgb,var(--crit) 45%,transparent);background:color-mix(in srgb,var(--crit) 12%,var(--elevated))}
+.ins-gwrap.high{color:var(--high);border-color:color-mix(in srgb,var(--high) 45%,transparent);background:color-mix(in srgb,var(--high) 12%,var(--elevated))}
+.ins-gwrap.med{color:var(--med);border-color:color-mix(in srgb,var(--med) 45%,transparent);background:color-mix(in srgb,var(--med) 12%,var(--elevated))}
+.ins-gwrap.low{color:var(--low);border-color:color-mix(in srgb,var(--low) 45%,transparent);background:color-mix(in srgb,var(--low) 12%,var(--elevated))}
+.ins-glyph{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+.ins-titles{min-width:0}
+.ins-name{font-size:15px;font-weight:600;color:var(--text-1);line-height:1.2;letter-spacing:-.01em}
+.ins-sub{display:flex;align-items:center;gap:8px;margin-top:3px;flex-wrap:wrap}
+.ins-id{font-family:var(--mono);font-size:12px;color:var(--cyan);background:color-mix(in srgb,var(--cyan) 12%,transparent);
+  padding:1px 7px;border-radius:6px}
+.ins-kind{font-size:11.5px;color:var(--text-3)}
+.ins-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.ins-stat{background:var(--elevated);border:1px solid var(--border);border-radius:10px;padding:9px 6px;text-align:center}
+.ins-stat b{display:block;font-family:var(--serif);font-size:24px;line-height:1;color:var(--text-1);font-variant-numeric:tabular-nums}
+.ins-stat span{display:block;font-size:9.5px;color:var(--text-3);text-transform:uppercase;letter-spacing:.08em;margin-top:5px}
+.ins-stat .ins-band{font-family:var(--mono);font-size:14px;letter-spacing:.04em}
+.ins-stat.crit .ins-band{color:var(--crit)} .ins-stat.high .ins-band{color:var(--high)}
+.ins-stat.med .ins-band{color:var(--med)} .ins-stat.low .ins-band{color:var(--low)} .ins-stat.none .ins-band{color:var(--none)}
+.ins-rows{display:flex;flex-direction:column;gap:7px}
+.ins-row{display:grid;grid-template-columns:88px 1fr;gap:10px;font-size:12.5px;color:var(--text-2);align-items:baseline}
+.ins-tech{line-height:1.4}
+.ins-sec{display:flex;flex-direction:column;gap:7px}
+.ins-lab{font-size:10px;text-transform:uppercase;letter-spacing:.11em;color:var(--text-3);display:flex;align-items:center;gap:7px}
+.ins-n{font:600 10px/1 var(--mono);color:var(--text-2);background:var(--elevated);border:1px solid var(--border-hi);
+  border-radius:20px;padding:2px 7px}
+.ins-strds{display:flex;flex-wrap:wrap;gap:5px}
+.ins-strd{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--cyan);
+  background:color-mix(in srgb,var(--cyan) 10%,transparent);border:1px solid color-mix(in srgb,var(--cyan) 30%,transparent);
+  border-radius:6px;padding:2px 8px}
+.ins-note{font-size:12px;color:var(--text-2);line-height:1.5;padding:9px 11px;border-radius:9px;
+  background:color-mix(in srgb,var(--amber) 8%,var(--elevated));border-left:3px solid var(--amber)}
+.ins-flist{display:flex;flex-direction:column;gap:5px;max-height:230px;overflow-y:auto;padding-right:2px}
+.ins-flist::-webkit-scrollbar{width:8px}.ins-flist::-webkit-scrollbar-thumb{background:var(--border-hi);border-radius:8px}
+.ins-f{display:grid;grid-template-columns:4px 60px 1fr auto;gap:9px;align-items:center;text-align:left;width:100%;
+  background:var(--elevated);border:1px solid var(--border);border-radius:9px;padding:8px 10px 8px 0;cursor:pointer;
+  color:var(--text-2);font:inherit;transition:border-color .18s,transform .18s,background .18s}
+.ins-f:hover{border-color:var(--cyan);transform:translateX(2px);background:color-mix(in srgb,var(--cyan) 6%,var(--elevated))}
+.ins-f-stripe{align-self:stretch;border-radius:9px 0 0 9px;background:var(--none)}
+.ins-f-stripe.crit{background:var(--crit)} .ins-f-stripe.high{background:var(--high)}
+.ins-f-stripe.med{background:var(--med)} .ins-f-stripe.low{background:var(--low)}
+.ins-fid{font-family:var(--mono);font-size:11px;color:var(--cyan)}
+.ins-f-title{font-size:12px;color:var(--text-1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ins-f-score{font-family:var(--mono);font-size:10.5px;color:var(--text-3);white-space:nowrap;padding-right:2px}
+.ins-f-score b{color:var(--text-1)}
+.ins-evs{display:flex;flex-direction:column;gap:4px}
+.ins-ev{font-family:var(--mono);font-size:11px;color:var(--text-2);background:var(--void);border:1px solid var(--border);
+  border-radius:7px;padding:5px 9px;word-break:break-all}
+.ins-blank{font-size:11.5px;color:var(--text-4);font-style:italic;padding:6px 2px}
+@media(max-width:980px){.diag-split{grid-template-columns:1fr}.diag-viewport{height:460px}}
+/* small chart craft: filled severity pills, donut lift, component-bar gradient, kill-chain depth */
+.donut{filter:drop-shadow(0 10px 30px rgba(0,0,0,.35))}
+.sev-pill.crit{background:color-mix(in srgb,var(--crit) 14%,transparent)}
+.sev-pill.high{background:color-mix(in srgb,var(--high) 14%,transparent)}
+.sev-pill.med{background:color-mix(in srgb,var(--med) 14%,transparent)}
+.sev-pill.low{background:color-mix(in srgb,var(--low) 14%,transparent)}
+.comp-row{padding:3px 0;border-radius:8px;transition:background .18s}
+.comp-row:hover{background:color-mix(in srgb,var(--cyan) 6%,transparent)}
+.kc{background:linear-gradient(180deg,color-mix(in srgb,var(--elevated) 80%,var(--surface)),var(--elevated));
+  box-shadow:inset 0 1px 0 var(--border-hi)}
+.bar-fill{box-shadow:inset 0 1px 0 rgba(255,255,255,.15)}
+@media (prefers-reduced-motion:reduce){.pg-arc{stroke-dashoffset:calc(100 - var(--score))!important;transition:none}}
 """
 
 JS = r"""
@@ -1009,7 +1244,7 @@ const io=new IntersectionObserver((es)=>{es.forEach(e=>{
   el.querySelectorAll('.counter').forEach(countUp);
   io.unobserve(el);
 },{threshold:.18})});
-document.querySelectorAll('.reveal,.kpi,.hm-grid,.donut,.gauge,.posture').forEach(el=>io.observe(el));
+document.querySelectorAll('.reveal,.kpi,.hm-grid,.donut,.gauge,.posture-gauge').forEach(el=>io.observe(el));
 // count-up
 function countUp(el){
   const to=parseFloat(el.dataset.to)||0, dec=+el.dataset.dec||0, dur=1100, t0=performance.now();
@@ -1017,13 +1252,59 @@ function countUp(el){
     el.textContent=(to*e).toFixed(dec);if(p<1)requestAnimationFrame(step);else el.textContent=to.toFixed(dec);}
   requestAnimationFrame(step);
 }
-// posture meter
-window.addEventListener('load',()=>{const m=document.querySelector('.p-meter i');if(m)m.style.width=m.dataset.w+'%';
-  const tb=document.getElementById('themeBtn');tb.textContent=root.getAttribute('data-theme')==='light'?'☀':'☽';});
+// on load: sync the theme glyph + highlight the Inspector's default (highest-risk) node on the map.
+window.addEventListener('load',()=>{
+  const tb=document.getElementById('themeBtn');tb.textContent=root.getAttribute('data-theme')==='light'?'☀':'☽';
+  if(META.top)highlightNode(META.top);});
 
 /* ================= interactive linked-model explorer ================= */
-const L=META.links||{}, FBI=META.findings||{};
+const L=META.links||{}, FBI=META.findings||{}, ENT=META.entities||{};
 const $=id=>document.getElementById(id);
+/* ---- Asset Inspector: mirror of _inspector_html(), re-rendered on node selection ---- */
+const GLYPH={
+  component:'<rect x="3.5" y="5" width="13" height="10" rx="1.6"/><path d="M3.5 8.5h13"/>',
+  store:'<ellipse cx="10" cy="5.5" rx="6.5" ry="2.4"/><path d="M3.5 5.5v9c0 1.3 2.9 2.4 6.5 2.4s6.5-1.1 6.5-2.4v-9"/>',
+  entry:'<path d="M11.5 3.5H4.5v13h7"/><path d="M8 10h8.5"/><path d="M13.5 6.5 17 10l-3.5 3.5"/>',
+  external:'<path d="M10 2.5 16.8 6.3v7.4L10 17.5 3.2 13.7V6.3z"/><path d="M10 2.5v15"/>',
+  actor:'<circle cx="10" cy="6.5" r="3"/><path d="M4.5 16.5c0-3 2.5-4.6 5.5-4.6s5.5 1.6 5.5 4.6"/>',
+  boundary:'<rect x="3.5" y="3.5" width="13" height="13" rx="2" stroke-dasharray="3 2.4"/>'};
+const KL={component:'Component',store:'Data store',entry:'Entry point',external:'External dependency',actor:'Actor / role',boundary:'Trust boundary'};
+function insGlyph(k){return '<svg class="ins-glyph" viewBox="0 0 20 20" aria-hidden="true">'+(GLYPH[k]||GLYPH.component)+'</svg>';}
+function renderInspector(eid){
+  const host=$('inspector');if(!host)return;
+  const e=ENT[eid];
+  const hint='<div class="ins-hint">Click any node on the map to inspect its risk, findings &amp; evidence · '
+    +'<b>'+(eid?'selected asset':'highest-risk asset')+'</b></div>';
+  if(!e){host.dataset.eid='';host.innerHTML=hint+'<div class="ins-blank">No metadata for this node.</div>';return;}
+  const sev=sevCls(e.sev),typ=e.type?(' · '+esc(e.type)):'';
+  const stride=e.stride.length?e.stride.map(s=>'<span class="ins-strd">'+esc(s)+'</span>').join(''):'<span class="muted">—</span>';
+  let rows='';
+  e.fids.forEach(fid=>{const f=FBI[fid]||{};const fs=sevCls(f.sev);const risk=(f.l||0)*(f.i||0);
+    rows+='<button class="ins-f" data-pivot="finding" data-fid="'+esc(fid)+'"><span class="ins-f-stripe '+fs+'"></span>'
+      +'<code class="ins-fid">'+esc(fid)+'</code><span class="ins-f-title">'+esc(f.title||'')+'</span>'
+      +'<span class="ins-f-score">L'+esc(f.l)+'·I'+esc(f.i)+' <b>'+risk+'</b></span></button>';});
+  const flist=rows?('<div class="ins-flist">'+rows+'</div>'):'<div class="ins-blank">No findings reference this asset</div>';
+  const ev=e.evidence.map(r=>'<code class="ins-ev">'+esc(r)+'</code>').join('');
+  const evb='<div class="ins-sec"><div class="ins-lab">Evidence / annotations</div>'
+    +(ev?('<div class="ins-evs">'+ev+'</div>'):'<div class="ins-blank">No evidence surfaced on this element</div>')+'</div>';
+  const note=e.note?('<div class="ins-sec"><div class="ins-lab">Risk note</div><p class="ins-note">'+esc(e.note)+'</p></div>'):'';
+  const zone=e.zone?esc(e.zone):'<span class="muted">—</span>',tech=e.tech?esc(e.tech):'<span class="muted">—</span>';
+  host.dataset.eid=eid;
+  host.innerHTML=hint+'<div class="ins-card"><div class="ins-head"><span class="ins-gwrap '+sev+'">'+insGlyph(e.kind)+'</span>'
+    +'<div class="ins-titles"><div class="ins-name">'+esc(e.name)+'</div><div class="ins-sub"><code class="ins-id">'+esc(eid)
+    +'</code><span class="ins-kind">'+esc(KL[e.kind]||e.kind)+typ+'</span></div></div></div>'
+    +'<div class="ins-stats"><div class="ins-stat '+sev+'"><b class="ins-band">'+esc(e.sev)+'</b><span>risk band</span></div>'
+    +'<div class="ins-stat"><b>'+e.score+'</b><span>max L×I</span></div><div class="ins-stat"><b>'+e.count+'</b><span>findings</span></div></div>'
+    +'<div class="ins-rows"><div class="ins-row"><span class="ins-lab">Trust zone</span><span>'+zone+'</span></div>'
+    +'<div class="ins-row"><span class="ins-lab">Technology</span><span class="ins-tech">'+tech+'</span></div></div>'
+    +'<div class="ins-sec"><div class="ins-lab">STRIDE-LM</div><div class="ins-strds">'+stride+'</div></div>'+note
+    +'<div class="ins-sec"><div class="ins-lab">Findings <span class="ins-n">'+e.count+'</span></div>'+flist+'</div>'+evb+'</div>';
+}
+function highlightNode(eid){document.querySelectorAll('.node.sel').forEach(n=>n.classList.remove('sel'));
+  if(!eid)return;document.querySelectorAll('[data-entity="'+(window.CSS&&CSS.escape?CSS.escape(eid):eid)+'"].node').forEach(n=>n.classList.add('sel'));}
+function flashNode(eid){document.querySelectorAll('[data-entity="'+(window.CSS&&CSS.escape?CSS.escape(eid):eid)+'"]').forEach(el=>{el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');});}
+function selectEntity(eid,scroll){applyFocus('entity',eid);renderInspector(eid);highlightNode(eid);
+  if(scroll){const vp=$('diagVP');if(vp)vp.scrollIntoView({behavior:'smooth',block:'center'});flashNode(eid);}}
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function sevCls(s){return ({CRITICAL:'crit',HIGH:'high',MEDIUM:'med',LOW:'low'})[s]||'none';}
 function findingsFor(kind,key){
@@ -1065,15 +1346,6 @@ function flashFinding(id){const el=document.querySelector('.finding[data-fid="'+
 function openDrawer(){$('drawer').hidden=false;$('drawerScrim').hidden=false;requestAnimationFrame(()=>$('drawer').classList.add('open'));}
 function closeDrawer(){$('drawer').classList.remove('open');$('drawerScrim').hidden=true;setTimeout(()=>$('drawer').hidden=true,350);}
 $('drawerClose').onclick=closeDrawer;$('drawerScrim').onclick=closeDrawer;
-function openEntityDrawer(eid){
-  const names=L.entity_names||{};const fids=L.entity_findings?.[eid]||[];
-  $('drawerTitle').textContent=(names[eid]||eid)+' · '+eid;
-  let h='<div class="dr-field"><span>'+fids.length+' related finding(s)</span></div>';
-  if(!fids.length)h+='<p class="muted">No findings reference this entity.</p>';
-  fids.forEach(id=>{const f=FBI[id];if(f)h+='<div class="dr-f" data-pivot="finding" data-fid="'+id+'">'
-    +'<span class="sev-pill '+sevCls(f.sev)+'">'+f.sev+'</span><span><b class="f-id">'+id+'</b> '+esc(f.title)+'</span></div>';});
-  $('drawerBody').innerHTML=h;openDrawer();
-}
 // embedded evidence for the drawer: the extracted snippet + findable reference + jump-to-diagram-node.
 // Honest no-evidence / unresolved states are shown explicitly — never a fabricated snippet.
 function evHtml(evList){
@@ -1095,10 +1367,6 @@ function evHtml(evList){
   });
   return h+'</div></div>';
 }
-// jump from a finding's evidence to the related diagram node: cross-highlight it + scroll the diagram in
-function jumpToNode(nid){applyFocus('entity',nid);const vp=$('diagVP');
-  if(vp){vp.scrollIntoView({behavior:'smooth',block:'center'});
-    document.querySelectorAll('[data-entity="'+nid+'"]').forEach(el=>{el.classList.remove('flash');void el.offsetWidth;el.classList.add('flash');});}}
 function openFindingDrawer(id){const f=FBI[id];if(!f)return;
   $('drawerTitle').textContent=id;
   const ents=(L.finding_entities?.[id]||[]).map(e=>(L.entity_names?.[e]||e)).join(', ');
@@ -1111,21 +1379,22 @@ function openFindingDrawer(id){const f=FBI[id];if(!f)return;
     +evHtml(f.evidence);
   openDrawer();
 }
-// unified click routing
+// unified click routing — a node (SVG or evidence jump) drives the Asset Inspector; findings flash below.
 document.addEventListener('click',e=>{
   const jn=e.target.closest('.jump-node');
-  if(jn){e.preventDefault();e.stopPropagation();jumpToNode(jn.dataset.entity);return;}
+  if(jn){e.preventDefault();e.stopPropagation();selectEntity(jn.dataset.entity,true);return;}
   const node=e.target.closest('.node');
-  if(node){applyFocus('entity',node.dataset.entity);openEntityDrawer(node.dataset.entity);return;}
+  if(node){selectEntity(node.dataset.entity,false);return;}
   const piv=e.target.closest('[data-pivot]');
   if(!piv)return;
   const kind=piv.dataset.pivot;
   const key=piv.dataset.fid||piv.dataset.entity||piv.dataset.frame||piv.dataset.kc||piv.dataset.sev;
+  if(kind==='entity'){selectEntity(key,true);return;}
   applyFocus(kind,key);
   if(kind==='finding'){
     if(piv.classList.contains('kc-step')||piv.classList.contains('dr-f'))openFindingDrawer(key);
     else flashFinding(key);
-  } else if(kind==='entity'&&piv.classList.contains('comp-row'))openEntityDrawer(key);
+  }
 });
 // hover tooltips (glance-level detail, no layout shift)
 const tip=$('tooltip');
@@ -1191,13 +1460,22 @@ TEMPLATE = r"""<!DOCTYPE html>
 </header>
 
 <section class="hero">
-  <div class="eyebrow">Threat Model · %%PATTERN%%</div>
-  <h1>%%TITLE%%</h1>
-  <p class="lede">%%DESC%%</p>
-  <div class="posture %%POSTURE_CLS%%">
-    <span class="p-band %%POSTURE_CLS%%">%%POSTURE_BAND%%</span>
-    <div class="p-meter %%POSTURE_CLS%%"><i data-w="%%POSTURE_SCORE%%"></i></div>
-    <span class="muted" style="font-size:12px">risk posture</span>
+  <div class="hero-copy">
+    <div class="eyebrow">Threat Model · %%PATTERN%%</div>
+    <h1>%%TITLE%%</h1>
+    <p class="lede">%%DESC%%</p>
+  </div>
+  <div class="posture-gauge %%POSTURE_CLS%%" style="--score:%%POSTURE_SCORE%%">
+    <div class="pg-halo" aria-hidden="true"></div>
+    <svg viewBox="0 0 120 120" aria-hidden="true">
+      <circle class="pg-track" cx="60" cy="60" r="50" pathLength="100"/>
+      <circle class="pg-arc" cx="60" cy="60" r="50" pathLength="100"/>
+    </svg>
+    <div class="pg-center">
+      <span class="pg-score counter" data-to="%%POSTURE_SCORE%%">0</span>
+      <span class="pg-band %%POSTURE_CLS%%">%%POSTURE_BAND%%</span>
+      <span class="pg-cap">risk posture</span>
+    </div>
   </div>
 </section>
 

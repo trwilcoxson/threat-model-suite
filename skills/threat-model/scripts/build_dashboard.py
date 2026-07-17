@@ -697,6 +697,40 @@ def build_model(recon, findings, coverage, navigator, run_dir=None, repo=None):
                                 "evidence": _finding_evidence(f)}
                       for f in F}
 
+    # ---- per-entity rollups for the Asset Inspector (reshape only: grounded findings rollup +
+    #      the recon element's OWN annotations/evidence). Every recon element gets an entry so the
+    #      Inspector can surface any node the embedded diagram exposes; absent fields stay blank. ----
+    f_by_id = {f["id"]: f for f in F}
+    entity_meta = {}
+    _entity_src = [(el, kind) for arr, kind in KIND_OF_ARRAY.items() for el in (recon.get(arr) or []) if "id" in el]
+    _entity_src += [(tb, "boundary") for tb in (recon.get("trust_boundaries") or []) if "id" in tb]
+    for el, kind in _entity_src:
+        eid = el["id"]
+        fids = sorted(set(entity_findings.get(eid, [])),
+                      key=lambda i: (-SEV_RANK.get(f_by_id.get(i, {}).get("severity"), 0), _natural(i)))
+        mx = max((SEV_RANK.get(f_by_id.get(i, {}).get("severity"), 0) for i in fids), default=0)
+        score = max((((f_by_id[i].get("likelihood") or 0) * (f_by_id[i].get("impact") or 0))
+                     for i in fids if i in f_by_id), default=0)
+        strd = []
+        for i in fids:
+            for t in (f_by_id.get(i, {}).get("stride_lm") or []):
+                if t not in strd:
+                    strd.append(t)
+        entity_meta[eid] = {
+            "id": eid, "name": el.get("name", eid), "kind": kind, "type": el.get("type", ""),
+            "tech": el.get("tech", ""), "zone": links["entity_names"].get(el.get("zone"), el.get("zone") or ""),
+            "sev": next((k for k, v in SEV_RANK.items() if v == mx), "—"), "score": score,
+            "count": len(fids), "fids": fids, "stride": strd,
+            "evidence": list(el.get("evidence") or []), "note": el.get("risk") or "",
+        }
+    # default selection: the highest-risk asset the embedded diagram actually exposes (so highlight
+    # lands), else the highest-risk entity overall — the Inspector is never empty.
+    _svg_ids = set(graph.get("svg_node_ids") or [])
+    _ranked = sorted(entity_meta.values(),
+                     key=lambda e: (-SEV_RANK.get(e["sev"], 0), -e["score"], -e["count"], _natural(e["id"])))
+    top_entity = next((e["id"] for e in _ranked if e["id"] in _svg_ids),
+                      (_ranked[0]["id"] if _ranked else None))
+
     n = len(F)
     if n == 0:
         posture = ("NO FINDINGS", 0)
@@ -752,6 +786,8 @@ def build_model(recon, findings, coverage, navigator, run_dir=None, repo=None):
         "graph": graph,
         "links": links,
         "findings_by_id": findings_by_id,
+        "entity_meta": entity_meta,
+        "top_entity": top_entity,
     }
 
 
