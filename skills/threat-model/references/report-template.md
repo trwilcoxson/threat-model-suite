@@ -6,10 +6,9 @@
 - Section II: System Overview (purpose, scope, tech stack, deployment model)
 - Section III: Architecture Diagram — Structural (rendered diagram, component metadata, trust boundaries, network topology)
 - Section IV: Risk Overlay Diagram (rendered diagram, component risk mapping, critical data flows)
-- Section IV-A: Coverage & Communication Visuals (STRIDE-per-element matrix, boundary-crossing STRIDE-per-interaction matrix, L×I heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph, threat-to-control coverage matrix — each when applicable)
 - Section V: Asset Inventory (data assets, data flow summary)
 - Section VI: Threat Actor Profiles
-- Section VII: Findings (ordered by severity, standardized format, per-finding embedded evidence reference + excerpt)
+- Section VII: Findings (ordered by severity, standardized format)
 - Section VIII: Remediation Roadmap (waves, dependencies, quick wins)
 - Section IX: Networking & Infrastructure Data (VPC, subnets, security groups, IAM)
 - Section X: Compliance Mapping (conditional — if compliance-gap-analysis.md exists)
@@ -81,8 +80,8 @@ This template defines the **exact structure** for every consolidated report. Fol
 **Heading**: `# III. Architecture Diagram`
 
 **Required elements**:
-- {{DIAGRAM: structural-diagram}} — embed the rendered PNG (Word/PDF/PPTX) or the inline offline SVG (HTML — the D2 `.svg` the render seam produced; NEVER a Mermaid live/CDN render)
-- **Source**: Full Mermaid/D2 code block from `02-structural-diagram.md`
+- {{DIAGRAM: structural-diagram.png}} — embed rendered PNG (Word/PDF) or Mermaid live render (HTML)
+- **Source**: Full Mermaid code block from `02-structural-diagram.md`
 - **Component Metadata Table** (exact columns):
   | Component | Type | Tech Stack | Port/Protocol | Subnet/Zone | Auth Method | Encryption | Notes |
   |-----------|------|-----------|---------------|-------------|-------------|------------|-------|
@@ -96,8 +95,8 @@ This template defines the **exact structure** for every consolidated report. Fol
 **Heading**: `# IV. Risk Overlay Diagram`
 
 **Required elements**:
-- {{DIAGRAM: risk-overlay-diagram}} — embed the rendered PNG (Word/PDF/PPTX) or the inline offline SVG (HTML — the D2 `.svg` the render seam produced; NEVER a Mermaid live/CDN render)
-- **Source**: Full Mermaid/D2 code block from `07-final-diagram.md`
+- {{DIAGRAM: risk-overlay-diagram.png}} — embed rendered PNG (Word/PDF) or Mermaid live render (HTML)
+- **Source**: Full Mermaid code block from `07-final-diagram.md`
 - **Component Risk Mapping Table** (exact columns):
   | Component | Risk Level | Finding IDs | STRIDE-LM Categories | Top CWE |
   |-----------|-----------|-------------|----------------------|---------|
@@ -114,16 +113,10 @@ and [mermaid-diagrams.md](mermaid-diagrams.md)); mark any inapplicable one NOT A
 one-line reason. Use these exact headings so they render and verify consistently:
 
 - `## STRIDE-per-Element Coverage Matrix` — always (fully populated; cells `TM-NNN`/`n/a`/`clean`).
-- `## STRIDE-per-Interaction (Boundary-Crossing) Coverage Matrix` — when the DFD has ≥1 edge crossing a
-  trust zone (rows = crossing edges keyed `Edge (src → dst)`; cells `TM-NNN`/`n/a`/`clean`). Mark
-  NOT APPLICABLE for a single-zone system. See analytical-visuals.md §1a.
 - `## Risk Heat Map (Likelihood × Impact)` — when any finding is scored (5×5, every finding placed).
 - `## MITRE ATT&CK Technique Coverage` — when any finding has a technique (+ Navigator JSON at ≥5).
 - `## Authorization (RBAC) Matrix` — when ≥2 roles (roles × resources, anonymous row).
 - `## SBOM / Dependency Graph` — when external deps are backed by a manifest.
-- `## Threat-to-Control Coverage Matrix` — when ≥1 finding (rows = findings; columns Control(s) /
-  name / framework ref / disposition; a zero-control finding shows an explicit `GAP` cell —
-  `mitigated` / `accepted-risk` / `none`). A faithful projection of `findings.json` `controls[]`.
 - Attack trees + attack flows (per declared kill chain) and the auth sequence diagram, embedded here
   or in Section VII.
 
@@ -189,8 +182,6 @@ one-line reason. Use these exact headings so they render and verify consistently
 | **Remediation** | _R-NNN_ |
 | **Source** | _threat-model / code-review / privacy / grc_ |
 
-**Evidence**: embed every evidence item from the finding — see the Evidence Embedding Rule below.
-
 **Attack Scenario**:
 1. Step 1 ...
 2. Step 2 ...
@@ -203,21 +194,6 @@ one-line reason. Use these exact headings so they render and verify consistently
 
 If findings come from code-review-agent (CVSS scoring), include additional row:
 | **CVSS v3.1** | _score_ (_vector string_) |
-
-**Evidence Embedding Rule (MANDATORY, per finding)**: the report must be **self-contained and traceable** — matching the dashboard, the reader never needs the repo. For EACH evidence item on the finding, embed BOTH:
-
-1. The **findable reference** — `path:line-range` for code/config, a doc path + locator, or a diagram/recon node id (e.g. `C1`).
-2. The **excerpt** — the actual snippet the deterministic build extracted from that reference: a **fenced code block** for code/config (syntax-lit where the format supports it), a **block quote** for a document quotation, or a reference to the named diagram node for a diagram.
-
-Example (code evidence):
-
-> `Code/server/src/index.js:31-38`
->
-> ```js
-> app.use(cors());
-> ```
-
-A finding that honestly abstained (its evidence item has `"no_direct_evidence": true`) shows an explicit **"No direct evidence — _justification_"** note in place of a snippet — NEVER a fabricated excerpt. Every non-abstaining finding's embedded excerpt must match its cited source; the output validators check this per finding.
 
 **Finding count at section end**: "Total: N findings (C critical, H high, M medium, L low)"
 — This count MUST match the Executive Summary table exactly.
@@ -341,7 +317,7 @@ Omit this section entirely. Add note in Section XIII: "Privacy impact assessment
 ### A. Methodology Notes
 - STRIDE-LM category definitions
 - PASTA scoring scale (1-5 for both likelihood and impact)
-- OWASP Risk Rating severity bands: CRITICAL (17-25), HIGH (10-16), MEDIUM (5-9), LOW (1-4)
+- OWASP Risk Rating severity bands: CRITICAL (20-25), HIGH (12-19), MEDIUM (6-11), LOW (1-5)
 - If code review findings present: CVSS v3.1 scale and severity mapping
 
 ### B. Framework Reference Table
@@ -370,11 +346,11 @@ Omit this section entirely. Add note in Section XIII: "Privacy impact assessment
 
 ## Diagram Placement Rules
 
-1. **Section III**: Structural diagram — in HTML, inline the offline `structural-diagram.svg` (D2) directly, or embed `structural-diagram.png` via an `<img>` tag; in Word/PDF/PPTX, embed the PNG.
-2. **Section IV**: Risk overlay diagram — same rule: inline `risk-overlay-diagram.svg` in HTML, or `<img src="risk-overlay-diagram.png">`; PNG in Word/PDF/PPTX.
-3. Every diagram MUST have a render seam artifact embedded in ALL formats — an inline offline SVG or a PNG in HTML, and a PNG in Word/PDF/PPTX. No format ships without its diagram.
-4. **NEVER use Mermaid CDN (`mermaid.js`) for client-side rendering in HTML reports.** CDN scripts cause race conditions, fail on `file://` URLs, and `<\/script>` escapes break the HTML parser. Use the inline offline SVG (produced by the render seam, pure-Go/no browser) or a pre-rendered `<img src="filename.png">`.
-5. Both diagrams must use a consistent direction (TD or LR) — do not mix
+1. **Section III**: Structural diagram — embed `structural-diagram.png` via `<img>` tag
+2. **Section IV**: Risk overlay diagram — embed `risk-overlay-diagram.png` via `<img>` tag
+3. Diagrams MUST be rendered as PNGs and embedded in ALL formats (HTML, Word, PDF, PPTX)
+4. **NEVER use Mermaid CDN (`mermaid.js`) for client-side rendering in HTML reports.** CDN scripts cause race conditions, fail on `file://` URLs, and `<\/script>` escapes break the HTML parser. Always use pre-rendered PNG images with `<img src="filename.png">`.
+5. Both diagrams must use consistent Mermaid direction (TD or LR) — do not mix
 
 ## Table Consistency Rules
 

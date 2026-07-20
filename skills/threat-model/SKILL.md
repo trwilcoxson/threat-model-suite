@@ -7,7 +7,7 @@ description: Produces an architectural threat model with Mermaid data flow diagr
 
 You are performing an architectural threat model. This skill complements the `security-reviewer` agent (which operates at code level) by operating at the **architecture and design level**. After completing the threat model, suggest the user run `security-reviewer` against high-risk components identified in this analysis.
 
-The eight phases are split across specialized agents to reduce context rot and to keep the skeptical review honest: the security-architect handles Phase 1 (recon) and the analysis phases, and the diagram-specialist handles Phases 2 and 7 (Mermaid diagrams). The analysis phases run in **two** security-architect contexts — a generative pass (Phases 3-5: identify, score, hunt) and a separate **fresh-context** skeptical pass (Phases 6+8: false-positive validation + summary) that reads the generative output from disk, so the false-positive review does not inherit the generator's anchoring. Each agent gets a fresh context window. Consult the reference files in `references/` throughout. Save intermediate outputs to files when analyzing systems with more than 10 components or when context length is a concern. Always offer to save to files.
+The eight phases are split across specialized agents to reduce context rot: the security-architect handles Phases 1, 3-6, and 8 (analysis); the diagram-specialist handles Phases 2 and 7 (Mermaid diagrams). Each agent gets a fresh context window. Consult the reference files in `references/` throughout. Save intermediate outputs to files when analyzing systems with more than 10 components or when context length is a concern. Always offer to save to files.
 
 Define `{output_dir}` as `{project_root}/threat-model-output/` unless the user specifies a different location. Create the directory if it does not exist.
 
@@ -15,7 +15,7 @@ Define `{output_dir}` as `{project_root}/threat-model-output/` unless the user s
 - **Diagram spec**: [references/mermaid-spec.md](references/mermaid-spec.md) — symbol taxonomy (3 tiers), 8 typed edge types, classDefs, threat annotations, accessibility, ownership markers
 - **Diagram layers**: [references/mermaid-layers.md](references/mermaid-layers.md) — 4-layer separation (L1 Architecture, L2 Trust & Identity, L3 Data, L4 Threat Overlay), scaling rules
 - **Companion diagrams**: [references/mermaid-diagrams.md](references/mermaid-diagrams.md) — attack trees, attack flows, auth sequences, data lifecycle diagrams
-- **Analytical visuals**: [references/analytical-visuals.md](references/analytical-visuals.md) — STRIDE-per-element matrix, boundary-crossing STRIDE-per-interaction matrix, L×I risk heat map, MITRE ATT&CK layer, MITRE ATLAS layer + OWASP-LLM Top-10 checklist (when `has_ai_ml`), RBAC matrix, SBOM/dependency graph
+- **Analytical visuals**: [references/analytical-visuals.md](references/analytical-visuals.md) — STRIDE-per-element matrix, L×I risk heat map, MITRE ATT&CK layer, RBAC matrix, SBOM/dependency graph
 - **Diagram templates**: [references/mermaid-templates.md](references/mermaid-templates.md) — copy-paste-ready templates (SaaS, Event-Driven, K8s), symbol/edge legends
 - **Diagram review checklist**: [references/mermaid-review-checklist.md](references/mermaid-review-checklist.md) — pre-submission quality gates
 - **Frameworks**: [references/frameworks.md](references/frameworks.md) — STRIDE-LM, PASTA, OWASP Risk Rating, MITRE ATT&CK, CWE groups, LINDDUN
@@ -37,17 +37,14 @@ should be honest about what the source materials do and do not reveal. Maintain 
    `has_containers`, `has_cicd`, `has_third_party`, `multi_tenant`, `has_personal_data`,
    `has_regulatory`, `has_ai_ml`, `has_hardware`). Tier-2 items apply only when their flag is true.
 2. **Resolve every applicable item to a terminal state, with evidence.** As recon and analysis proceed,
-   each agent records, for items in its domain, a `## Coverage States` section in its own output file:
-   `present`/`partial` (with `detail` + a `source` that resolves in the materials), `absent`/`not-applicable`
-   (with a one-line reason `note`), or `unknown` (with a `note` on what was searched and why it's
-   undetermined). **Attempt every applicable item** — `unknown` is a first-class, honest answer ("checked,
-   the sources don't say"), never a silent omission. Agents record states in their *own* files (no two
-   agents write `coverage.json` concurrently).
-3. **Merge and surface gaps (validation / Phase 8).** A single writer — the validation-specialist in team
-   mode, or the Phase 6+8 pass in solo mode — merges every agent's `## Coverage States` into the one
-   `coverage.json`, confirms no applicable item is left unresolved, lifts `unknown`/`partial`/`absent`-by-gap
-   items into the report's **Open Questions** and **Known Limitations**, and records the coverage profile
-   (counts by state, present-with-evidence fraction) in `pipeline-summary.md`.
+   each agent records, for items in its domain: `present`/`partial` (with `detail` + a `source` that
+   resolves in the materials), `absent`/`not-applicable` (with a one-line reason `note`), or `unknown`
+   (with a `note` on what was searched and why it's undetermined). **Attempt every applicable item** —
+   `unknown` is a first-class, honest answer ("checked, the sources don't say"), never a silent omission.
+3. **Surface gaps (Phase 8 / validation).** The final coverage pass confirms no applicable item is left
+   unresolved, lifts `unknown`/`partial`/`absent`-by-gap items into the report's **Open Questions** and
+   **Known Limitations**, and records the coverage profile (counts by state, present-with-evidence
+   fraction) in `pipeline-summary.md`.
 
 This is verified deterministically by `evals/reliability/coverage_checks.py` (every applicable item has a
 terminal state, `present` is grounded, `unknown` is noted, applicability matches the declared context) —
@@ -55,7 +52,7 @@ it never requires a specific item to be present. State *correctness* is assessed
 
 ## Assessment Orchestration
 
-This section guides the **parent conversation** (which has the full tool set, including the `Agent` spawn tool) through spawning and sequencing agents. Flat orchestration is an intentional design choice — every agent is spawned by the parent as a visible, debuggable peer, and no spawned agent hides orchestration inside itself. (Subagents *can* spawn their own subagents in current Claude Code; the pipeline deliberately keeps spawning flat and in the parent.)
+This section guides the **parent conversation** (which has all tools: Task, TaskOutput, etc.) through spawning and sequencing agents. No spawned agent handles orchestration — the parent does it all, and every agent runs as a flat peer visible to the user.
 
 ### Pipeline Architecture (Team Mode)
 
@@ -74,26 +71,18 @@ flowchart TD
         DS2 -->|writes| R2[02-structural-diagram.md\n+ exec log]
     end
 
-    subgraph "Phases 3-5 — Generative analysis (blocking)"
-        SA2([security-architect\nPhases 3-5])
+    subgraph "Phases 3-6, 8 — Analysis (blocking)"
+        SA2([security-architect\nPhases 3-6, 8])
         R1 -->|reads| SA2
         R2 -->|reads| SA2
         SA2 -->|writes| R3[03-threat-identification.md]
         SA2 -->|writes| R4[04-risk-quantification.md]
         SA2 -->|writes| R5[05-false-negative-hunting.md]
+        SA2 -->|writes| R6[06-validated-findings.md]
+        SA2 -->|writes| R8[08-threat-model-report.md\n+ exec log]
     end
 
-    subgraph "Phases 6, 8 — Skeptical validation (blocking, FRESH context)"
-        SAV([security-architect\nPhases 6, 8])
-        R1 -->|reads| SAV
-        R3 -->|reads| SAV
-        R4 -->|reads| SAV
-        R5 -->|reads| SAV
-        SAV -->|writes| R6[06-validated-findings.md]
-        SAV -->|writes| R8[08-threat-model-report.md\n+ findings.json + exec log]
-    end
-
-    subgraph "Phase 7 — Risk overlay + analytical visuals (blocking)"
+    subgraph "Phase 7 — Risk Overlay (blocking)"
         DS7([diagram-specialist\nPhase 7])
         R2 -->|reads| DS7
         R4 -->|reads| DS7
@@ -102,13 +91,13 @@ flowchart TD
         DS7 -->|writes| R7[07-final-diagram.md\n+ exec log]
     end
 
-    subgraph "Specialists (parallel, background from Phase 2)"
+    subgraph "Specialists (parallel, background)"
         PA([privacy-agent])
         GRC([grc-agent])
         CR([code-review-agent])
-        R1 & R2 -->|read| PA
-        R1 & R2 -->|read| GRC
-        R1 & R2 -->|read| CR
+        R1 -->|reads| PA
+        R1 -->|reads| GRC
+        R1 -->|reads| CR
         PA -->|writes| PO[privacy-assessment.md\n+ exec log]
         GRC -->|writes| GO[compliance-gap-analysis.md\n+ exec log]
         CR -->|writes| CO[code-security-review.md\n+ exec log]
@@ -147,114 +136,25 @@ flowchart TD
 - Parent orchestrator writes `pipeline-summary.md` (agent execution summary, deliverable verification, overall health)
 
 **Run-event stream (observability).** As it runs, the parent orchestrator also appends to
-`{output_dir}/events.ndjson` a `tm.run-event/1` line — a `start` before each agent spawn and a `done`
+`{output_dir}/events.ndjson` a `tm.run-event/1` line — a `start` before each Task spawn and a `done`
 after that agent's output file lands (a machine-readable projection of the agent's Execution Log, no
 new analysis). This makes "which persona is doing what" visible live via the renderer
 `evals/reliability/tm_observe.py` (`--tail`/`--tree`/`--once`). See
 [references/pipeline-observability.md](references/pipeline-observability.md). The stream is presentation
 only; it never drives the analysis.
 
-### Step 0: Run-Plan Selection (REQUIRED — before any spawn)
+### Solo vs Team Decision
 
-**Nothing runs until the user explicitly picks a run plan.** Before recon, present the choice surface and
-STOP unless the user already specified a plan. This is deterministic (the run produces EXACTLY the picked
-team + outputs) and hard-enforced: the `Task` PreToolUse gate (`hooks/validate_gate.py`) **denies the
-first `security-architect`/`threat-modeler-recon` spawn** unless `{output_dir}/run-plan.json` exists,
-validates against `evals/reliability/schema/run-plan.schema.json`, and has `confirmed: true`. `Write` is
-not gated, so you write the plan after the user picks, then spawn — no accidental full run, no deadlock.
-
-**Two entry paths:**
-
-- **One-shot (specified):** the invocation already carries a plan, e.g.
-  `threat model this repo, team=privacy+code-review, outputs=dashboard+pdf`. Parse it, **echo the resolved
-  plan back for confirmation**, write `run-plan.json` (`source: "one-shot"`), proceed. Shorthands:
-  `mode=solo|team`, `team=privacy,grc,code-review` (or `none`/`all`),
-  `outputs=report.html,report.docx,report.pdf,executive-summary.pptx,dashboard,analytical-visuals` (or `all`).
-  **Chaining (opt-in, default standalone):** `chain=<portfolio-id>, run-id=<this-run's-id>` adds the run to
-  a portfolio/chain (e.g. `…, chain=acme-security-portfolio, run-id=crapi`). `chain=none` or omitted ⇒
-  standalone. `run-id` defaults to the output dir's basename; it must be unique within the portfolio.
-- **Menu (unspecified):** print the menu and STOP — emit no spawn:
-
-```
-Before I start, choose your run plan (nothing runs until you pick):
-
-  MODE      ( ) Solo — threat model + report only
-            ( ) Team — adds specialist agents  [pick specialists below]
-
-  TEAM      [ ] privacy-agent      (PIA / LINDDUN)
-            [ ] grc-agent          (compliance / control mapping)
-            [ ] code-review-agent  (threat-directed code review)
-
-  OUTPUTS   [ ] report.html   [ ] report.docx   [ ] report.pdf
-            [ ] executive-summary.pptx
-            [ ] dashboard  (the product-risk dashboard)
-            [ ] analytical-visuals  (STRIDE/control matrices, ATLAS, diagrams)
-
-  CHAIN     (•) Standalone — this run is its own product (default)
-            ( ) Add to a portfolio/chain — combine with related product runs
-                 → portfolio id: __________   (existing id, or a new one to create)
-                 → this product's run id in the chain: __________  (defaults to the output dir name)
-
-Reply e.g.  "team = privacy + code-review, outputs = dashboard + pdf"
-       or   "solo, outputs = all"
-       or   "team = all, outputs = dashboard, chain = acme-portfolio, run-id = crapi".
-```
-
-On the user's pick, `mkdir -p {output_dir}` and **write `{output_dir}/run-plan.json`**:
-
-```json
-{ "schema": "run-plan/v1", "mode": "team", "team": ["privacy", "code-review"],
-  "outputs": ["dashboard", "report.pdf"], "confirmed": true, "source": "one-shot",
-  "chain": { "portfolio_id": "acme-security-portfolio", "run_id": "crapi",
-             "portfolio_path": "../portfolio.json" } }
-```
-
-- `team` MUST be `[]` when `mode="solo"`; a subset of `["privacy","grc","code-review"]` otherwise.
-- `outputs` is a non-empty subset of the six formats above.
-- `confirmed: true` records that the user picked (the start gate requires it).
-- `chain` is **omitted (or `null`) for a standalone run** (the default). When the user opts in, all three
-  sub-fields are required — the existing start gate validates it against `run-plan.schema.json`; no new gate,
-  no second stop. Chaining rides the same fact that already prevents an accidental start.
-
-**Post-run membership upsert (only when `chain` is set).** After the pipeline completes and the manifests
-are emitted, join the run to its portfolio deterministically — membership only, never a relationship:
-
-1. If `chain.portfolio_path` doesn't exist, create it as a `portfolio/v1` file (`schema`, `id` =
-   `chain.portfolio_id`, `name`, `members: []`).
-2. **Upsert** `members[]` keyed by `chain.run_id`: add `{run_id, label, path}` if new, or update the existing
-   entry's `path` in place (idempotent — a re-run never duplicates a member). `path` is the run's output dir
-   relative to the portfolio file.
-3. **Never write `relationships[]`.** Declared cross-product edges are a separate, explicit, provenance-bearing
-   act (real element ids on both ends — see [scripts/build_portfolio.py](scripts/build_portfolio.py) and the
-   `portfolio/v1` schema). Joining a chain never invents an edge (two-level opt-in: be in the chain, then be
-   linked).
-4. Optionally regenerate the portfolio meta-view:
-   `python3 skills/threat-model/scripts/build_portfolio.py <portfolio.json> <out.html> --repo <repo-root>` —
-   a self-contained offline `portfolio.html` that rolls up every member (aggregate posture, chain map, ranked
-   member cards drilling into each product's `dashboard.html`, grounded shared-CWE/ATT&CK tables).
-
-The plan then SHAPES the run deterministically: spawn a specialist **iff** it is in `team[]`, and have the
-report-analyst emit **exactly** `outputs[]`. The determinism boundary is preserved — the menu and schema
-are fixed templates; the *choice* is the user's, and you only transcribe it. **Solo and Team survive as
-named presets** (`mode=solo` ⇒ `team:[]`; `mode=team, team=all, outputs=all` ⇒ the historical full run).
-The reference-free `run_plan_checks` (in `run.py check`/`validate`) then verifies the run produced exactly
-the planned team + outputs — no extra, no missing.
-
-### Solo vs Team Decision (preset guidance for Step 0)
-
-The mode is the user's Step-0 pick. Use this only to *recommend* a preset when the user asks for guidance;
-never auto-start. **Recommend Team** for most real systems (multi-domain analysis); recommend Solo for
-genuinely simple or narrowly-scoped requests.
+**Default: Team mode.** Most real systems benefit from multi-domain analysis. Only use Solo for genuinely simple or narrowly-scoped requests.
 
 The decision depends on the SYSTEM, not the user's wording. "Threat model X" does NOT mean Solo — it means assess X and use whichever mode the system's complexity warrants. **Always do lightweight recon first** (scan for IaC, data stores, API routes, cloud services) before deciding.
 
-**Use Solo when the SYSTEM is small and low-stakes — ALL of these hold:**
+**Use Solo ONLY when ALL of these are true:**
 1. The system is small (fewer than 10 components)
 2. No sensitive data processing (no PII, PHI, financial data, credentials at scale)
 3. No cloud infrastructure or IaC (no Terraform, CloudFormation, Kubernetes)
 4. No compliance requirements applicable
-
-**Or use Solo when the request is explicitly narrow** (e.g., "just review this one endpoint") — a scoped ask is a sufficient Solo trigger on its own, regardless of the four conditions above. Don't force a small, clean, plain-"threat model this" request into Team just because it wasn't phrased narrowly; that violates "scale analysis proportionally."
+5. The user explicitly asks for something narrow (e.g., "just review this one endpoint")
 
 **Use Team when ANY of these are true:**
 1. The user mentions "comprehensive", "full", or "complete" assessment
@@ -267,111 +167,176 @@ The decision depends on the SYSTEM, not the user's wording. "Threat model X" doe
 
 **When in doubt: Team.** It's better to spawn specialists that find nothing than to miss entire categories of risk.
 
-**Spawning:** use the `Agent` tool (the older `Task` name still works as an alias). Blocking spawns pass `run_in_background: false`; background spawns notify the parent on completion (there is no `TaskOutput` tool — the parent waits on the completion notifications). Every persona is spawned by its own `name` as its `subagent_type`.
-
 ### Solo Workflow
 
 1. **Create output directory**: `mkdir -p {project_root}/threat-model-output`
-   - **Render preflight (fail loud at start)**: run `bash {refs_dir}/../scripts/ensure_renderer.sh {refs_dir}` before spawning any agent. It verifies the offline renderer (`d2`, the active tier's rasterizer, vendored icons + font) and prints `TM_RENDER_TIER=primary|fallback` — export that into the run environment so the render seam and the diagram checks see the declared tier (the fallback tier enforces the plain-single-line-label constraint). A nonzero exit names a missing dependency: stop and fix it here, not five agents deep at report generation. (A legacy Mermaid-only run that authors no `.d2` may skip this; any run that will render `.d2` MUST preflight.)
 
 2. **Spawn `security-architect`** (blocking) — Phase 1 only:
-   - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-recon"`
+   - `subagent_type`: `"security-architect"`
+   - `name`: `"threat-modeler-recon"`
    - `prompt`: See "Solo — security-architect Phase 1 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
-   - Writes `01-reconnaissance.md`, `visual-completeness-checklist.md`, and seeds the coverage ledger context.
+   - Writes `01-reconnaissance.md` and `visual-completeness-checklist.md`.
 
-3. **Spawn `diagram-specialist`** (blocking) — Phase 2 (structural diagrams):
-   - `subagent_type`: `"diagram-specialist"`, `name`: `"diagram-specialist"`
+3. **Spawn `security-architect`** (blocking) — Phase 2 (structural diagrams):
+   - `subagent_type`: `"security-architect"`
+   - `name`: `"diagram-specialist"`
    - `prompt`: See "Diagram-specialist Phase 2 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
    - Reads `01-reconnaissance.md`, writes `02-structural-diagram.md`.
 
-4. **Spawn `security-architect`** (blocking) — Phases 3-5 (generative: identify, score, false-negative hunt):
-   - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-analysis"`
-   - `prompt`: See "Solo — security-architect Phases 3-5 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
-   - Reads `01`/`02`, writes `03-threat-identification.md`, `04-risk-quantification.md`, `05-false-negative-hunting.md`.
+4. **Spawn `security-architect`** (blocking) — Phases 3-6, 8:
+   - `subagent_type`: `"security-architect"`
+   - `name`: `"threat-modeler-analysis"`
+   - `prompt`: See "Solo — security-architect Phases 3-6,8 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
+   - Reads prior phases from files, writes `03-threat-identification.md` through `06-validated-findings.md` and `08-threat-model-report.md` (summary only).
 
-5. **Spawn `security-architect`** (blocking) — Phases 6 + 8 in a **fresh context** (skeptical validation + summary):
-   - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-validation"`
-   - `prompt`: See "Solo — security-architect Phases 6,8 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
-   - Reads `01`/`03`/`04`/`05` from disk (not the generator's context), writes `06-validated-findings.md` and `08-threat-model-report.md` (summary only). This clean-context split keeps the skeptical pass from inheriting the generator's anchoring.
-
-6. **Spawn `diagram-specialist`** (blocking) — Phase 7 (risk overlay + analytical visuals):
-   - `subagent_type`: `"diagram-specialist"`, `name`: `"diagram-specialist-overlay"`
+5. **Spawn `security-architect`** (blocking) — Phase 7 (risk overlay diagram):
+   - `subagent_type`: `"security-architect"`
+   - `name`: `"diagram-specialist-overlay"`
    - `prompt`: See "Diagram-specialist Phase 7 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
-   - Reads `02`/`04`/`05`/`06`, writes `07-final-diagram.md` and the applicable analytical visuals.
+   - Reads `02-structural-diagram.md`, `04-06.md`, writes `07-final-diagram.md`.
 
-7. **Run the Manifest Validation Gate** (see below) over `recon.json`/`findings.json`/`coverage.json`. Only once it passes, **spawn `report-analyst`** (blocking):
-   - `subagent_type`: `"report-analyst"`, `name`: `"report-generator"`
+6. **Spawn `report-analyst`** (blocking):
+   - `subagent_type`: `"report-analyst"`
+   - `name`: `"report-generator"`
    - `prompt`: See "Solo — report-analyst prompt" in [references/agent-prompts.md](references/agent-prompts.md)
 
 ### Team Workflow
 
 1. **Create output directory**: `mkdir -p {project_root}/threat-model-output`
-   - **Render preflight (fail loud at start)**: run `bash {refs_dir}/../scripts/ensure_renderer.sh {refs_dir}` before spawning any agent. It verifies the offline renderer (`d2`, the active tier's rasterizer, vendored icons + font) and prints `TM_RENDER_TIER=primary|fallback` — export that into the run environment so the render seam and the diagram checks see the declared tier (the fallback tier enforces the plain-single-line-label constraint). A nonzero exit names a missing dependency: stop and fix it here, not five agents deep at report generation. (A legacy Mermaid-only run that authors no `.d2` may skip this; any run that will render `.d2` MUST preflight.)
 
 2. **Spawn `security-architect`** (blocking) — Phase 1 only:
-   - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-recon"`
+   - `subagent_type`: `"security-architect"`
+   - `name`: `"threat-modeler-recon"`
    - `prompt`: See "Team — security-architect Phase 1 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
-   - Writes `01-reconnaissance.md`, `visual-completeness-checklist.md`, and seeds the coverage ledger context.
+   - Writes `01-reconnaissance.md` and `visual-completeness-checklist.md`.
 
-3. **Spawn `diagram-specialist`** (blocking) — Phase 2 (structural diagrams):
-   - `subagent_type`: `"diagram-specialist"`, `name`: `"diagram-specialist"`
+3. **Spawn `security-architect`** (blocking) — Phase 2 (structural diagrams):
+   - `subagent_type`: `"security-architect"`
+   - `name`: `"diagram-specialist"`
    - `prompt`: See "Diagram-specialist Phase 2 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
    - Reads `01-reconnaissance.md`, writes `02-structural-diagram.md`.
 
-4. **Spawn ONLY the specialists in `run-plan.json`'s `team[]`** in the background (`run_in_background: true`) — spawn each **iff** its token is present, never the whole set by default. Their dependency frontier is Phase 2 (they need recon + the node-id namespace), so they run **concurrently** with the analysis phases and Phase 7:
-   - if `"privacy" ∈ team` — **privacy-agent**: `subagent_type`: `"privacy-agent"`, `name`: `"privacy-specialist"`
-   - if `"grc" ∈ team` — **grc-agent**: `subagent_type`: `"grc-agent"`, `name`: `"compliance-specialist"`
-   - if `"code-review" ∈ team` — **code-review-agent**: `subagent_type`: `"code-review-agent"`, `name`: `"code-security-specialist"`
-   - Each reads `01-reconnaissance.md` + `02-structural-diagram.md` (for canonical node ids); prompts in [references/agent-prompts.md](references/agent-prompts.md). A specialist NOT in `team[]` is not spawned and its output file must not exist (`run_plan_checks` flags an extra-unplanned specialist as a defect).
+4. **Spawn `security-architect`** (blocking) — Phases 3-6, 8:
+   - `subagent_type`: `"security-architect"`
+   - `name`: `"threat-modeler-analysis"`
+   - `prompt`: See "Team — security-architect Phases 3-6,8 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
+   - Reads prior phases from files, writes `03-threat-identification.md` through `06-validated-findings.md` and `08-threat-model-report.md` (summary only).
 
-5. **Spawn `security-architect`** (blocking) — Phases 3-5 (generative):
-   - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-analysis"`
-   - `prompt`: See "Team — security-architect Phases 3-5 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
-   - Reads `01`/`02`, writes `03-threat-identification.md` through `05-false-negative-hunting.md`.
-
-6. **Spawn `security-architect`** (blocking) — Phases 6 + 8 in a **fresh context**:
-   - `subagent_type`: `"security-architect"`, `name`: `"threat-modeler-validation"`
-   - `prompt`: See "Team — security-architect Phases 6,8 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
-   - Reads `01`/`03`/`04`/`05` from disk, writes `06-validated-findings.md` and `08-threat-model-report.md` (summary only).
-
-7. **Spawn `diagram-specialist`** (blocking) — Phase 7 (risk overlay + analytical visuals):
-   - `subagent_type`: `"diagram-specialist"`, `name`: `"diagram-specialist-overlay"`
+5. **Spawn `security-architect`** (blocking) — Phase 7 (risk overlay diagram):
+   - `subagent_type`: `"security-architect"`
+   - `name`: `"diagram-specialist-overlay"`
    - `prompt`: See "Diagram-specialist Phase 7 prompt" in [references/agent-prompts.md](references/agent-prompts.md)
+   - Reads `02-structural-diagram.md`, `04-06.md`, writes `07-final-diagram.md`.
 
-8. **Wait for the specialists you spawned** (those in `team[]`) to signal completion (their output files land: `privacy-assessment.md` / `compliance-gap-analysis.md` / `code-security-review.md`, one per planned specialist), then **spawn `validation-specialist`** (blocking) by name:
-   - `subagent_type`: `"validation-specialist"`, `name`: `"validation-specialist"`
+6. **Spawn 3 specialists in parallel** (`run_in_background: true` on all 3):
+   - **privacy-agent**: `subagent_type`: `"privacy-agent"`, `name`: `"privacy-specialist"` — see "Team — privacy-agent prompt" in [references/agent-prompts.md](references/agent-prompts.md)
+   - **grc-agent**: `subagent_type`: `"grc-agent"`, `name`: `"compliance-specialist"` — see "Team — grc-agent prompt" in [references/agent-prompts.md](references/agent-prompts.md)
+   - **code-review-agent**: `subagent_type`: `"code-review-agent"`, `name`: `"code-security-specialist"` — see "Team — code-review-agent prompt" in [references/agent-prompts.md](references/agent-prompts.md)
+
+7. **Wait for all 3**: Call `TaskOutput(task_id=..., block=true)` for each background agent's task ID.
+
+8. **Spawn `general-purpose`** (blocking) as validation-specialist:
+   - `subagent_type`: `"general-purpose"`
+   - `name`: `"validation-specialist"`
    - `prompt`: See "Team — validation-specialist prompt" in [references/agent-prompts.md](references/agent-prompts.md)
-   - Reads all outputs, **merges each agent's per-domain coverage states into the single `coverage.json`** (it is the ledger's sole writer), and writes `validation-report.md`.
+   - Reads all outputs, writes `validation-report.md`.
 
-9. **Run the Manifest Validation Gate** (see below) over `recon.json`/`findings.json`/`coverage.json`. Only once it passes, **spawn `report-analyst`** (blocking):
-   - `subagent_type`: `"report-analyst"`, `name`: `"report-generator"`
+9. **Spawn `report-analyst`** (blocking):
+   - `subagent_type`: `"report-analyst"`
+   - `name`: `"report-generator"`
    - `prompt`: See "Team — report-analyst prompt" in [references/agent-prompts.md](references/agent-prompts.md)
-   - **Emit exactly `run-plan.json`'s `outputs[]`** — the report-analyst produces only the selected
-     formats. When `"dashboard" ∈ outputs`, it also runs
-     `python3 {refs_dir}/../scripts/build_dashboard.py {output_dir} {output_dir}/dashboard.html` (pure
-     Python, offline — no new binary) to emit the product-risk `dashboard.html` from the run's manifests,
-     embedding the run's own structural diagram. `run_plan_checks` flags any extra/missing output.
 
 ### Spawn Parameter Templates
 
-Substitute `{output_dir}`, `{project_root}`, and `{refs_dir}` with actual paths in all prompts. Set `{refs_dir}` to the skill's own **`references/`** directory (an absolute path — resolve it once from the skill install location and pass it verbatim to every agent). Do not copy reference files to a temporary directory: subagents read absolute paths directly, and each specialist preloads its own skill (whose `references/` it also reads by absolute path). This works identically under manual, project-level, and plugin installs.
+Substitute `{output_dir}`, `{project_root}`, and `{refs_dir}` with actual paths in all prompts.
+
+Define `{refs_dir}` as `/tmp/threat-model-refs`. Before spawning any agents, copy reference files:
+
+```bash
+SKILL_BASE="$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")"
+mkdir -p /tmp/threat-model-refs
+cp ~/.claude/skills/threat-model/references/*.md /tmp/threat-model-refs/
+cp ~/.claude/skills/threat-model/references/*.json /tmp/threat-model-refs/
+cp ~/.claude/agents/diagram-specialist.md /tmp/threat-model-refs/diagram-specialist-agent.md 2>/dev/null || true
+cp ~/.claude/agents/validation-specialist.md /tmp/threat-model-refs/validation-specialist-agent.md 2>/dev/null || true
+# Copy compliance-assessment reference files (for GRC agent and validation-specialist)
+cp ~/.claude/skills/compliance-assessment/references/*.md /tmp/threat-model-refs/ 2>/dev/null || true
+# Copy privacy-impact-assessment reference files (for privacy agent and validation-specialist)
+cp ~/.claude/skills/privacy-impact-assessment/references/*.md /tmp/threat-model-refs/ 2>/dev/null || true
+```
+
+Note: The `~` in the prep step expands at the orchestrator level (which runs in the parent conversation's shell). Sub-agents only ever see `/tmp/threat-model-refs/` via the `{refs_dir}` variable.
 
 See [references/agent-prompts.md](references/agent-prompts.md) for all agent spawn prompts. Each prompt is labeled to match the workflow step references above (e.g., "Solo — security-architect Phase 1 prompt").
 
 ### Post-Assessment Verification
 
-After the report-analyst completes, run the shipped verification script over the output directory — it checks core outputs + manifests exist, the HTML report is structurally sound (a diagram embed present as an `<img>` PNG **or** an inline offline `<svg>`, no Mermaid CDN/runtime, balanced/closed script tags, body/html closed), and each agent left an Execution Log:
+After the report-analyst completes, verify all expected files exist and are non-empty:
 
 ```bash
-bash "{refs_dir}/../scripts/verify_run.sh" "{output_dir}"
+# Core threat model outputs
+for f in 01-reconnaissance.md 02-structural-diagram.md 03-threat-identification.md \
+         04-risk-quantification.md 05-false-negative-hunting.md 06-validated-findings.md \
+         07-final-diagram.md 08-threat-model-report.md; do
+  test -s "{output_dir}/$f" && echo "OK: $f" || echo "MISSING: $f"
+done
+
+# Report deliverables
+for f in report.html report.docx report.pdf executive-summary.pptx; do
+  test -s "{output_dir}/$f" && echo "OK: $f ($(wc -c < "{output_dir}/$f") bytes)" || echo "MISSING: $f"
+done
+
+# Team outputs (if team mode)
+for f in privacy-assessment.md compliance-gap-analysis.md code-security-review.md \
+         validation-report.md; do
+  test -s "{output_dir}/$f" 2>/dev/null && echo "OK: $f" || echo "NOT PRESENT: $f (expected in team mode only)"
+done
 ```
 
-It prints `OK`/`FAIL`/`WARN` lines and exits non-zero on any core/report/HTML failure. On a FAIL:
-- **HTML content failure** → re-spawn the report-analyst with the specific FAIL lines so it fixes `report.html`.
-- **Missing report deliverable** → re-spawn the report-analyst with the exact list of missing files so it regenerates just those.
-- **Missing core threat-model output** → investigate and report to the user.
+#### HTML Report Content Validation
 
-(`WARN` lines — a missing Execution Log or a team-only file absent in solo mode — are advisory, not blocking.)
+After verifying file existence, run these critical content checks on `report.html`:
+
+```bash
+# Check 1: Diagrams use embedded PNGs (not Mermaid CDN)
+grep -c '<img' "{output_dir}/report.html" | xargs -I{} echo "IMG tags found: {}"
+grep -qi 'mermaid' "{output_dir}/report.html" && echo "FAIL: Mermaid CDN reference found — must use PNG embeds" || echo "OK: No Mermaid CDN"
+
+# Check 2: No <\/script> escape (breaks HTML parser)
+grep -c '<\\/script>' "{output_dir}/report.html" | xargs -I{} test {} -eq 0 && echo "OK: No broken script escapes" || echo "FAIL: Found <\\/script> — replace with </script>"
+
+# Check 3: All script tags properly closed
+OPEN=$(grep -c '<script' "{output_dir}/report.html")
+CLOSE=$(grep -c '</script>' "{output_dir}/report.html")
+test "$OPEN" -eq "$CLOSE" && echo "OK: Script tags balanced ($OPEN/$CLOSE)" || echo "FAIL: Mismatched script tags (open=$OPEN, close=$CLOSE)"
+
+# Check 4: HTML structure is valid (has body content)
+grep -q '<body' "{output_dir}/report.html" && echo "OK: Body tag present" || echo "FAIL: No body tag"
+grep -q '</html>' "{output_dir}/report.html" && echo "OK: HTML properly closed" || echo "FAIL: HTML not closed"
+```
+
+If any HTML content checks fail, re-spawn the report-analyst with the specific failure details so it can fix the HTML output.
+
+If any report deliverables are missing, re-spawn the report-analyst to complete them. If any core threat model outputs are missing, investigate and report to the user.
+
+#### Execution Log Verification
+
+Check that every agent produced an execution log:
+
+```bash
+# Check for execution logs in agent outputs
+for f in 01-reconnaissance.md 02-structural-diagram.md 08-threat-model-report.md 07-final-diagram.md; do
+  grep -q '## Execution Log' "{output_dir}/$f" && echo "OK: $f has execution log" || echo "MISSING LOG: $f"
+done
+
+# Check specialist agent execution logs (team mode)
+for f in privacy-assessment.md compliance-gap-analysis.md code-security-review.md; do
+  test -f "{output_dir}/$f" && (grep -q '## Execution Log' "{output_dir}/$f" && echo "OK: $f has execution log" || echo "MISSING LOG: $f") || true
+done
+
+# Check report generation log
+test -s "{output_dir}/report-generation-log.md" && echo "OK: report-generation-log.md" || echo "MISSING: report-generation-log.md"
+```
 
 #### Pipeline Summary
 
@@ -390,15 +355,14 @@ After all verification, write `{output_dir}/pipeline-summary.md` with a concise 
 ## Agent Execution Summary
 | Agent | Phase(s) | Output File(s) | Status | Execution Log Quality |
 |-------|----------|---------------|--------|------|
-| threat-modeler-recon | 1 | 01-reconnaissance.md, recon.json, coverage.json (seed) | OK/FAILED | Has log: Y/N |
+| threat-modeler-recon | 1 | 01-reconnaissance.md | OK/FAILED | Has log: Y/N |
 | diagram-specialist | 2 | 02-structural-diagram.md | OK/FAILED | Has log: Y/N |
-| threat-modeler-analysis | 3-5 | 03-05.md | OK/FAILED | Has log: Y/N |
-| threat-modeler-validation | 6, 8 | 06.md, 08.md, findings.json | OK/FAILED | Has log: Y/N |
-| diagram-specialist-overlay | 7 | 07-final-diagram.md, analytical visuals | OK/FAILED | Has log: Y/N |
+| threat-modeler-analysis | 3-6,8 | 03-08.md | OK/FAILED | Has log: Y/N |
+| diagram-specialist-overlay | 7 | 07-final-diagram.md | OK/FAILED | Has log: Y/N |
 | privacy-specialist | — | privacy-assessment.md | OK/FAILED/SKIPPED | Has log: Y/N |
 | compliance-specialist | — | compliance-gap-analysis.md | OK/FAILED/SKIPPED | Has log: Y/N |
 | code-security-specialist | — | code-security-review.md | OK/FAILED/SKIPPED | Has log: Y/N |
-| validation-specialist | — | validation-report.md, coverage.json (merged) | OK/FAILED/SKIPPED | Has log: Y/N |
+| validation-specialist | — | validation-report.md | OK/FAILED/SKIPPED | — |
 | report-generator | — | report.html, .docx, .pdf, .pptx | OK/FAILED | See report-generation-log.md |
 
 ## Deliverable Verification
@@ -423,10 +387,6 @@ Inform the user of generated files:
 - `{output_dir}/report.docx` — Word document (editable)
 - `{output_dir}/report.pdf` — PDF (for distribution)
 - `{output_dir}/executive-summary.pptx` — executive presentation (for leadership)
-- `{output_dir}/dashboard.html` — the product-risk **dashboard** (self-contained, offline; analytics +
-  the run's own interactive structural diagram) — produced **only when `"dashboard" ∈ run-plan.outputs`**
-
-Which of these are produced is exactly `run-plan.json`'s `outputs[]` (Step 0) — never more, never fewer.
 
 ## Phase 1 — Reconnaissance
 
@@ -476,20 +436,11 @@ Output a structured summary listing all components discovered, data assets, acto
 
 **File Output**: Save Phase 1 output to `{output_dir}/01-reconnaissance.md`.
 
-**Machine-readable manifest**: Also emit `{output_dir}/recon.json` — the attack surface as structured data. Every element (`components`, `data_stores`, `entry_points`, `trust_boundaries`, `external_deps`) carries `evidence` (a repo path, glob, or literal string that resolves in the target), with optional per-element fields where they apply: trust-boundary `kind`, external-dep `manifest`/`risk`, and `tech`. At the **top level**, also set `roles[]` (include `anonymous`) and an optional `detected_pattern` (the system's structural archetype — `web-app`/`api`/`iac`/`polyglot-microservices`/…/`unknown`; use `other` + `detected_pattern_detail` if it fits none). Conform to [evals/reliability/schema/recon.schema.json](evals/reliability/schema/recon.schema.json); this is the manifest the validation gate checks.
-
 ## Phase 2 — Structural Diagram
 
-Produce structural Data Flow Diagrams (Mermaid **or** D2) that accurately represent the architecture BEFORE any risk analysis. Do NOT apply risk colors or threat annotations — those come in Phase 7.
+Produce Mermaid flowchart Data Flow Diagrams that accurately represent the architecture BEFORE any risk analysis. Do NOT apply risk colors or threat annotations — those come in Phase 7.
 
 Consult [references/mermaid-spec.md](references/mermaid-spec.md) for symbol taxonomy (§3), typed edges (§4), design principles (§1), rendering config (§2), ownership markers (§7), and classDef reference (§8). Consult [references/mermaid-layers.md](references/mermaid-layers.md) for layer definitions. Use [references/mermaid-templates.md](references/mermaid-templates.md) as starting points for common architecture patterns.
-
-**Engine — Mermaid or D2 (both accepted, one vocabulary).** Every diagram, in either engine, draws from the single node-type vocabulary in [references/node-type-icons.md](references/node-type-icons.md) and renders through the offline seam. Pick per diagram:
-- **Mermaid** (`.mmd`) — the incumbent; author per `mermaid-spec.md` as above. Stays accepted indefinitely; committed worked-examples never break.
-- **D2** (`.d2`) — author per [references/d2-spec.md](references/d2-spec.md): symbol/icon taxonomy (§2), container = trust boundary (§3), typed+annotated edges (§4), the version/layer stamp (§6), and the eval-facing subset (§7). **MANDATORY: bind each type's vendored local icon** through the `classes` block (`icon: <rel>/references/icons/<type>.svg` — local paths only, never a remote URL; d2 embeds them offline as data URIs). This is required on hand-authored D2 too — an un-iconned diagram is the old *plain* look and breaks visual consistency with the flow's other diagrams and the dashboard. Icons render on EVERY tier (the browser-free fallback only blanks multi-line labels, never icons). The diagram eval enforces it (`d2-missing-node-icon`); on hand-authored D2 run `python3 {refs_dir}/../scripts/inject_node_icons.py <file>.d2 -i` to bind icons deterministically (idempotent; folds risk/camelCase class names onto their node-type; leaves attack-graph classes untouched).
-- **Deterministic D2 from recon (STRONGLY PREFERRED — the canonical enhanced structural render).** When the Phase 1 recon (`01-reconnaissance.md` / its `recon.json`) carries typed elements (`element.type`, `element.zone`) and `dataflows[]`, generate the L1 structural D2 mechanically: `python3 {refs_dir}/../scripts/recon_to_d2.py <recon.json> {output_dir}/{name}-L1-architecture.d2`. The agent authors only *meaning* (types + edges + containment); the script owns 100% of layout, shape, icon binding, and nesting, byte-deterministically (re-running yields identical output) — deterministic consistency, not agent discretion. Prefer this whenever recon is typed; to make it always applicable, have Phase 1 recon emit `dataflows[]` + `element.type`. See [references/d2-spec.md](references/d2-spec.md).
-
-**Render** every diagram source in the output dir with `bash {refs_dir}/../scripts/render_diagrams.sh {output_dir}` — it dispatches by extension (`.mmd`→mermaid-cli, `.d2`→d2 SVG for the HTML report + PNG for Office), verifies each raster is non-blank, and fails loud on a missing renderer or a source in an extension no engine handles.
 
 1. Read the completed visual completeness checklist from `{output_dir}/visual-completeness-checklist.md`.
 2. **Determine layer strategy** per [mermaid-layers.md](references/mermaid-layers.md) §6: ≤5 components → 2-layer (L1+L4); 6-20 → full 4-layer; >20 → 4-layer + sub-diagrams.
@@ -500,17 +451,27 @@ Consult [references/mermaid-spec.md](references/mermaid-spec.md) for symbol taxo
 7. Add component metadata in enriched node labels (Name + Tech + Security Features). Do NOT add threat annotation data yet.
 8. Include the structural legend, version stamp, and validate against [references/mermaid-review-checklist.md](references/mermaid-review-checklist.md).
 
-Output each layer diagram in a fenced code block tagged for its engine (`mermaid` or `d2`). Filename convention: `{name}-L{N}-{layer}.mmd` (Mermaid) or `{name}-L{N}-{layer}.d2` (D2). Both render through `scripts/render_diagrams.sh`.
+Output each layer diagram in a fenced code block with `mermaid` language tag. Use filename convention: `{name}-L{N}-{layer}.mmd`.
 
-### Structural acceptance gate (blocking, Phase 2)
-Do NOT finalize the structural diagrams until every item holds — a diagram that misses these is incomplete, not a stylistic choice. Re-do it before moving on. This gate covers only what Phase 2 produces (the L1-L3 structural layers); the **risk overlay (L4) and the analytical/communication visuals are produced and gated in Phase 7**, once findings are scored and kill chains are declared — do not attempt them here (Phase 2 forbids risk content).
-- **Layers present per scaling** — ≤5 components → L1 (+L4 later); 6-20 → L1, L2, L3 (+L4 later); >20 → structural layers + sub-diagrams. Each layer stamped `%% Version: ... | Layer: L{N}`.
+### Diagram acceptance gate (blocking)
+Do NOT finalize the diagrams until every item holds — a diagram that misses these is incomplete, not a stylistic choice. Re-do it before moving on:
+- **Layers present per scaling** — ≤5 components → L1+L4; 6-20 → L1, L2, L3, L4; >20 → 4 layers + sub-diagrams. Each layer stamped `%% Version: ... | Layer: L{N}`.
 - **Every edge typed and annotated** (§4) — no bare arrows; each label carries protocol + sensitivity (`[PUBLIC|INTERNAL|CONFIDENTIAL|RESTRICTED]`) and, where it varies, `[ENC]`/`[PLAIN]`.
 - **Trust boundaries drawn** — L2 has subgraph zones enclosing the right components; every boundary in the asset inventory appears.
 - **Component metadata on nodes** — ownership markers (§7: `[team:]`/`[vendor:]`/`[managed]`/`[self-managed]`) plus tech on processes and data stores.
+- **L4 risk layer linked to findings** — risk classDefs applied, threat annotations (§5: `⚠ {STRIDE} · {L}×{I}={Score} {BAND}`, MITRE/CWE) on risk-bearing nodes, and the `TM-NNN` id present so each overlay risk traces to a finding in the report. Every HIGH+ finding's components appear, risk-colored, in L4.
 - **Legend + version stamp** on every diagram (§6).
 
-The diagram evals verify this deterministically (`evals/reliability/diagram_checks.py`) — presence/shape/consistency, each gated by its precondition; correctness is assessed by the diagram judge.
+**Analytical & communication visuals (conditional — produce each when its precondition holds, else mark NOT APPLICABLE with a one-line reason).** Formats in [references/analytical-visuals.md](references/analytical-visuals.md):
+- **STRIDE-per-element coverage matrix** — always. Fully populated (every cell a `TM-NNN` / `n/a` / `clean`).
+- **Likelihood×Impact risk heat map** — when any finding is scored. 5×5 grid, every finding at its own (L,I) cell.
+- **MITRE ATT&CK technique layer** — when any finding carries a MITRE id. Technique table; Navigator JSON layer at ≥5 techniques.
+- **Authorization (RBAC) matrix** — when ≥2 roles (declare them in recon `roles[]`, incl. anonymous). Roles × resources, anonymous row.
+- **SBOM / dependency graph** — when external deps are backed by a manifest (set `manifest` on the recon dep). Rooted graph with `:::externalDep` leaves.
+
+**Companion diagrams (conditional)** — see [references/mermaid-diagrams.md](references/mermaid-diagrams.md): an **auth sequence** when the system has AuthN/AuthZ (§3), and an **attack tree** (§2) + **attack flow** (§5) per declared kill chain when ≥3 kill chains exist (declare them in findings `kill_chains[]`).
+
+This gate is what the evals verify deterministically (`evals/reliability/diagram_checks.py`) — presence/shape/consistency, each gated by its precondition; correctness is assessed by the diagram judge. A run that skips an applicable visual fails diagram verification.
 
 **File Output**: Save to `{output_dir}/02-structural-diagram.md`.
 
@@ -591,8 +552,6 @@ Build a concrete attack path for each threat:
 ### 4.3 Likelihood Scoring (1-5)
 Assign likelihood 1-5 with written justification. See [frameworks.md](references/frameworks.md) for scoring guidance. Justify by referencing the specific threat actor profile and attack path.
 
-Optionally decompose the Likelihood into a **CVSS v3.1 exploitability vector** `AV:_/AC:_/PR:_/UI:_`, drawing the four metric values (Attack Vector, Attack Complexity, Privileges Required, User Interaction) directly from the Phase 4.2 attack path. The 1-5 band stays the user-facing number (avoids CVSS false precision); the vector is the audit trail behind it. See the "Decomposed Likelihood" table in [frameworks.md](references/frameworks.md). This is **optional** — a threat whose Likelihood you did not decompose omits the vector rather than inventing metrics.
-
 ### 4.4 PASTA Stage 7 — Business Impact Analysis
 Assess business impact across financial, operational, reputational, and regulatory dimensions. Reference the Phase 1 Asset Inventory for data sensitivity. See [frameworks.md](references/frameworks.md).
 
@@ -603,13 +562,13 @@ Take the highest dimension score. Justify by identifying the driving dimension. 
 Calculate Risk = Likelihood x Impact. Apply severity bands from [frameworks.md](references/frameworks.md).
 
 ### Output Format
-Produce a scored threat table with all Phase 3 fields plus: Threat Actor, Attack Path Summary, Likelihood (1-5), CVSS Vector (optional, per row), Impact (1-5), Risk Score, Severity Band.
+Produce a scored threat table with all Phase 3 fields plus: Threat Actor, Attack Path Summary, Likelihood (1-5), Impact (1-5), Risk Score, Severity Band.
 
 **File Output**: Save to `{output_dir}/04-risk-quantification.md`.
 
 ## Phase 5 — False Negative Hunting
 
-Switch to an **expansive, adversarial mindset**. Assume Phases 3-4 missed threats. Consult [references/analysis-checklists.md](references/analysis-checklists.md) for the Phase 5 checklist. Read back `{output_dir}/03-threat-identification.md` and `{output_dir}/04-risk-quantification.md` from files if context is limited.
+Switch to an **expansive, adversarial mindset**. Assume Phases 3-4 missed threats. Consult [references/analysis-checklists.md](references/analysis-checklists.md) for the Phase 4 checklist. Read back `{output_dir}/03-threat-identification.md` and `{output_dir}/04-risk-quantification.md` from files if context is limited.
 
 1. **Re-examine every "low risk" component**: Challenge your own assessment. What if this component is compromised? What blast radius does it create?
 
@@ -640,13 +599,13 @@ it is what verification gates on. For each declared chain produce both views:
 
 Document all newly identified threats using the same Phase 3 identification format (Threat ID, Title, STRIDE-LM, components, cross-framework, description). Then apply the full Phase 4 scoring to each new threat (threat actor, attack path, likelihood, impact, risk score, severity).
 
-Record every newly discovered threat here with full identification and scoring. The fresh-context Phase 6 pass runs after this phase and validates the complete set — every Phase 3 and Phase 5 threat — so you do not self-validate here; hand the full list forward for the skeptical pass to confirm or reject.
+After completing your adversarial review, re-read your Phase 6 validated findings (if Phase 6 has already been completed, or revisit after Phase 6). If any newly discovered threat from this phase contradicts a Phase 6 validation decision, flag it for re-evaluation in Phase 6.
 
 **File Output**: Save to `{output_dir}/05-false-negative-hunting.md`.
 
 ## Phase 6 — False Positive Validation
 
-Switch to a **skeptical, evidence-based mindset**. Consult [references/analysis-checklists.md](references/analysis-checklists.md) for the Phase 6 checklist.
+Switch to a **skeptical, evidence-based mindset**. Consult [references/analysis-checklists.md](references/analysis-checklists.md) for the Phase 5 checklist.
 
 For **every** finding from Phases 3, 4, and 5:
 
@@ -666,8 +625,8 @@ For **every** finding from Phases 3, 4, and 5:
 ### Framework ID Verification Step
 Before finalizing, cross-reference every MITRE technique ID and CWE ID in the findings against the reference tables in [references/frameworks.md](references/frameworks.md). Remove or replace any ID that does not appear in the tables. This is a hard requirement — no hallucinated IDs in the final output.
 
-### Complete-set validation (Phase 5 → Phase 6)
-You run in a fresh context and read Phases 3, 4, and 5 from disk, so validating the *complete* threat set is your whole job — there is no self-audit loop to close. Explicitly enumerate every Phase 3 and every Phase 5 finding and mark each validated or rejected; if any Phase 5 finding is unaddressed at the end, validate it now using the same criteria. Nothing may be left unresolved.
+### Phase 5 ↔ Phase 6 Re-Check Loop
+After completing validation, re-read Phase 5 newly discovered threats from `{output_dir}/05-false-negative-hunting.md`. If any Phase 5 finding was missed during your initial Phase 6 pass (i.e., it was not validated or rejected), validate it now using the same criteria above. This creates a bidirectional 5→6→re-check loop that prevents false negatives from slipping through.
 
 ### Overall Validation
 - Remove or clearly mark any finding that lacks a realistic attack path.
@@ -684,15 +643,13 @@ Apply risk analysis results to the structural diagram from Phase 2. Produce the 
 
 Consult [references/mermaid-spec.md](references/mermaid-spec.md) §5-6 for threat annotations and accessibility. Consult [references/mermaid-layers.md](references/mermaid-layers.md) §5 for L4 conventions. Use [references/mermaid-review-checklist.md](references/mermaid-review-checklist.md) for pre-submission validation.
 
-**Engine.** Author the L4 overlay and the SBOM/dependency diagram in whichever engine you used in Phase 2. For **D2**, consult [references/d2-spec.md](references/d2-spec.md) §5 (risk styling `classes` + threat annotations) and §6 (the `| Type: SBOM` stamp for the dependency diagram). The machine-parseable threat-annotation format (`⚠ {STRIDE} · {L}×{I}={Score} {BAND}`, `TM-NNN`, MITRE/CWE) and the L4↔findings linkage are identical across engines — the eval's annotation regexes read them from the label verbatim on either path. Render all sources with `bash {refs_dir}/../scripts/render_diagrams.sh {output_dir}` (dispatches `.mmd`/`.d2`).
-
 1. **Start from the Phase 2 structural diagrams**. Read back `{output_dir}/02-structural-diagram.md` if needed.
 
 2. **Read the visual completeness checklist** from `{output_dir}/visual-completeness-checklist.md`. Verify ALL applicable categories are represented. For any gaps, add missing visual elements using conventions from [references/mermaid-spec.md](references/mermaid-spec.md) §3.
 
 3. **Produce L4 (Threat Overlay)**: Copy the L1 structure. Apply `highRisk`, `medRisk`, `lowRisk` classDefs based on the highest-severity validated threat per component. Use `:::noFindings` for components with no validated threats (NOT `:::lowRisk`). Use `:::lowRisk` only when analysis explicitly confirms low risk.
 
-4. **Enrich node labels with machine-parseable threat data**: For components with validated threats, use the annotation format from [mermaid-spec.md](references/mermaid-spec.md) §5: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`. Verify STRIDE abbreviations use single letters (S,T,R,I,D,E,LM), LxI calculation is correct, BAND matches score (CRITICAL 17-25, HIGH 10-16, MEDIUM 5-9, LOW 1-4), and CWE IDs are verified against [frameworks.md](references/frameworks.md).
+4. **Enrich node labels with machine-parseable threat data**: For components with validated threats, use the annotation format from [mermaid-spec.md](references/mermaid-spec.md) §5: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`. Verify STRIDE abbreviations use single letters (S,T,R,I,D,E,LM), LxI calculation is correct, BAND matches score (CRITICAL 20-25, HIGH 12-19, MEDIUM 6-11, LOW 1-5), and CWE IDs are verified against [frameworks.md](references/frameworks.md).
 
 5. **Add attack path overlays**: For the top 3-5 kill chains from Phase 5, overlay attack paths using `==>` thick arrows with numbered step labels and red `linkStyle` (`linkStyle N stroke:#cc0000,stroke-width:3px`). Attack path overlays appear ONLY in L4. **DO NOT use `~~>` — it is not valid Mermaid syntax.**
 
@@ -704,26 +661,7 @@ Consult [references/mermaid-spec.md](references/mermaid-spec.md) §5-6 for threa
 
 9. **Update the visual completeness checklist** with completion status for the risk overlay pass. Save the updated checklist back to `{output_dir}/visual-completeness-checklist.md`.
 
-Produce the L4 diagram in a fenced code block (tagged `mermaid` or `d2`). Save as `{name}-L4-threat.mmd` or `{name}-L4-threat.d2`.
-
-### Risk & analytical acceptance gate (blocking, Phase 7)
-Now that findings are scored and kill chains declared, produce and verify the risk overlay and the analytical/communication visuals. Consult [references/analytical-visuals.md](references/analytical-visuals.md) for the formats and [references/analysis-checklists.md](references/analysis-checklists.md) (Phase 7 checklist). Do NOT finalize until every applicable item holds:
-- **L4 risk layer linked to findings** — risk classDefs applied, threat annotations (§5: `⚠ {STRIDE} · {L}×{I}={Score} {BAND}`, MITRE/CWE) on risk-bearing nodes, and the `TM-NNN` id present so each overlay risk traces to a finding. Every HIGH+ finding's components appear, risk-colored, in L4.
-
-**Analytical & communication visuals (conditional — produce each when its precondition holds, else mark NOT APPLICABLE with a one-line reason):**
-- **STRIDE-per-element coverage matrix** — always. Fully populated (every cell a `TM-NNN` / `n/a` / `clean`).
-- **Boundary-crossing STRIDE-per-interaction matrix** — when the DFD has ≥1 edge crossing a trust zone (see analytical-visuals.md §1a). Rows = the crossing edges only (keyed `Edge (src → dst)`); every crossing edge gets exactly one decided row; a single-zone system is marked NOT APPLICABLE.
-- **Threat-to-Control Coverage Matrix** — when ≥1 finding (the defensive dual of the STRIDE matrix; eval `no-control-matrix` fires otherwise). Columns include a Control + a Disposition column; every finding placed, and a zero-control finding's row shows `GAP`.
-- **Likelihood×Impact risk heat map** — when any finding is scored. 5×5 grid, every finding at its own (L,I) cell.
-- **MITRE ATT&CK technique layer** — when any finding carries a MITRE id. Technique table; Navigator JSON layer at ≥5 techniques.
-- **MITRE ATLAS technique layer** — when `has_ai_ml` (see analytical-visuals.md §3a). Reuse the ATT&CK Navigator emitter with `domain: "atlas-atlas"` and `AML.T####` ids; the shown ids are a subset of the findings' own `atlas[]` ids. Not produced on non-AI targets.
-- **OWASP-LLM Top-10 coverage checklist** — when `has_ai_ml` (see analytical-visuals.md §3b). Rendered through the STRIDE-matrix table renderer (rows LLM01–LLM10, cells = `TM-NNN` / `n-a` / `clean`, resolved via the crosswalk); **no second diagram**.
-- **Authorization (RBAC) matrix** — when ≥2 roles (declare them in recon `roles[]`, incl. anonymous). Roles × resources, anonymous row.
-- **SBOM / dependency graph** — when external deps are backed by a manifest (set `manifest` on the recon dep). Rooted graph with `:::externalDep` leaves.
-
-**Companion diagrams (conditional)** — see [references/mermaid-diagrams.md](references/mermaid-diagrams.md): an **auth sequence** when the system has AuthN/AuthZ (§3), and an **attack tree** (§2) + **attack flow** (§5) per declared kill chain when ≥3 kill chains exist (declare them in findings `kill_chains[]`). Stamp each companion diagram's version line with `| Type: {kind}` so the eval detects it (see analytical-visuals.md for the exact stamp).
-
-This gate is what the diagram evals verify deterministically (`evals/reliability/diagram_checks.py`) — presence/shape/consistency, each gated by its precondition; correctness is assessed by the diagram judge. A run that skips an applicable visual fails diagram verification.
+Produce the L4 diagram in a fenced code block. Save as `{name}-L4-threat.mmd`.
 
 **File Output**: Save to `{output_dir}/07-final-diagram.md`.
 
@@ -760,34 +698,7 @@ Produce a concise threat model summary. The full consolidated report (with all 1
    - Scope boundaries
    - Threat model lifecycle triggers (when to re-assess)
 
-### Pre-Emit Self-Check (blocking)
-
-Before writing `findings.json`, verify these invariants yourself — they are exactly what the validation gate enforces, so catching them here avoids a re-spawn. This is the self-correction step: build the check into the work rather than relying on the gate to catch it.
-
-- **Severity = OWASP band of Likelihood × Impact** for every finding, using the frameworks.md bands (LOW 1-4, MEDIUM 5-9, HIGH 10-16, CRITICAL 17-25). Recompute each one; do not eyeball.
-- **`summary_counts` equals the actual per-severity tally.**
-- **Every `asset_refs`/`surface_refs` id exists in `recon.json`**, and **every entry point, data store, and trust boundary either appears in some finding or is listed in `no_issue_surface`** (examined-and-clean, not silently missed).
-- **Every `kill_chains[].steps` id is a real finding id**, and Likelihood and Impact are each in **1–5**.
-- If a value is genuinely not derivable from the sources, do **not** fabricate it. Leave the optional field `null` or omitted, or record the gap (`no_issue_surface`, coverage `unknown`, or an Open Question). Retrying or guessing is the wrong move when the information is simply absent from the source.
-
-**File Output**: Save the summary to `{output_dir}/08-threat-model-report.md`. Also emit `{output_dir}/findings.json` — the machine-readable mirror of the validated finding list, conforming to [evals/reliability/schema/findings.schema.json](evals/reliability/schema/findings.schema.json): `findings[]` (`id`, `stride_lm`, `likelihood`, `impact`, `severity`, `asset_refs`, `surface_refs`, `attack_path`, `remediation`, optional `cwe`/`mitre`/`cvss_vector`), `summary_counts`, `no_issue_surface[]`, and `kill_chains[]`.
-
-## Manifest Validation Gate (deterministic, blocking — before report generation)
-
-Once the analysis passes have written `recon.json` (Phase 1), `findings.json` (the Phase 6+8 validation pass), and `coverage.json` (merged by the validation-specialist in team mode, or finalized by the Phase 6+8 pass in solo mode), and **before** spawning the report-analyst, the parent orchestrator validates the manifest contract with the shipped deterministic validator. **This is where "the application validates" in a Claude Code flow:** there is no SDK wrapper around the model, so the deterministic validator (run via Bash) is the application code, and re-spawning the analysis agent is the retry — the file-based form of the *generate → validate semantics in code → retry with specific feedback* loop.
-
-> When the suite is installed as a **plugin**, a `PreToolUse` hook (`hooks/validate_gate.py`) runs this same validator automatically and **denies** the report-analyst spawn on failure — a hard gate enforced by the harness, with the defects fed back as the denial reason. The steps below are what the parent runs itself when the hook isn't present (a manual skill install); both invoke the identical `run.py validate`.
-
-```bash
-python3 "{refs_dir}/../evals/reliability/run.py" validate \
-  --run "{output_dir}" --repo "{project_root}"
-```
-
-It checks structure (schema: `TM-NNN`/`KC` id patterns, Likelihood/Impact 1–5, enum domains, no stray fields), consistency (`severity == band(L×I)`, `summary_counts`, kill-chain step references), grounding (recon evidence resolves in the repo), and coverage-ledger completeness — printing one `DEFECT [layer] code: detail` line per issue and exiting non-zero on failure.
-
-- **If it passes**, proceed to report generation.
-- **If it fails**, re-spawn the `security-architect` (fresh context) with the exact `DEFECT` lines as feedback — each names the field, the constraint, and the actual-vs-expected value (e.g. `TM-007: severity HIGH != band(L3 x I2)=MEDIUM`). Generic "validation failed, try again" gives the model no signal; pass the specific lines. Re-run the gate after the re-spawn; bound this to **2 retries**.
-- **A defect that reflects missing information in the source is not retryable.** If a surface genuinely carries no issue, mark it `no_issue_surface`; if a taxonomy item is not discoverable in the materials, set coverage `unknown` with a note and lift it into Open Questions. Do not retry the agent to "find" data the repository does not contain — that produces fabrication, not a fix.
+**File Output**: Save to `{output_dir}/08-threat-model-report.md`.
 
 ## Scaling Guidelines
 
@@ -799,7 +710,7 @@ Adapt the depth of analysis to the system's size. These are concrete rules, not 
 - **Phase 3**: STRIDE-LM assessment can be a single table covering all components rather than per-component narratives.
 - **Phase 4**: Scoring can be presented in a combined table with identification (inline with Phase 3 output format).
 - **Phase 5**: 1-2 kill chains sufficient.
-- **Phase 8**: Summary sections can be combined where sparse. (LINDDUN privacy analysis is the privacy-agent's output in team mode, not part of the Phase 8 summary.)
+- **Phase 8**: Summary sections can be combined where sparse. LINDDUN section can be omitted if no personal data is processed.
 
 ### Medium Systems (6-20 components, 9-30 data flows)
 - **Phase 2**: MUST use full 4-layer approach (L1-L4) per [mermaid-layers.md](references/mermaid-layers.md) §6.

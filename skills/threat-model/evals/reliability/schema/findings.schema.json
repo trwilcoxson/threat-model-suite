@@ -1,16 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Findings manifest — machine-readable mirror of the report's findings",
-  "description": "Emitted by the threat-model run alongside the markdown report. The eval validates structure, internal consistency (severity == band(L x I)), grounding (refs resolve to recon), and coverage — none of which need a per-target answer key. Control-coverage is a reference-free per-finding property (disposition-vs-controls consistency + zero-control flagging with honest abstention), never an answer key that a control is the correct remediation; controls[]/control_disposition/disposition_note are optional and additive so a findings manifest predating them still validates. cvss_vector (optional exploitability decomposition) and atlas[] (optional MITRE ATLAS adversarial-ML technique ids) are likewise additive and nullable — a manifest omitting them still validates. evidence[] (per-finding grounded proof: a findable reference + honest no_direct_evidence abstention, with a build-extracted excerpt) is additive/optional at the schema level for back-compat but REQUIRED per finding by the run-gate + eval (checks.py) going forward.",
+  "description": "Emitted by the threat-model run alongside the markdown report. The eval validates structure, internal consistency (severity == band(L x I)), grounding (refs resolve to recon), and coverage — none of which need a per-target answer key.",
   "type": "object",
-  "additionalProperties": false,
   "required": ["findings", "summary_counts", "no_issue_surface"],
   "properties": {
     "findings": {
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": false,
         "required": ["id", "title", "stride_lm", "likelihood", "impact", "severity", "asset_refs", "surface_refs", "attack_path", "remediation"],
         "properties": {
           "id":         { "type": "string", "pattern": "^TM-[0-9]{3}$" },
@@ -18,69 +16,23 @@
           "stride_lm":  { "type": "array", "minItems": 1, "items": { "enum": ["S", "T", "R", "I", "D", "E", "LM"] },
                           "description": "STRIDE-LM categories; a finding may legitimately span several" },
           "likelihood": { "type": "integer", "minimum": 1, "maximum": 5 },
-          "cvss_vector": { "type": ["string", "null"], "pattern": "^AV:[NALP]/AC:[LH]/PR:[NLH]/UI:[NR]$",
-                          "description": "optional CVSS v3.1 exploitability vector (AV/AC/PR/UI) decomposing this Likelihood; null or omitted when the Likelihood was not decomposed. The eval recomputes 8.22*AV*AC*PR*UI over this vector and asserts it bands to the stated likelihood (see frameworks.md)." },
           "impact":     { "type": "integer", "minimum": 1, "maximum": 5 },
           "severity":   { "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"] },
-          "cwe":        { "type": ["array", "null"], "items": { "type": "string", "pattern": "^CWE-[0-9]+$" }, "description": "null or omitted when the finding maps to no CWE" },
-          "mitre":      { "type": ["array", "null"], "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" }, "description": "null or omitted when the finding maps to no ATT&CK technique" },
-          "atlas":      { "type": ["array", "null"], "items": { "type": "string", "pattern": "^AML\\.T[0-9]{4}(\\.[0-9]{3})?$" }, "description": "optional MITRE ATLAS adversarial-ML technique ids; null or omitted when the finding maps to no ATLAS technique (an honest gap, never a failure). Mirrors the nullable mitre[] field. The ATLAS Navigator layer's technique ids MUST be a subset of the distinct atlas[] ids across findings (grounding) — no technique on the layer that no finding maps to." },
+          "cwe":        { "type": "array", "items": { "type": "string", "pattern": "^CWE-[0-9]+$" } },
+          "mitre":      { "type": "array", "items": { "type": "string", "pattern": "^T[0-9]{4}(\\.[0-9]{3})?$" } },
           "asset_refs":   { "type": "array", "items": { "type": "string" }, "description": "recon component/data_store ids this finding concerns" },
           "surface_refs": { "type": "array", "items": { "type": "string" }, "description": "recon entry_point/trust_boundary/external_dep ids this finding covers" },
           "attack_path":  { "type": "string" },
-          "remediation":  { "type": "string" },
-          "evidence": {
-            "type": "array",
-            "description": "grounded, resolvable proof that THIS finding is real — the code/config/doc/diagram that evidences the problem. Additive + OPTIONAL for back-compat (a manifest predating this field still validates); REQUIRED per finding by the flow + run-gate going forward (enforced in checks.py::run_checks, not by the schema, so committed evidence-less manifests still conform). The recon chain (asset_refs -> recon element evidence[]) remains a valid grounding path; this is the finding's OWN problem-specific citation. The output generators add a build-extracted `excerpt`.",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "ref": { "type": ["string", "null"],
-                         "description": "findable reference that RESOLVES in the target source: a repo-relative path, path:line, path:line-range, a glob, a doc path+locator, or a recon/diagram node id (C1/D1/E1/X1/TB1). Precise enough to extract an excerpt. null ONLY when no_direct_evidence is true." },
-                "kind": { "enum": ["code", "config", "doc", "diagram", null],
-                          "description": "optional evidence kind; drives excerpt presentation (monospace/syntax-lit for code/config, quotation for doc, node reference for diagram)." },
-                "quote": { "type": ["string", "null"],
-                           "description": "optional verbatim snippet/quotation the agent copied from the cited source; the build re-extracts from `ref` and validates the embedded excerpt against the real source (grounding, no fabricated excerpt)." },
-                "excerpt": { "type": ["string", "null"],
-                             "description": "BUILD-extracted excerpt, populated by the output generators (dashboard/report) at build time from `ref`; agents leave it null/omitted. Its presence lets an offline output embed the proof without the repo." },
-                "no_direct_evidence": { "type": ["boolean", "null"],
-                                        "description": "honest abstention: true iff this finding genuinely has no direct code/config/doc/diagram evidence. The ONLY allowed alternative to a resolvable ref — never fabricate a citation. Requires justification." },
-                "justification": { "type": ["string", "null"],
-                                   "description": "required (non-empty) by the run-gate when no_direct_evidence is true — why no direct evidence exists (mirrors the coverage ledger's unknown-needs-a-note rule)." }
-              }
-            }
-          },
-          "controls": {
-            "type": "array",
-            "description": "addressable control objects that remediate this finding (the machine-readable promotion of free-text remediation). Optional and additive — a finding predating this field simply has none, and the eval flags it as control-coverage-unknown without failing the run.",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": ["id", "name"],
-              "properties": {
-                "id":   { "type": "string", "pattern": "^CTL-[0-9]{3}$" },
-                "name": { "type": "string", "description": "human control action (the migrated free-text remediation)" },
-                "framework_ref": { "type": ["string", "null"], "pattern": "^([A-Z]{2}-[0-9]+(\\([0-9]+\\))?|D3-[A-Z]+)$",
-                                   "description": "optional normalized NIST-800-53 (e.g. SC-7, AC-3(4)) or D3FEND (e.g. D3-NTA) control id; null or omitted when no normalized id applies (the action stays in name). Format-checked only; mapping correctness is agent-verified against frameworks.md, never asserted by the eval." },
-                "counters": { "type": "array", "items": { "type": "string" },
-                              "description": "RESERVED for the attack-defense-tree change: attack-node ids this control interdicts. Defaults empty; no grounding is enforced on its members here." }
-              }
-            }
-          },
-          "control_disposition": { "enum": ["mitigated", "accepted-risk", "none"],
-                                   "description": "optional. mitigated iff >=1 control is attached; accepted-risk / none are honest abstentions that MUST carry a disposition_note. The eval recomputes this from the finding's own controls[] and flags disagreement (see checks.py)." },
-          "disposition_note": { "type": "string", "description": "required by the eval when control_disposition is accepted-risk / none — the reason the risk is accepted or no control applies (honest-abstention evidence, mirrors the coverage ledger's unknown-needs-a-note rule)." }
+          "remediation":  { "type": "string" }
         }
       }
     },
     "summary_counts": {
       "type": "object",
-      "additionalProperties": false,
       "required": ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
       "properties": {
-        "LOW": { "type": "integer", "minimum": 0 }, "MEDIUM": { "type": "integer", "minimum": 0 },
-        "HIGH": { "type": "integer", "minimum": 0 }, "CRITICAL": { "type": "integer", "minimum": 0 }
+        "LOW": { "type": "integer" }, "MEDIUM": { "type": "integer" },
+        "HIGH": { "type": "integer" }, "CRITICAL": { "type": "integer" }
       }
     },
     "no_issue_surface": {

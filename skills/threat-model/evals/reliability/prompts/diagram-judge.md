@@ -33,11 +33,6 @@ placement and accuracy, not presence.
    and are the failure paths the real ones (lockout / generic error / rate-limit)?
 9. **STRIDE-per-element matrix** — are the cells marked `n/a` genuinely inapplicable (not a missed
    threat), and do the `clean` cells really have no threat? (Recall, not just population.)
-9a. **Boundary-crossing STRIDE-per-interaction matrix** — for each crossing edge (`src → dst`), are the
-    enumerated STRIDE threats *realistic* for that interaction (the tool call / network hop / identity
-    handoff), and are the `n/a` / `clean` cells honest rather than missed threats? The deterministic
-    check only proves every crossing has a decided, grounded row — you judge whether the right threats
-    were named. Flag a crossing whose row abstains on a category that plainly applies.
 10. **Risk heat map** — are the underlying L and I scores reasonable for the system?
 11. **ATT&CK layer** — is each technique the correct mapping for the described behavior; tactic right?
 12. **RBAC matrix** — are the role→resource permissions correct against the real access control; are
@@ -48,7 +43,7 @@ placement and accuracy, not presence.
 ## Output (JSON)
 ```json
 { "diagram_soundness": 0.0, "verdict": "robust|adequate|weak",
-  "issues": [ {"area":"trust-boundaries|flows|metadata|risk-layer|taxonomy|attack-tree|attack-flow|auth-sequence|stride-matrix|crossing-matrix|heat-map|attack-layer|rbac|sbom", "detail":"...", "severity":"high|med|low"} ],
+  "issues": [ {"area":"trust-boundaries|flows|metadata|risk-layer|taxonomy|attack-tree|attack-flow|auth-sequence|stride-matrix|heat-map|attack-layer|rbac|sbom", "detail":"...", "severity":"high|med|low"} ],
   "notes":"..." }
 ```
 `diagram_soundness` = fraction of the present dimensions that are correct. Cite the diagram line or

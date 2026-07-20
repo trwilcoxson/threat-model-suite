@@ -4,8 +4,7 @@
   "title": "Coverage ledger — the skill's per-item completeness state",
   "description": "Emitted by the threat-model run. The skill attempts every applicable taxonomy item and records a terminal state with evidence (present/partial) or a note (absent/not-applicable/unknown). The eval verifies structure only: every applicable item reached a terminal state, present is grounded, unknown is noted — it never requires a specific item to be present.",
   "type": "object",
-  "additionalProperties": true,
-  "comment": "top level tolerates descriptive provenance metadata (system_name, generated, summary, …) — the eval reads only context + items; required fields and their types are still validated",
+  "additionalProperties": false,
   "required": ["context", "items"],
   "properties": {
     "context": {
@@ -30,13 +29,13 @@
       "type": "array",
       "items": {
         "type": "object",
-        "additionalProperties": true,
+        "additionalProperties": false,
         "required": ["id", "state"],
         "properties": {
           "id": { "type": "string", "description": "taxonomy item id (matches coverage-taxonomy.json)" },
           "state": { "enum": ["present", "partial", "absent", "not-applicable", "unknown"] },
           "detail": { "type": "string", "description": "what was found (present/partial)" },
-          "source": { "type": ["array", "string"], "items": { "type": "string" }, "description": "repo path/glob/string(s) that resolve in the target — required for present/partial; a single source may be a bare string" },
+          "source": { "type": "array", "items": { "type": "string" }, "description": "repo path/glob/string that resolves in the target — required for present/partial" },
           "note": { "type": "string", "description": "reason (absent/not-applicable) or what-was-searched (unknown)" }
         }
       }

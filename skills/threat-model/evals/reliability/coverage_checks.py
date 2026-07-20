@@ -16,7 +16,6 @@ from pathlib import Path
 from typing import Any
 
 import checks  # reuse _resolves_in_repo (the same grounding resolver the diagram/structure checks use)
-import schema_checks
 
 TAXONOMY = Path(__file__).resolve().parent.parent.parent / "references" / "coverage-taxonomy.json"
 STATES = {"present", "partial", "absent", "not-applicable", "unknown"}
@@ -49,15 +48,6 @@ def check(coverage: dict | None, repo: Path, taxonomy: list[dict] | None = None)
                 "stats": {"applicable": 0, "by_state": {}, "present_with_evidence": None},
                 "scores": {"coverage_pass": False, "coverage_present_frac": None}}
 
-    # structural contract: the ledger must conform to coverage.schema.json (file-based analog of a
-    # strict tool schema, enforced post-hoc). Structure only; the state/source/note rules below are
-    # the semantic layer.
-    try:
-        for v in schema_checks.violations(schema_checks.load_schema("coverage.schema.json"), coverage):
-            D("schema-violation", f"coverage.json: {v}")
-    except (OSError, ValueError) as e:
-        D("schema-load-error", f"could not apply coverage.schema.json: {e}")
-
     context = coverage.get("context", {})
     by_id = {i["id"]: i for i in coverage.get("items", []) if isinstance(i, dict) and "id" in i}
     tax_by_id = {t["id"]: t for t in taxonomy}
@@ -75,8 +65,6 @@ def check(coverage: dict | None, repo: Path, taxonomy: list[dict] | None = None)
         by_state[st] += 1
         if st in GROUNDED:
             src = led.get("source") or []
-            if isinstance(src, str):  # a single source may be given as a bare string; normalize to a list
-                src = [src]
             if not src:
                 D("present-without-source", f"'{t['id']}' is {st} but cites no source")
             elif not any(checks._resolves_in_repo(repo, s) for s in src):

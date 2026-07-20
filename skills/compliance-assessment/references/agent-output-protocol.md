@@ -1,12 +1,9 @@
 # Agent Output Protocol
 
-> _Mirror of the canonical `skills/threat-model/references/agent-output-protocol.md` — do not edit independently; keep byte-identical to the canonical copy (this line excepted)._
-
 ## Contents
 - Purpose
 - Required Document Structure (Metadata, Summary, Findings, Observations, Assumptions, Cross-References)
 - Standardized Finding Format
-- Evidence Traceability (Required — every finding)
 - Agent-Specific Prefixes (TM-, CR-, PA-, GRC-, VS-)
 - Severity Definitions (OWASP Risk Rating, CVSS v3.1, Qualitative)
 - Confidence Levels (HIGH, MEDIUM, LOW)
@@ -75,7 +72,7 @@ ALL findings from ALL agents MUST use this format:
 | Affected Component(s) | [matching diagram node IDs from Phase 2 structural diagram] |
 | Scoring System | [OWASP Risk Rating / CVSS v3.1 / Qualitative] |
 | Score | [numeric score, vector string, or N/A] |
-| Cross-Framework | [MITRE: Txxxx · CWE-NNN · OWASP category] |
+| Cross-Framework | [MITRE: Txxxx | CWE-NNN | OWASP category] |
 
 **Description**: [What is the issue and why it matters]
 
@@ -90,45 +87,6 @@ ALL findings from ALL agents MUST use this format:
 
 **Recommendation**: [Specific remediation guidance]
 ```
-
-## Evidence Traceability (Required — every finding)
-
-Every finding / issue / design-flaw — from ANY agent — MUST carry its own **grounded, resolvable evidence**: a findable reference to the specific code / config / doc / diagram that evidences THAT problem, plus (optionally) the verbatim snippet the agent read there. This is the "assured evidence + quotation" — no finding is asserted without a pointer to what proves it.
-
-This is **additive and back-compatible**: the machine-readable finding (in `findings.json`, mirrored by the prose `**Evidence**:` line above) gains an OPTIONAL top-level `evidence` array. The prose `**Evidence**:` line and this structured array describe the same grounding; the array is what the deterministic build resolves, embeds, and validates.
-
-### `evidence[]` item schema
-
-Each finding carries `evidence`: an array of **≥1 item**. Each item:
-
-| Field | Required? | Meaning |
-|-------|-----------|---------|
-| `ref` | REQUIRED unless `no_direct_evidence` is true | A findable reference that RESOLVES in the target source: a repo-relative path, `path:line`, `path:line-range`, a glob, a doc path + locator, OR a diagram/recon node id (`C1` / `D1` / `E1` / `X1` / `TB1`). Precise enough to extract an excerpt. Prefer `path:line-range` for code. |
-| `kind` | optional | One of `code` \| `config` \| `doc` \| `diagram`. |
-| `quote` | optional | A verbatim snippet / quotation the agent copied from the cited source. |
-| `no_direct_evidence` | optional | `true` ONLY as an honest abstention when the finding genuinely has no direct code / doc / diagram evidence. |
-| `justification` | REQUIRED (non-empty) when `no_direct_evidence` is true | Explains why no direct evidence exists. |
-
-Example (as embedded per-finding in `findings.json`):
-
-```json
-"evidence": [
-  {
-    "ref": "Code/server/src/index.js:31-38",
-    "kind": "code",
-    "quote": "app.use(cors());",
-    "no_direct_evidence": false,
-    "justification": null
-  }
-]
-```
-
-### Rules
-
-1. **Every finding MUST have `evidence` with ≥1 item.** Each direct item's `ref` must resolve in the real source and be precise enough to extract an excerpt. A recon/diagram element id (`C1` / `D1` / `E1` / `X1` / `TB1`) is a valid diagram-node reference. The recon chain (finding → `asset_refs` → recon element `evidence[]` `file:line`) remains a valid grounding path, but the finding MUST ALSO cite the specific code / config / doc that evidences THAT problem.
-2. **Never fabricate a citation.** The ONLY allowed abstention is an explicit item with `"no_direct_evidence": true` and a non-empty `justification`. Honest blanks over invented references — always. Never silently omit evidence either.
-3. **Agents do NOT write `excerpt`.** The deterministic output generators add `excerpt` at build time by resolving each `ref` and extracting the snippet from the cited source. Agents provide `ref` (and optionally `quote`); the build extracts, embeds, and validates.
-4. **Determinism boundary preserved.** Agents produce the evidence (creative); the build resolves + embeds + validates it (deterministic). A reference-free check enforces, per finding, that evidence is present, resolvable, and extractable — or explicitly abstained with a justification.
 
 ## Agent-Specific Prefixes
 
@@ -149,10 +107,10 @@ All agents MUST use these severity definitions (mapped to their scoring system):
 ### OWASP Risk Rating (threat model, privacy)
 | Severity | Score Range (L×I) | Description |
 |----------|-------------------|-------------|
-| CRITICAL | 17-25 | Immediate exploitation likely, severe business impact |
-| HIGH | 10-16 | Realistic attack path, significant business impact |
-| MEDIUM | 5-9 | Plausible attack, moderate business impact |
-| LOW | 1-4 | Theoretical or low-impact finding |
+| CRITICAL | 20-25 | Immediate exploitation likely, severe business impact |
+| HIGH | 12-19 | Realistic attack path, significant business impact |
+| MEDIUM | 6-11 | Plausible attack, moderate business impact |
+| LOW | 1-5 | Theoretical or low-impact finding |
 
 ### CVSS v3.1 (code review)
 | Severity | Score Range | Description |
@@ -247,7 +205,6 @@ The validation-specialist checks every agent output against these rules:
 7. **Completeness**: Summary counts match actual finding counts
 8. **No placeholders**: No TODO, TBD, [INSERT], or {placeholder} text
 9. **Execution log present**: Every agent output includes an Execution Log section with process health, issues, and skipped items
-10. **Evidence traceability**: Every finding carries an `evidence[]` array with ≥1 resolvable `ref` (or an explicit `no_direct_evidence` + non-empty `justification`), per the Evidence Traceability section — no finding is asserted without a pointer to what proves it
 
 ## Example Output Snippet
 
@@ -281,7 +238,7 @@ The validation-specialist checks every agent output against these rules:
 | Affected Component(s) | PaymentSvc |
 | Scoring System | CVSS v3.1 |
 | Score | 9.8 (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H) |
-| Cross-Framework | MITRE: T1190 · CWE-89 · OWASP A03:2021 |
+| Cross-Framework | MITRE: T1190 | CWE-89 | OWASP A03:2021 |
 
 **Description**: The payment query handler constructs SQL queries using string concatenation with user-supplied input, allowing SQL injection.
 

@@ -108,11 +108,10 @@ This reference contains verified regulation section/article numbers and descript
 | Art. 15-16 | Termination of Processing | Art. 15: processing ends when purpose achieved, period expired, or subject revokes consent; Art. 16: data elimination after processing ends, except for legal compliance, research, transfer, or legitimate use |
 | Art. 17-22 | Data Subject Rights | Art. 17: ownership of personal data; Art. 18: confirmation of processing, access, correction, anonymization/blocking/deletion, portability, information about sharing, revocation of consent; Art. 20: right to review automated decisions; Art. 21: appeal to ANPD; Art. 22: defense of interests before judicial/administrative bodies |
 | Art. 33-36 | International Transfers | Permitted when: adequacy decision, appropriate safeguards (SCCs, BCRs, global corporate norms, seals/certifications), specific consent, cooperation agreements; Art. 35: ANPD can approve contractual clauses; Art. 36: international cooperation |
-| Art. 37-39 | Records & Processing Agents | Art. 37: controller and operator keep records of personal data processing operations; Art. 38: ANPD may require the controller to prepare a data protection impact report; Art. 39: operator carries out processing according to the controller's instructions |
-| Art. 41 | Data Protection Officer (Encarregado) | Controller appoints an officer (encarregado) in charge of personal data processing; identity and contact information made public; duties include accepting data subject complaints, providing guidance, and executing ANPD instructions |
-| Art. 42-45 | Liability & Redress of Damages | Art. 42: controller/operator causing damage during processing is liable for reparation; Art. 43: exclusions from liability; Art. 44: processing is irregular when it fails to observe the legislation or does not provide adequate security; Art. 45: personal data of consumers also remains subject to consumer-protection legislation |
+| Art. 37-39 | DPO | Art. 37: controller and operator must appoint a DPO; Art. 38: DPO activities include accepting complaints, providing guidance, executing ANPD instructions; Art. 39: ANPD may establish additional DPO rules |
+| Art. 41-45 | Sanctions | Art. 41: ANPD administrative sanctions; Art. 42: controller/operator causing damage during processing liable for reparation; Art. 44: processing irregular when not observing legislation or not providing adequate security; Art. 45: indemnification claim rights |
 | Art. 46-49 | Security | Art. 46: processing agents must adopt security/technical/administrative measures; Art. 47: agents must observe ANPD standards; Art. 48: controller must communicate to ANPD and data subject security incidents with significant risk; Art. 49: systems structured to meet security requirements |
-| Art. 52-54 | Administrative Sanctions | Art. 52: sanctions — warning; simple fine up to 2% of revenue in Brazil (capped at R$50 million per infraction); daily fine; publicization of infraction; blocking of personal data; deletion of personal data; suspension/prohibition of processing. Art. 53: ANPD defines the fine-calculation methodology; Art. 54: rules for the daily fine |
+| Art. 52 | Administrative Penalties | Warning; simple fine up to 2% of revenue in Brazil (limited to R$50 million per infraction); daily fine; publicization of infraction; blocking of personal data; deletion of personal data; suspension/prohibition of processing |
 | Art. 55-A thru 55-J | ANPD | Art. 55-A: ANPD created as autonomous body; Art. 55-B: ANPD composition; Art. 55-C: Board of Directors; Art. 55-D: National Council; Art. 55-E: Ombudsman; Art. 55-F: own assets and budget; Art. 55-J: ANPD powers include elaborating guidelines, investigating, applying sanctions |
 
 ---
@@ -171,7 +170,7 @@ This reference contains verified regulation section/article numbers and descript
 | Art. 38-43 | Cross-Border Transfers | Art. 38: must meet one of: (1) security assessment by CAC (required for CII operators and processors of >1M individuals), (2) certification by professional institution, (3) standard contract filed with provincial cyberspace admin, (4) other conditions per law/regulation; Art. 39: separate consent and pre-transfer information required; Art. 40: CII operators and large-volume processors must store PI within China; Art. 42: foreign judicial/law enforcement requests require approval; Art. 43: retaliatory measures for discriminatory restrictions by foreign countries |
 | Art. 44-50 | Individual Rights | Art. 44: right to know and decide; Art. 45: right of access and right to data portability; Art. 46: right to correction and completion; Art. 47: right to deletion (purpose achieved, period expired, consent withdrawn, violation); Art. 48: right to explanation of processing rules; Art. 49: rights exercisable by close relatives of deceased; Art. 50: PI processors must establish convenient mechanisms for exercising rights |
 | Art. 51-54 | Processor Obligations | Art. 51: formulate internal management systems, classify PI, adopt encryption/de-identification, conduct security education; Art. 52: processors of >1M individuals must designate PI protection officer; Art. 53: PI processors outside China must establish dedicated entity or appoint representative within China; Art. 54: conduct regular compliance audits |
-| Art. 66-71 | Legal Liability / Penalties | Art. 66: violations — order to correct, warning, confiscation of unlawful gains, and fines up to RMB 1M (responsible individuals RMB 10K-100K); serious violations — fines up to RMB 50M or 5% of the previous year's annual turnover, suspension or termination of services, revocation of business license, responsible individuals RMB 100K-1M and possible ban from director/officer/DPO roles; Art. 67: violations recorded in credit files; Art. 69: fault-based civil liability with reversed burden of proof; Art. 71: public-security-administration and criminal liability |
+| Art. 62-65 | Penalties | Art. 62: non-compliance with law — up to RMB 1M, individuals RMB 10K-100K; Art. 66: serious violations — up to RMB 50M or 5% of previous year's annual turnover; suspension or termination of business; revocation of business license; individuals up to RMB 1M; ban from holding positions |
 
 ---
 
@@ -186,10 +185,10 @@ This reference contains verified regulation section/article numbers and descript
 | Part IV (§18) | Purpose Limitation Obligation | Collect, use, or disclose only for purposes that a reasonable person would consider appropriate in the circumstances; purposes notified to individual |
 | Part V (§20) | Notification Obligation | Notify individual of purposes for collection, use, or disclosure on or before collection; notification of new purposes before new use |
 | Part VI (§21-22) | Access and Correction Obligations | §21: provide access to personal data and information about use/disclosure within preceding year; §22: correct errors or omissions upon request; 30-day response |
-| Part VIB (§26F-26J) | Data Portability | Right to request porting of data to another organization in commonly used machine-readable format; applies to data provided by individual and in organization's possession |
-| Part IX (§43-50) | Do Not Call Registry | National registry for individuals to opt out of marketing messages (voice calls, SMS, fax); organizations must check registry before sending marketing messages |
-| Part III (§11(3)) | Data Protection Officer | Every organization must designate at least one DPO; DPO business contact information publicly available |
-| Part VIA (§26A-26E) | Data Breach Notification | Mandatory notification to PDPC within **3 calendar days** of assessing breach is notifiable; notify affected individuals as soon as practicable; notifiable = significant harm or significant scale (500+ individuals) |
+| Part VIA (§26H-26J) | Data Portability | Right to request porting of data to another organization in commonly used machine-readable format; applies to data provided by individual and in organization's possession |
+| Part VIB (§43-50) | Do Not Call Registry | National registry for individuals to opt out of marketing messages (voice calls, SMS, fax); organizations must check registry before sending marketing messages |
+| Part IX (§11) | Data Protection Officer | Every organization must designate at least one DPO; DPO business contact information publicly available |
+| Part IXA (§26A-26E) | Data Breach Notification | Mandatory notification to PDPC within **3 calendar days** of assessing breach is notifiable; notify affected individuals as soon as practicable; notifiable = significant harm or significant scale (500+ individuals) |
 | Ninth Schedule | Deemed Consent by Notification | Deemed consent where: individual notified of purpose, given reasonable time to opt out, did not opt out; limited to business improvement, operations of organization, and other specified purposes |
 
 **Enforcement:** Personal Data Protection Commission (PDPC)
@@ -267,15 +266,15 @@ This reference contains verified regulation section/article numbers and descript
 
 | Section | Topic | Key Content |
 |---|---|---|
-| §3 | Application | Applies to processing of PI by responsible parties domiciled in South Africa or using means in South Africa |
-| §4 | Conditions for Lawful Processing | 8 conditions: accountability, processing limitation, purpose specification, further processing limitation, information quality, openness, security safeguards, data subject participation |
+| §4 | Application | Applies to processing of PI by responsible parties domiciled in South Africa or using means in South Africa |
+| §5 | Conditions for Lawful Processing | 8 conditions: accountability, processing limitation, purpose specification, further processing limitation, information quality, openness, security safeguards, data subject participation |
 | §9-12 | Processing Limitation | Lawful processing, minimality, consent/necessity/legitimate interest, objection |
 | §13-14 | Purpose Specification | Collection for specific, explicitly defined, lawful purpose; retention only as long as necessary |
 | §17-25 | Data Subject Rights | Notification of collection, access, correction, deletion, objection to processing, objection to direct marketing, right not to be subject to automated decision-making |
 | §19 | Security Safeguards | Appropriate technical and organizational measures; identify risks, establish safeguards, regularly verify |
 | §22 | Data Breach Notification | Notify Information Regulator and data subjects as soon as reasonably possible after discovery |
 | §26-33 | Special Personal Information | Race/ethnicity, religious/philosophical beliefs, political opinion, trade union membership, health/sex life, biometric data, criminal behavior — prohibited unless exception applies |
-| §72 | Transborder Information Flows | Transfer only if adequate protection in recipient country, or binding agreement, consent, necessity for contract, or public interest |
+| §69 | Transborder Information Flows | Transfer only if adequate protection in recipient country, or binding agreement, consent, necessity for contract, or public interest |
 | §107 | Penalties | Fine, imprisonment up to 10 years, or both for certain offenses |
 
 ---

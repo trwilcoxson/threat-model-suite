@@ -4,253 +4,401 @@
 | Field | Value |
 |-------|-------|
 | Agent | validation-specialist |
-| Date | 2026-07-11 |
-| Target System | AWS ECS Fullstack App (Terraform Demo) |
-| Inputs Validated | 01–08 threat-model phases, `findings.json`, `recon.json`, `coverage.json`; `code-security-review.md`, `compliance-gap-analysis.md`, `privacy-assessment.md`; `visual-completeness-checklist.md`; 10 `.mmd` diagrams + navigator layer JSON; source repo at project root (grounding) |
-| Reference sets used | threat-model `frameworks.md`; compliance `soc2/nist-800-53/iso27001/hipaa` refs; privacy `gdpr-article-reference/global-privacy-regulations/linddun-go-threats` |
-| Total Issues Found | 0 critical / 6 advisory (0 findings removed, 0 severities overridden) |
+| Date | 2026-02-18 |
+| Target System | Amazon ECS Fullstack App (Terraform Demo) |
+| Inputs Validated | 06-validated-findings.md, 08-threat-model-report.md, privacy-assessment.md, compliance-gap-analysis.md, code-security-review.md, 07-final-diagram.md, visual-completeness-checklist.md |
+| Total Issues Found | 34 |
 
 ## Executive Summary
-- **Duplicates merged:** 0 removed. Cross-track overlaps are real and intended (3–4 lenses on shared issues) — logged as **merge clusters** for the report-analyst to present as single rows, not double-counted. The 49 finding-records (TM 25 · CR 6 · GRC 14 · PA 4) resolve to **~28 distinct underlying issues.**
-- **False-positive candidates:** 0 requiring removal. Every CRITICAL/HIGH has a concrete, source-verified attack path; none is fully closed by an existing control. A few GRC HIGHs are *compliance-axis* severities on non-personal demo data — correctly framed by GRC, flagged for report presentation.
-- **Severity conflicts resolved:** 0 true conflicts. 4 cross-track divergences are all legitimate scoring-lens differences (OWASP L×I vs CVSS vs qualitative-audit vs impact-on-individuals) — tabulated with recommended unified severities.
-- **Visual completeness gaps:** 0. All 23 applicable categories appear in the structural (L1–L3) and risk-overlay (L4) diagrams; 3 not-applicable categories correctly justified.
-- **Framework ID corrections:** 0 hallucinated across all tracks (threat-model 0 · compliance 0 · privacy 0). 2 advisory notes (1 self-flagged ISO clause, 1 out-of-reference-set HIPAA privacy-rule cite); 1 loose-fit CWE.
-- **Confidence escalations:** 0 mechanical changes needed — convergent multi-agent findings are already HIGH confidence; latent items correctly keep latent severity.
-- **Protocol compliance issues:** 2 advisory (heading-name variants). All finding IDs contiguous, no duplicates, no placeholders, all summary counts match.
-- **GRC evidence grounding score: 5/5** — every sampled citation verified verbatim in the source repo; compliance math re-derived and correct.
-- **Coverage ledger:** merged to **224/225 terminal states** (90 present · 59 partial · 51 absent · 24 not-applicable · 1 justified `unknown`).
+- Duplicates merged: 14 (cross-agent duplicate clusters identified)
+- False positive candidates: 2
+- Severity conflicts resolved: 5
+- Visual completeness gaps: 1 (minor -- ownership markers omitted from L4)
+- Framework ID corrections: 11
+- Confidence escalations: 8
+- Protocol compliance issues: 3
+
+**Overall Assessment Quality: HIGH**
+
+The four specialist agents produced consistent, evidence-based findings with strong convergence on the top risks. The high number of cross-agent duplicates (14 clusters) reflects thorough independent analysis rather than quality issues -- each agent identified the same core vulnerabilities from their domain perspective. Severity conflicts are minor and stem from legitimate differences in scoring systems (OWASP Risk Rating vs CVSS v3.1 vs qualitative compliance ratings). Framework ID corrections are predominantly CWE IDs not present in the reference set -- the IDs themselves are valid CWE entries, but they fall outside the curated reference list.
 
 ---
 
 ## 1. Deduplication Log
 
-No findings were removed or unilaterally merged (per protocol — merges are the report-analyst's call). Each track scores the same issue through a different lens with different evidence depth; all original IDs are preserved. The clusters below are the deduplication guidance for the report-analyst: **present one row per cluster, list all source IDs, and do not sum severities into an inflated risk count.**
+The following clusters group findings that describe the same underlying vulnerability across agents. For each cluster, the recommended primary finding (richest evidence) is listed first.
 
-| Cluster | Underlying issue | Source finding IDs | Verified on evidence | Notes for report-analyst |
-|---|---|---|---|---|
-| **C1 No TLS in transit** | Both public ALBs HTTP:80 only; `enable_https` default false | TM-002 · CR-001 · GRC-001 · PA-001 | ✔ `ALB/main.tf:38` http_listener only; `variables.tf:27` default false | 4→1. Severity range MED–HIGH (see §3). PA is conditional (no PII today). |
-| **C2 No authN/authZ** | Every endpoint anonymous; trust-by-network-position | TM-001 · CR-005(part) · GRC-002 | ✔ `app.js` no middleware; `Login.vue` inert | 3→1. CR-005 is composite (also CORS + rate-limit). |
-| **C3 IAM PassRole privesc** | `iam:PassRole *` on task **and** DevOps roles + `ecs:RegisterTaskDefinition`/`RunTask` | TM-010 (task, latent) · TM-016 (DevOps, active) · CR-002 · GRC-003 | ✔ `IAM/main.tf:287-290` (DevOps) & `:317-320` (task); `:276-277` Register/RunTask | 4→1 theme, 2 sub-issues. CR/GRC combine both roles; TM splits (task=MED latent, DevOps=HIGH active). |
-| **C4 Image supply-chain integrity** | Unpinned `:latest`, MUTABLE ECR, no scan/SBOM | TM-017 · TM-018 · CR-003(part) · GRC-005 | ✔ `ECR/main.tf:10` MUTABLE, no scan block; Dockerfiles `:latest` | ~4→2 (mutable-registry + unpinned/no-SCA). |
-| **C5 Build privilege + deploy approval** | Privileged CodeBuild; auto-deploy on `main`, no approval; taskdef sed-injection | TM-013 · TM-015 · TM-019 · CR-004(part) · GRC-006 | ✔ `CodeBuild/main.tf:22` privileged_mode; `CodePipeline/main.tf:33` PollForSourceChanges | ~5→2 (privileged build + no-approval). |
-| **C6 PAT / secrets / TF state** | Long-lived GitHub PAT in local unencrypted state; no rotation | TM-012 · TM-024 · CR-004(part) · GRC-007 | ✔ `CodePipeline/main.tf:29` OAuthToken=var.github_token; local state per README | ~4→2 (PAT lifecycle + remote-encrypted-backend). |
-| **C7 No WAF / rate-limit / L7 DoS** | No WAF, no rate limiting, capped autoscaling; cost-amp scan | TM-004 · TM-005 · CR-005(part) · GRC-010 | ✔ no `aws_wafv2*` in tree; `app.js:47` unbounded scan | ~4→1–2. Minor band divergence (§3). |
-| **C8 Audit-trail / detection absent** | No CloudTrail/ALB/flow logs/GuardDuty/Config | TM-021 · GRC-004 | ✔ only `awslogs` in IaC | 2→1, both HIGH, consistent. **Distinct from C9.** |
-| **C9 Log-content hygiene** | Raw errors to logs, no PII scrubbing, flat 30-day retention | TM-022 · PA-003 | ✔ `app.js` console.error(raw); 30-day retention | 2→1, both LOW. Do **not** fold into C8 (coverage vs content). |
-| **C10 Error-handling disclosure** | `err.message` to client + fragile `res.status(undefined)` | TM-007 · TM-008 · CR-006 · GRC-014 | ✔ `app.js:54-59, 78-88` | 4→1. CR-006 combines TM-007+TM-008. |
-| **C11 Encryption-at-rest / S3 hardening / destruction** | AWS-owned keys only; no public-access-block/versioning; `force_destroy` | TM-014 · TM-026 · GRC-009 · GRC-013 | ✔ `S3/main.tf`, recon 1.4 | ~4→2 (at-rest CMK + destruction/disposal). |
-| **C12 Resilience / NAT SPOF** | Single NAT, no PITR/backup/DR test | TM-025 · GRC-012 | ✔ single NAT in Networking; no PITR | 2→1, both MED. |
-| **C13 Vendor / EOL deps** | aws-sdk v2 + Vue 2 EOL; no SCA/vendor process | TM-018(part) · CR-003(part) · GRC-011 | ✔ `package.json` | Folds into C4; GRC-011 adds vendor-process angle. |
-| **Single-track (no cross-track dup)** | Swagger exposure (TM-003); security headers/CSP (TM-023); CORS (TM-006, in CR-005); governance program (GRC-008); privacy notice/governance (PA-002, PA-004, conditional) | — | ✔ | Present each once; GRC-008 and the PA governance items have no technical-track twin. |
+### Cluster 1: IAM PassRole Wildcard Privilege Escalation
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-003 | security-architect | CRITICAL (OWASP 20) | OWASP Risk Rating |
+| CR-001 | code-security-specialist | CRITICAL (CVSS 9.9) | CVSS v3.1 |
+| GRC-004 | compliance-specialist | CRITICAL | Qualitative |
 
-**Prior intra-track merges confirmed:** TM-009→TM-001 (network-position folded into no-auth) and TM-027→TM-012 (PAT lifecycle folded into PAT storage) were correctly executed in Phase 6 and are reflected in `findings.json` (25 findings, no TM-009/TM-027). Verified: no dangling references to the merged IDs in the finding set.
+**Justification**: All three findings describe `iam:PassRole` on resource `"*"` in both the DevOps role and ECS task role (IAM/main.tf lines 287-293 and 317-323). Same component, same CWE-269, same attack path.
+
+**Merge recommendation**: Retain TM-003 as primary (richest attack scenario and remediation). Cross-reference CR-001 for CVSS score (9.9) and specific code-level remediation with `iam:PassedToService` condition. Cross-reference GRC-004 for compliance control mappings (SOC 2 CC6.2, ISO 27001 A.8.2, NIST CSF PR.AA, PCI-DSS 7.2.2). Use CRITICAL severity from all sources.
+
+---
+
+### Cluster 2: Repository-Sourced Buildspec with Privileged Mode
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-004 | security-architect | CRITICAL (OWASP 25) | OWASP Risk Rating |
+| CR-002 | code-security-specialist | CRITICAL (CVSS 9.8) | CVSS v3.1 |
+| GRC-009 | compliance-specialist | HIGH | Qualitative |
+
+**Justification**: TM-004 and CR-002 describe the identical vulnerability: buildspec sourced from repository + privileged Docker mode + no approval gates = arbitrary code execution with DevOps IAM role. GRC-009 covers the same CI/CD security gap from a compliance perspective.
+
+**Merge recommendation**: Retain TM-004 as primary. CR-002 adds CWE-94 (code injection) framing and the inline buildspec remediation. GRC-009 adds compliance mappings (SOC 2 CC8.1/CC6.8, ISO 27001 A.8.4/A.8.32, PCI-DSS 6.5.1). Use CRITICAL severity.
+
+**Severity conflict note**: GRC-009 rates this HIGH rather than CRITICAL. See Section 3 for resolution.
+
+---
+
+### Cluster 3: GitHub OAuth Token in Plaintext State
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-005 | security-architect | HIGH (OWASP 15) | OWASP Risk Rating |
+| CR-003 | code-security-specialist | CRITICAL (CVSS 9.1) | CVSS v3.1 |
+| GRC-003 | compliance-specialist | CRITICAL | Qualitative |
+| PA-009 | privacy-specialist | LOW | Qualitative (LINDDUN) |
+
+**Justification**: All four findings describe the GitHub OAuth token stored in plaintext Terraform state and CodePipeline configuration. Same component (CodePipeline, Terraform state), same CWE-312.
+
+**Merge recommendation**: Retain CR-003 as primary (most detailed evidence including `codepipeline:GetPipeline` retrieval path and CodeStar Connections migration). Cross-reference TM-005 for OWASP scoring and attack chain context. GRC-003 adds compliance mappings.
+
+**Severity conflict note**: Significant 4-way disagreement. See Section 3 for resolution.
+
+---
+
+### Cluster 4: No TLS/HTTPS on Public ALBs
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-001 | security-architect | HIGH (OWASP 15) | OWASP Risk Rating |
+| CR-004 | code-security-specialist | HIGH (CVSS 7.5) | CVSS v3.1 |
+| GRC-001 | compliance-specialist | CRITICAL | Qualitative |
+| PA-001 | privacy-specialist | CRITICAL | Qualitative (LINDDUN) |
+
+**Justification**: All four findings describe HTTP-only listeners on both ALBs with HTTPS disabled by default. Same component (ClientALB, ServerALB), same vulnerability class (CWE-311/CWE-319).
+
+**Merge recommendation**: Retain TM-001 as primary (includes ACM certificate and HSTS remediation). PA-001 adds privacy-specific impact (IP addresses as personal data per CJEU C-582/14). GRC-001 adds compliance control mappings across all four frameworks.
+
+**Severity conflict note**: Security agents rate HIGH; privacy and compliance rate CRITICAL. See Section 3 for resolution.
+
+---
+
+### Cluster 5: No Authentication or Authorization
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-002 | security-architect | HIGH (OWASP 15) | OWASP Risk Rating |
+| GRC-002 | compliance-specialist | CRITICAL | Qualitative |
+
+**Justification**: Both describe complete absence of authentication and authorization on all endpoints. Same component set, same CWE-306.
+
+**Merge recommendation**: Retain TM-002 as primary. GRC-002 adds compliance mappings (SOC 2 CC6.1, PCI-DSS 8.3.1). TM-002 includes context-appropriate severity rationale (demo app with public data).
+
+**Severity conflict note**: See Section 3.
+
+---
+
+### Cluster 6: S3 Buckets Missing Security Controls
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-009 | security-architect | MEDIUM (OWASP 9) | OWASP Risk Rating |
+| CR-005 | code-security-specialist | HIGH (CVSS 7.1) | CVSS v3.1 |
+| GRC-011 | compliance-specialist | HIGH | Qualitative |
+
+**Justification**: All three describe S3 buckets lacking public_access_block, explicit encryption, and versioning. Same components (S3Assets, S3Pipeline), same CWE-732.
+
+**Merge recommendation**: Retain TM-009 as primary (includes AWS default encryption context). CR-005 adds specific public_access_block Terraform remediation.
+
+**Severity conflict note**: See Section 3.
+
+---
+
+### Cluster 7: ECR Mutable Image Tags
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-006 | security-architect | HIGH (OWASP 15) | OWASP Risk Rating |
+| CR-006 | code-security-specialist | HIGH (CVSS 7.3) | CVSS v3.1 |
+| GRC-012 | compliance-specialist | HIGH | Qualitative |
+
+**Justification**: All three describe mutable ECR image tags and the `latest` tag pattern. Same component (ECR), same vulnerability class.
+
+**Merge recommendation**: Retain TM-006 as primary. CR-006 adds image signing remediation (AWS Signer, cosign). GRC-012 adds compliance mappings. All agree on HIGH severity.
+
+---
+
+### Cluster 8: Unrestricted CORS
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-008 | security-architect | MEDIUM (OWASP 6) | OWASP Risk Rating |
+| CR-007 | code-security-specialist | HIGH (CVSS 7.5) | CVSS v3.1 |
+| PA-010 | privacy-specialist | LOW | Qualitative (LINDDUN) |
+
+**Justification**: All three describe `app.use(cors())` with no origin restriction. Same component (ServerECS), same issue.
+
+**Merge recommendation**: Retain TM-008 as primary (includes context about no auth = low current impact). CR-007 provides specific CORS configuration remediation.
+
+**Severity conflict note**: 3-way disagreement. See Section 3.
+
+---
+
+### Cluster 9: Error Handler Information Leakage
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-012 | security-architect | MEDIUM (OWASP 8) | OWASP Risk Rating |
+| CR-008 | code-security-specialist | MEDIUM (CVSS 5.3) | CVSS v3.1 |
+| PA-006 | privacy-specialist | MEDIUM | Qualitative (LINDDUN) |
+
+**Justification**: All three describe the error handler in app.js:78-88 leaking internal details, including the labeled statement bug on line 85. Same component (ServerECS), same CWE-209.
+
+**Merge recommendation**: Retain TM-012 as primary. CR-008 adds CWE-670 for the control flow bug. All agree on MEDIUM severity. No conflict.
+
+---
+
+### Cluster 10: Outdated Dependencies
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-015 | security-architect | MEDIUM (OWASP 9) | OWASP Risk Rating |
+| CR-010 | code-security-specialist | MEDIUM (CVSS 6.5) | CVSS v3.1 |
+| GRC-016 | compliance-specialist | MEDIUM | Qualitative |
+
+**Justification**: All three describe outdated Node.js dependencies (Express 4.16.4, aws-sdk v2, Axios 0.21.2, Vue 2.6.11). Same components, same vulnerability class.
+
+**Merge recommendation**: Retain TM-015 as primary. CR-010 adds specific CVE references and npm audit output. All agree on MEDIUM severity. No conflict.
+
+---
+
+### Cluster 11: Container Hardening Deficiencies
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-017 | security-architect | MEDIUM (OWASP 9) | OWASP Risk Rating |
+| CR-009 | code-security-specialist | MEDIUM (CVSS 6.3) | CVSS v3.1 |
+| GRC-015 | compliance-specialist | MEDIUM | Qualitative |
+
+**Justification**: All three describe containers running as root with writable filesystems and no health checks. Same components (ServerECS, ClientECS, Dockerfiles). CR-009 adds unpinned base image concern.
+
+**Merge recommendation**: Retain TM-017 as primary. CR-009 adds Dockerfile-specific remediation (USER directive, image pinning). All agree on MEDIUM severity. No conflict.
+
+---
+
+### Cluster 12: No VPC Flow Logs / Security Monitoring
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-011 | security-architect | MEDIUM (OWASP 9) | OWASP Risk Rating |
+| TM-021 | security-architect | MEDIUM (OWASP 6) | OWASP Risk Rating |
+| TM-026 | security-architect | MEDIUM (OWASP 6) | OWASP Risk Rating |
+| CR-012 | code-security-specialist | LOW (CVSS 3.7) | CVSS v3.1 |
+| GRC-007 | compliance-specialist | HIGH | Qualitative |
+| GRC-014 | compliance-specialist | MEDIUM | Qualitative |
+
+**Justification**: These findings address overlapping monitoring and detection gaps: VPC flow logs (TM-011, GRC-014), Container Insights (TM-021), CloudTrail data events (TM-026), general security monitoring (CR-012, GRC-007). The security-architect deliberately kept TM-011/TM-021/TM-026 separate (different layers), which is reasonable. However, CR-012 and GRC-007/GRC-014 overlap significantly with TM-011 and TM-021.
+
+**Merge recommendation**: Keep TM-011, TM-021, and TM-026 as separate findings (different remediation paths). Cross-reference CR-012 with TM-011. Cross-reference GRC-007 with TM-021/TM-026 and GRC-014 with TM-011.
+
+---
+
+### Cluster 13: No VPC Endpoints
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-019 | security-architect | LOW (OWASP 4) | OWASP Risk Rating |
+| GRC-017 | compliance-specialist | LOW | Qualitative |
+
+**Justification**: Both describe the absence of VPC endpoints for AWS services. Same component, same issue.
+
+**Merge recommendation**: Retain TM-019 as primary. GRC-017 adds compliance mappings. Both agree on LOW severity. No conflict.
+
+---
+
+### Cluster 14: Single NAT Gateway SPOF
+| Finding | Agent | Severity | Scoring System |
+|---------|-------|----------|----------------|
+| TM-018 | security-architect | MEDIUM (OWASP 6) | OWASP Risk Rating |
+| GRC-018 | compliance-specialist | LOW | Qualitative |
+
+**Justification**: Both describe single NAT GW in one AZ as availability risk. Same component.
+
+**Merge recommendation**: Retain TM-018 as primary. GRC-018 adds compliance mappings.
+
+**Severity conflict note**: See Section 3.
 
 ---
 
 ## 2. False Positive Candidates
 
-**0 findings flagged for removal.** All 22 HIGH findings across tracks (TM ×10, CR ×4, GRC ×8; 0 CRITICAL) were checked for (a) a concrete step-by-step attack path, (b) full mitigation by an existing Phase-1 §1.8 control, and (c) confidence/severity alignment. Results:
+### FP-1: PA-002 (CRITICAL) -- Deceptive Login Form
 
-- **Attack paths:** every HIGH has a concrete, source-verified path. The Phase-6 pass already downgraded the two genuinely-theoretical items honestly (TM-008 unhandled-exception path → LOW/LOW confidence; TM-010 task-role PassRole → MEDIUM because no service action consumes it today). These are correctly-rated, not false positives.
-- **Existing mitigations:** the system's real controls (private subnets, SG chaining, multi-AZ, blue/green rollback, Fargate isolation) are genuine but orthogonal — none closes a flagged gap. Confirmed against recon §1.8.
-- **Context-bounded HIGHs (framing note, not false positives):** GRC-001 (TLS) and GRC-002 (no-auth) are rated HIGH on the **compliance/audit axis** while the data is non-personal demo data. GRC states this explicitly ("production/compliance readiness blocker, not a live breach of sensitive data"). Legitimate — but the report-analyst should present GRC severities as *audit-readiness* severity, distinct from the CVSS/OWASP live-exploit severity of the same issue, so a reader does not double-weight them.
-- **No confidence/severity mismatches:** no finding is HIGH-severity/LOW-confidence. Privacy correctly scores current-state LOW (impact-on-individuals = 1, no data subjects) with a separate clearly-labelled conditional column — this is honest, not inflation.
+**Finding**: PA-002 rates the client-side login form as CRITICAL because it collects credentials without processing them, constituting "deceptive data collection."
+
+**Reason for flagging**: The login form is a Vue.js UI component (Login.vue) that does not transmit data to any server endpoint. Credentials entered remain in browser memory only and are never stored or transmitted. While the privacy concern about user expectation is legitimate, rating this CRITICAL alongside actual infrastructure vulnerabilities like IAM PassRole wildcard (TM-003) seems disproportionate. The threat model (TM-002) already captures the no-authentication finding at HIGH.
+
+**Recommendation**: Consider downgrading PA-002 to HIGH. The privacy concern is real (users may enter real credentials expecting authentication), but the technical risk is limited since no data leaves the browser. The privacy-specialist may have domain-specific context justifying CRITICAL (e.g., GDPR Article 5(1)(a) transparency principle), so this is flagged as a candidate rather than a correction.
+
+---
+
+### FP-2: GRC-005 (CRITICAL) -- No Encryption at Rest Configuration
+
+**Finding**: GRC-005 rates the absence of explicit encryption at rest configuration as CRITICAL.
+
+**Reason for flagging**: AWS has enabled default SSE-S3 encryption on all S3 buckets since January 2023, and DynamoDB has used AWS-owned encryption by default since 2018. The security-architect (TM-009, TM-010) correctly noted these defaults and rated the findings MEDIUM and LOW respectively. While the compliance concern about explicit configuration and key management is valid, the data is a public product catalog. The absence of a Terraform `aws_s3_bucket_server_side_encryption_configuration` block does not mean data is unencrypted -- it means the AWS default applies.
+
+**Recommendation**: Consider downgrading GRC-005 to HIGH. The compliance gap is real (auditors want explicit evidence of encryption configuration), but the technical risk is mitigated by AWS defaults. The compliance-specialist may have domain context justifying CRITICAL (explicit control evidence required for SOC 2), so this is flagged as a candidate.
 
 ---
 
 ## 3. Severity Conflicts
 
-No true conflicts. The four cross-track divergences are all explained by different scoring systems (never converted, per protocol). Recommended unified severity = highest, per merge rules, with the lens noted.
-
-| Cluster | TM (OWASP L×I) | CR (CVSS v3.1) | GRC (Qualitative) | PA (OWASP, indiv.) | Recommended unified | Why divergent (not an error) |
-|---|---|---|---|---|---|---|
-| C1 No TLS | MEDIUM (9) | HIGH (7.4) | HIGH | LOW (2) / HIGH-cond | **HIGH** (range MED–HIGH) | CR scores client-takeover via script injection (C:H/I:H); GRC treats absent TLS as near-automatic audit exception; TM/PA weight non-personal payload today. |
-| C2 No auth | HIGH (10) | MEDIUM (6.5) | HIGH | — | **HIGH** | OWASP L5 (trivial) drives HIGH; CVSS caps at MEDIUM on low concrete impact to public catalog data. Documented lens gap. |
-| C7 WAF/DoS | HIGH (12) | (in CR-005 MED) | MEDIUM (9) | — | **HIGH / MEDIUM (adjacent)** | TM likelihood 4 vs GRC 3 — adjacent bands, not a conflict. Both defensible; recommend HIGH given trivial scriptability + cost-amp. |
-| C10 Error handling | MEDIUM (7) / LOW (8) | MEDIUM (4.8) | LOW-sev / MED-risk | — | **MEDIUM** | GRC uses LOW *severity* (audit-outcome) but MED *risk-score* (L×I) — two axes, explained in GRC's own note. Consistent. |
-
-All other shared issues (C3 IAM active path, C4/C5/C6 supply-chain, C8 audit-trail, C11 at-rest, C12 resilience) are **severity-consistent** across tracks (HIGH↔HIGH or MED↔MED). No resolution required.
+| Cluster | Finding IDs | Agent 1 Rating | Agent 2 Rating | Agent 3 Rating | Agent 4 Rating | Recommended Resolution |
+|---------|-------------|---------------|---------------|---------------|---------------|----------------------|
+| 2 (Buildspec) | TM-004 / CR-002 / GRC-009 | CRITICAL (OWASP 25) | CRITICAL (CVSS 9.8) | HIGH (qualitative) | -- | **CRITICAL**. GRC-009 likely rated HIGH because the compliance lens focuses on control absence rather than exploitability. The concrete 4-step attack path justifies CRITICAL. |
+| 3 (OAuth Token) | TM-005 / CR-003 / GRC-003 / PA-009 | HIGH (OWASP 15) | CRITICAL (CVSS 9.1) | CRITICAL (qualitative) | LOW (LINDDUN) | **HIGH**. TM-005's OWASP L3xI5=15 reflects that exploitation requires workstation compromise (L3). CR-003's CVSS 9.1 uses AV:N/PR:N which overestimates -- network access alone does not expose the local state file. PA-009's LOW reflects privacy-domain scoping (individual developer token, not user PII). Recommend HIGH with note that CVSS score should use AV:L (local access required for state file). |
+| 4 (No TLS) | TM-001 / CR-004 / GRC-001 / PA-001 | HIGH (OWASP 15) | HIGH (CVSS 7.5) | CRITICAL (qualitative) | CRITICAL (LINDDUN) | **HIGH for security context, CRITICAL for compliance/privacy context**. Security agents correctly contextualize: current data is public, impact capped at I3. Compliance agents correctly note: TLS absence is an automatic audit failure across all frameworks. Privacy agents correctly note: IP addresses are personal data (CJEU precedent). Preserve both ratings with context. |
+| 5 (No Auth) | TM-002 / GRC-002 | HIGH (OWASP 15) | CRITICAL (qualitative) | -- | -- | **HIGH with compliance note**. TM-002 correctly contextualizes for a demo app with public data (I3). GRC-002 correctly notes this would be an automatic audit failure. Preserve both ratings with context. |
+| 6 (S3 Controls) | TM-009 / CR-005 / GRC-011 | MEDIUM (OWASP 9) | HIGH (CVSS 7.1) | HIGH (qualitative) | -- | **MEDIUM**. TM-009's context note about AWS default encryption is accurate. CR-005's CVSS 7.1 uses AC:H which is appropriate, but the risk rating accounts for current demo context. The public_access_block gap is the real issue, and MEDIUM is proportionate given `acl = "private"` is in place. |
+| 8 (CORS) | TM-008 / CR-007 / PA-010 | MEDIUM (OWASP 6) | HIGH (CVSS 7.5) | LOW (LINDDUN) | -- | **MEDIUM**. No authentication + public data = CORS misconfiguration has minimal current exploitability. CR-007's HIGH rating assumes authenticated sessions exist (they do not). PA-010's LOW correctly reflects the limited privacy impact. TM-008's MEDIUM is the best contextualized rating. |
+| 14 (NAT GW) | TM-018 / GRC-018 | MEDIUM (OWASP 6) | LOW (qualitative) | -- | -- | **MEDIUM**. Single NAT GW in one AZ is a genuine availability risk for all private subnet workloads. MEDIUM is proportionate for a demo system. |
 
 ---
 
 ## 4. Visual Completeness Gaps
 
-**0 gaps.** The Phase-1 checklist marked 23/26 categories applicable (3 justified N/A: #10 Secrets/Key-Mgmt — no vault in design, #19 Tenant, #20 Region). Verification against the produced diagrams:
+| # | Category | Expected in Structural? | Found? | Expected in Risk Overlay? | Found? | Correction Needed |
+|---|----------|------------------------|--------|--------------------------|--------|-------------------|
+| 22 | Ownership Markers | Yes | Yes (L1/L2) | Yes | Partial | L4 omits ownership markers (`[managed]`, `[self-managed]`, `[vendor:X]`) from node labels due to 4-line label density limit. The checklist documents this as a deliberate trade-off. **No correction needed** -- threat annotations correctly take priority over ownership markers in L4, and ownership is preserved in L1/L2 for cross-reference. |
+| 25 | Density Compliance | Yes | Yes | Yes | Borderline | L4 has ~26 nodes against a 25-node limit. The checklist notes legend subgraph entries are excluded from count per convention. With legend excluded, primary node count is ~26 which is at the boundary. **Advisory**: consider whether the Autoscaling node (no findings, minimal context in L4) could be omitted from L4 to provide margin. |
+| 26 | Companion Diagrams | Yes (attack tree) | Yes | N/A | N/A | Auth sequence diagram marked N/A (no auth exists). Data lifecycle diagram marked "NOT PRODUCED" (optional). Both justifications are sound. **No correction needed**. |
 
-| Check | Result |
-|---|---|
-| Structural (L1–L3) coverage | 18/18 structural categories present in `02-structural-diagram.md` (legends/classDefs ×27, version stamp present). |
-| Risk overlay (L4) coverage | 23/23 applicable categories in `07-final-diagram.md` (classDefs ×49); risk color coding, threat annotations (⚠ STRIDE + CWE ×17), attack-path overlays present. |
-| Companion diagrams | 4 attack-trees + 4 attack-flows (KC01–KC04) render (valid `flowchart` headers); auth-sequence correctly N/A (no auth); data-lifecycle correctly omitted (no PII). |
-| Analytical visuals | SBOM graph, MITRE navigator layer JSON (valid, 13 techniques matching the 13 cited T-IDs), STRIDE/heat-map/RBAC per checklist. |
-| Node-id contract | Canonical `recon.json` ids (C/D/E/TB/R/X) used consistently across diagrams and findings — cross-reference integrity intact. |
-
-The three N/A categories are correctly justified (absence-as-finding for Secrets/Key-Mgmt is captured in TM-012/GRC-007, not drawn as a node — correct).
+**Summary**: The visual completeness checklist is thoroughly completed with 24/26 categories applicable and all verified. The diagram-specialist produced a high-quality L4 overlay with correct risk coloring, threat annotations, and kill chain overlays. One minor advisory on density (at boundary).
 
 ---
 
 ## 5. Framework ID Corrections
 
-**0 hallucinated IDs across all three tracks.** Every ID was checked against its verified reference file by absolute path.
+### 5.1 CWE IDs Not in Reference Set
 
-**5a. Threat-model + code-review (ATT&CK / CWE / OWASP)** — all present in `frameworks.md`:
-- CWE: 79, 200, 209, 269, 306, 311, 312, 400, 532, 732, 755, 770, 798 → **all valid**.
-- MITRE: T1048, T1059, T1068, T1078, **T1098** (CR-002), T1190, T1195, T1485, T1486, T1498, T1552, T1562, T1567, T1595 → **all valid**.
-- OWASP: A01/A02/A03/A05/A07/A08:2021 → **all valid**, correctly applied (A01→IAM, A02→TLS, A08→supply-chain, A07→auth-failure).
+The following CWE IDs are used in specialist outputs but are not present in the curated `frameworks.md` reference. All are valid MITRE CWE entries, but per the framework verification rules, they should be noted as "not in reference set -- manual verification recommended."
 
-**5b. Compliance (SOC 2 / NIST 800-53 / ISO 27001:2022 / HIPAA)** — all cited IDs present in the compliance reference files:
-- SOC 2: CC1.1–CC9.2, A1.1–A1.3 (incl. CC6.4 N/A) → **all valid**.
-- NIST 800-53 Rev 5: SC-8/SC-8(1), AC-2/3/5/6/6(1)/6(5), AU-2/3/6/9/11/12, SI-2/2(2)/4/11, SC-28/28(1)/12, IA-2/5/5(6), RA-3/5, CM-3/3(2)/5/7, CP-1/2/4/9/9(1)/10, IR-1/4/8, AT-2/3, PL-2, PS-3, MP-6, SR-1/3/6, SA-9/22 → **all valid**.
-- ISO 27001:2022 Annex A: A.5.1/10/12/15/16/17/18/19/20/21/23/24/28/29/30, A.6.3, A.8.2/3/4/5/8/10/13/14/15/16/20/21/22/24/28/31/32 → **all valid**.
+| Finding ID | Agent | Cited CWE | Status | Description | Recommended Action |
+|-----------|-------|-----------|--------|-------------|-------------------|
+| CR-002 | code-security-specialist | CWE-94 | Not in reference | Improper Control of Generation of Code (Code Injection) | Valid CWE, appropriate for buildspec injection. Note as "not in reference set." |
+| CR-004, PA-001 | code-security / privacy | CWE-319 | Not in reference | Cleartext Transmission of Sensitive Information | Valid CWE, more specific than CWE-311. Note as "not in reference set." TM-001 uses CWE-311 (in reference) as a valid alternative. |
+| PA-002 | privacy-specialist | CWE-1021 | Not in reference | Improper Restriction of Rendered UI Layers or Frames | Valid CWE, but questionable fit. The login form issue is more about deceptive collection than clickjacking. **Advisory: consider CWE-1059 (Insufficient Technical Documentation) or describe in plain text.** |
+| PA-003, PA-005 | privacy-specialist | CWE-1059 | Not in reference | Insufficient Technical Documentation | Valid CWE for missing privacy notice, but unusual for a technical assessment. Note as "not in reference set." |
+| CR-007, PA-010 | code-security / privacy | CWE-942 | Not in reference | Permissive Cross-domain Policy with Untrusted Domains | Valid CWE, specific to CORS. TM-008 uses CWE-732 (in reference) as nearest match -- documented in 06-validated-findings.md. |
+| CR-008 | code-security-specialist | CWE-670 | Not in reference | Always-Incorrect Control Flow Implementation | Valid CWE for the labeled statement bug. Note as "not in reference set." |
+| CR-009 | code-security-specialist | CWE-250 | Not in reference | Execution with Unnecessary Privileges | Valid CWE for running as root. Note as "not in reference set." CWE-269 (in reference) is a reasonable parent. |
+| CR-009 | code-security-specialist | CWE-829 | Not in reference | Inclusion of Functionality from Untrusted Control Sphere | Valid CWE for unpinned base images. Note as "not in reference set." |
+| CR-010 | code-security-specialist | CWE-1104 | Not in reference | Use of Unmaintained Third Party Components | Valid CWE. TM-015 already noted this is "not in reference" and described in plain text. |
+| CR-012 | code-security-specialist | CWE-778 | Not in reference | Insufficient Logging | Valid CWE. TM-011 uses CWE-390 (in reference) as nearest match -- documented in 06-validated-findings.md. |
+| CR-006 | code-security-specialist | CWE-345 | Not in reference | Insufficient Verification of Data Authenticity | Valid CWE for mutable image tags. TM-006 already noted this is "not in reference" and described in plain text. |
 
-| Finding | Cited ID | Framework | Status | Correction |
-|---|---|---|---|---|
-| GRC (Risk-Assessment mapping row) | ISO **Clause 6.1.2** | ISO 27001 | **valid-but-approximate** | Management-system clause, **not** an Annex A control. GRC already self-flagged this with a `†` note — correct behavior, no fix needed. |
+### 5.2 MITRE ATT&CK IDs
 
-**5c. Privacy (GDPR / CCPA / LINDDUN / HIPAA)** — all cited in the privacy reference files:
-- GDPR: Art. 2, 3, 4, 5(1)(c)/(e)/(f), 6, 7, 8, 12, 13, 15–22, 25, 30, 32, 33, 34, 35(1)/(7), 44, 46, 77, 83 → **all valid** and correctly applied (Art. 32→security, Art. 13→notice, Art. 30→ROPA).
-- CCPA: §1798.100, .105, .110, .120, .135, .140 → **all valid**.
-- LINDDUN GO threat types: L1–L3, I1–I3, N1–N3 (non-repudiation), D1–D3 (detectability), D1–D4 (disclosure), U1–U3, N1–N5 (non-compliance) → **all valid** against `linddun-go-threats.md`.
+| Finding ID | Agent | Cited ID | Status | Notes |
+|-----------|-------|----------|--------|-------|
+| TM-001 (original) | security-architect | T1557 | Not in reference | Correctly flagged and removed in Phase 6 validation. No correction needed. |
 
-| Finding | Cited ID | Source | Status | Correction |
-|---|---|---|---|---|
-| PA / regulatory matrix (HIPAA N/A row) | 45 CFR **§164.502** | HIPAA | **out-of-reference-set** | §164.502 is a *Privacy Rule* citation; the skill's `hipaa-security-rule.md` covers only the *Security Rule* (§164.302–318). Real-world-valid but outside the verified set. **Immaterial** — HIPAA is N/A (no PHI). §164.312 (co-cited) is valid. Advisory only. |
+**All other MITRE ATT&CK IDs verified**: T1190, T1078, T1195, T1552, T1530, T1498, T1562, T1595, T1068, T1485, T1048 are all present in the reference tables. No misattributions detected.
 
-**Advisory (correct-application, threat-model):**
-| Finding | Cited ID | Status | Note |
-|---|---|---|---|
-| TM-023 (missing security headers/CSP) | CWE-79 | **loose fit** | The finding itself states "Vue auto-escapes so there is no direct XSS sink today." CWE-79 (XSS) is defensible via the CSP-as-XSS-defense framing, but **CWE-1021** (improper frame restriction / clickjacking) or **CWE-693** (protection-mechanism failure) fit the missing-headers gap more precisely. Advisory, not a correction. |
+### 5.3 CWE Misattribution Check
+
+| Finding ID | Cited CWE | Assessment |
+|-----------|-----------|------------|
+| TM-008 | CWE-732 (Incorrect Permission Assignment) | **Acceptable nearest match** for CORS misconfiguration. CWE-942 would be more precise but is not in reference. |
+| TM-011 | CWE-390 (Detection of Error Condition Without Action) | **Acceptable nearest match** for logging gap. CWE-778 would be more precise but is not in reference. |
+| TM-022 | CWE-269 (Improper Privilege Management) | **Acceptable** for unrestricted egress, though CWE-269 is typically about IAM rather than network controls. No better match in reference set. |
+| PA-009 | CWE-798 (Use of Hard-coded Credentials) | **Questionable fit**. PA-009 describes a GitHub PAT tied to an individual developer -- this is a personal access token passed as a variable, not a hard-coded credential. CWE-312 (used by TM-005/CR-003) is more accurate. **Advisory: consider CWE-312 instead.** |
+| CR-003 | CVSS AV:N | **Advisory**: The CVSS vector uses AV:N (Attack Vector: Network) for a finding about plaintext local Terraform state. The primary attack path requires local filesystem access (AV:L). The secondary path (codepipeline:GetPipeline) is network-accessible but requires AWS IAM credentials (PR:L). Consider AV:L/PR:L for primary vector. |
 
 ---
 
 ## 6. Confidence Escalations
 
-**0 mechanical escalations applied** — and that is the correct outcome here. The convergence rule (2+ agents → MEDIUM, 3+ → HIGH) is intended to *raise* under-confident findings; every convergent finding in this assessment is **already HIGH confidence** in each track, so multi-agent agreement corroborates rather than changes them:
+Findings independently identified by multiple agents are escalated in combined confidence.
 
-| Issue | Independent identifications | Combined confidence | Action |
-|---|---|---|---|
-| No TLS (C1) | 4 (TM/CR/GRC/PA) | HIGH (already) | Corroborated — no change. |
-| No auth (C2) | 3 (TM/CR/GRC) | HIGH (already) | Corroborated. |
-| IAM PassRole (C3) | 4 (TM×2/CR/GRC) | HIGH (already) | Corroborated. |
-| Supply chain (C4–C6) | 3 (TM/CR/GRC) | HIGH (already) | Corroborated. |
-| Audit trail (C8) | 2 (TM/GRC) | HIGH (already) | Corroborated. |
-
-**Latent-finding guard (applied):** for the *task-role* PassRole (TM-010) and permissive CORS (TM-006), 3 tracks note the gap → confidence that the **gap exists** is HIGH, but the **effective severity stays latent** (task role has no consumable service action today; CORS carries no credentials/PII today). Do not let cross-track agreement inflate these into active-HIGH risks — the finding authors' latent framing is correct.
+| Issue | Original Findings | Original Confidences | Agents | Escalated Confidence | Justification |
+|-------|------------------|---------------------|--------|---------------------|---------------|
+| IAM PassRole wildcard | TM-003, CR-001, GRC-004 | HIGH, HIGH, HIGH | 3 agents | **HIGH (confirmed)** | 3 agents independently confirmed. Already HIGH; confidence validated. |
+| Buildspec + privileged mode | TM-004, CR-002, GRC-009 | HIGH, HIGH, HIGH | 3 agents | **HIGH (confirmed)** | 3 agents independently confirmed. Already HIGH; confidence validated. |
+| GitHub token exposure | TM-005, CR-003, GRC-003, PA-009 | HIGH, HIGH, HIGH, HIGH | 4 agents | **HIGH (confirmed)** | 4 agents independently confirmed from different perspectives. Highest cross-agent convergence in the assessment. |
+| No TLS on ALBs | TM-001, CR-004, GRC-001, PA-001 | HIGH, HIGH, HIGH, HIGH | 4 agents | **HIGH (confirmed)** | 4 agents independently confirmed. Highest cross-agent convergence. |
+| Outdated dependencies | TM-015, CR-010, GRC-016 | MEDIUM, MEDIUM, HIGH | 3 agents | **MEDIUM -> HIGH** | 3 agents independently identified. TM-015 and CR-010 rated MEDIUM confidence because exact CVE applicability requires `npm audit`. GRC-016 rated HIGH. With 3-agent convergence, escalate combined confidence to HIGH. |
+| ECR mutable tags | TM-006, CR-006, GRC-012 | MEDIUM, HIGH, HIGH | 3 agents | **MEDIUM -> HIGH** | 3 agents independently confirmed. TM-006 was MEDIUM confidence due to requiring ECR push access. With 3-agent convergence, escalate to HIGH. |
+| S3 bucket controls | TM-009, CR-005, GRC-011 | MEDIUM, HIGH, HIGH | 3 agents | **MEDIUM -> HIGH** | 3 agents independently confirmed. TM-009 was MEDIUM. Escalate to HIGH. |
+| Container hardening | TM-017, CR-009, GRC-015 | HIGH, HIGH, HIGH | 3 agents | **HIGH (confirmed)** | 3 agents independently confirmed root user, writable filesystem, no health checks. |
 
 ---
 
 ## 7. Protocol Compliance
 
 | Agent | File | Issue | Severity |
-|---|---|---|---|
-| code-security-specialist | code-security-review.md | None — all required sections, contiguous CR-001..006, counts match (4H/2M). | — |
-| compliance-specialist | compliance-gap-analysis.md | Findings live under **"## Framework-Specific Findings"** rather than a literal `## Findings` heading. Substantively complete (GRC-001..014, contiguous). | advisory |
-| privacy-specialist | privacy-assessment.md | Observations live under **"## 9. Positive Observations"** rather than `## Observations`. Substantively complete (PA-001..004). | advisory |
-| security-architect | 01–08 + findings.json | Phased format (8 files + machine-readable `findings.json`) per the threat-model track design — not a single standardized finding file. Expected. Summary count 25 (10H/11M/4L/0C) matches `findings.json` exactly. | — |
-| **all** | Coverage-States tables | **See §9 corrections — the significant protocol issue this run.** Phase-1 and code-review Coverage-States use *shorthand* ids that do not match canonical taxonomy ids. | advisory (merge-affecting) |
+|-------|------|-------|----------|
+| security-architect | 06-validated-findings.md | Summary table count discrepancy: line 728 states HIGH=9, then line 733 self-corrects to HIGH=10, MEDIUM=11. The original table on line 728 lists 10 HIGH IDs but says "9". | Advisory |
+| privacy-specialist | privacy-assessment.md | Scoring System field states "Qualitative (LINDDUN-based)" but no LINDDUN threat categories (Linkability, Identifiability, Non-repudiation, Detectability, Disclosure, Unawareness, Non-compliance) are mapped to individual findings. Findings use CWE and OWASP instead. The LINDDUN methodology is described in the Data Flow Analysis section but not carried through to finding-level scoring. | Advisory |
+| compliance-specialist | compliance-gap-analysis.md | Uses compliance framework control IDs (SOC 2 CC, ISO 27001 A, NIST CSF, PCI-DSS) in the Cross-Framework field rather than CWE/MITRE IDs. This is appropriate for a compliance assessment but means these findings lack vulnerability-level framework IDs for cross-referencing with the threat model. No CWE or MITRE ATT&CK IDs are present in GRC findings. | Advisory |
 
-- **Placeholders:** none (`TODO`/`TBD`/`[INSERT]`/`FIXME` scan clean).
-- **Summary-count accuracy:** TM 25 (H10/M11/L4/C0 ✔), CR 6 (H4/M2 ✔), GRC 14 (H8/M4/L2 ✔), PA 4 (L4 ✔) — all match their finding bodies.
-- **ID integrity:** all sequences contiguous, no duplicates, no gaps (accounting for the intended TM-009/TM-027 merges).
+**Note**: All three issues are advisory. Each agent followed its domain conventions appropriately. The compliance-specialist's use of compliance framework control IDs rather than CWEs is standard practice for GRC assessments. The privacy-specialist's use of CWE over LINDDUN is arguably more useful for cross-referencing.
 
 ---
 
-## 8. GRC Evidence Grounding
+## 8. Corrections Log
 
-**Specificity score: 5/5 (fully grounded).** Every GRC finding cites specific files/configs and Phase-2 node ids; nothing reads as generic boilerplate.
-
-**Evidence existence — sampled against the source repo at project root (all CRITICAL/HIGH gaps + a MEDIUM):**
-
-| Finding | Evidence cited | Verified | Note |
-|---|---|---|---|
-| GRC-001 | ALB HTTP:80 only, `enable_https` default false | **yes** | `ALB/main.tf` http_listener only; `variables.tf:27` `enable_https` exists. |
-| GRC-003 | `iam:PassRole *` on task+DevOps roles; wildcard ecs/s3 | **yes** | `IAM/main.tf:287-290` (DevOps PassRole), `:317-320` (task PassRole), `:276-277` RegisterTaskDefinition/RunTask. **Line refs approximate** (GRC cited recon's `:175/:306`; actual is `:287/:317`) — content 100% correct; CR-002 carries the precise lines. |
-| GRC-005 | ECR MUTABLE, no scan-on-push | **yes** | `ECR/main.tf:10` `image_tag_mutability="MUTABLE"`, no `image_scanning_configuration`. |
-| GRC-006 | privileged build; auto-deploy no approval | **yes** | `CodeBuild/main.tf:22` `privileged_mode=true`; `CodePipeline/main.tf:33` `PollForSourceChanges=true`, no Approval action. |
-| GRC-007 | PAT as OAuthToken in pipeline + local state | **yes** | `CodePipeline/main.tf:29` `OAuthToken=var.github_token`. |
-
-**Compliance math — re-derived independently, all correct:**
-- SOC 2: `(0 + 11×0.5)/(36−1)×100 = 15.71%` ✔ (matches "15.7%").
-- CIS/cloud: `(0 + 4×0.5)/(15−0)×100 = 13.33%` ✔.
-- Combined: `(0 + 15×0.5)/(51−1)×100 = 15.0%` ✔.
-- SOC 2 criteria tally: Partial 11 + N/A 1 + Not-Implemented 24 + Compliant 0 = **36** ✔ (the 24 Not-Implemented list enumerates to exactly 24). Risk register rows = 14 = GRC-001..014 ✔.
-
-**Only note:** GRC inherited recon's approximate IAM line numbers (`:175/:306`) rather than re-opening the policy (`:287/:317`). The *claims* are verbatim-correct; the *line pointers* are off. Advisory — recommend the report-analyst cite CR-002's precise lines for the IAM finding.
+| # | Responsible Agent | Finding ID | Issue | Recommended Correction | Severity |
+|---|------------------|-----------|-------|----------------------|----------|
+| 1 | security-architect | 06-validated-findings.md line 728 | HIGH count stated as 9, should be 10 | Correct the summary table entry to "HIGH \| 10" | Advisory |
+| 2 | code-security-specialist | CR-003 | CVSS vector uses AV:N for local state file access | Consider AV:L/AC:L/PR:L for primary attack vector (local state file). Secondary vector (codepipeline:GetPipeline) can be noted separately as AV:N/PR:L | Advisory |
+| 3 | privacy-specialist | PA-009 | CWE-798 (Hard-coded Credentials) cited for a GitHub PAT passed as Terraform variable | Consider CWE-312 (Cleartext Storage) which better describes the vulnerability -- the token is not hard-coded in source, it is stored in plaintext in state | Advisory |
+| 4 | privacy-specialist | PA-002 | CWE-1021 (Rendered UI Layers) cited for deceptive login form | CWE-1021 is about clickjacking/UI layering, not deceptive data collection. Consider describing the issue in plain text with GDPR Art. 5(1)(a) reference, or use CWE-359 (Exposure of Private Personal Information) which is in the reference set | Advisory |
+| 5 | code-security-specialist | CR-007 | HIGH severity (CVSS 7.5) for CORS in a system with no authentication | The CVSS score assumes confidentiality impact requiring authenticated sessions. With no auth and public data, CORS misconfiguration has minimal current exploitability. MEDIUM is more contextually appropriate | Advisory |
+| 6 | compliance-specialist | GRC-009 | HIGH severity for CI/CD pipeline lacking security controls | The buildspec + privileged mode + broad IAM combination is rated CRITICAL by two other agents with detailed attack paths. Consider aligning to CRITICAL given the 4-step exploitation path documented in TM-004 | Advisory |
+| 7 | report-analyst | Cross-reference | When consolidating, ensure each merged cluster preserves all scoring systems (OWASP, CVSS, qualitative) without converting between them | Critical |
+| 8 | report-analyst | Cross-reference | When consolidating, apply the confidence escalations from Section 6 to the merged findings (TM-015: MEDIUM->HIGH, TM-006: MEDIUM->HIGH, TM-009: MEDIUM->HIGH) | Critical |
+| 9 | diagram-specialist | 07-final-diagram.md | L4 node count is at the 25-node boundary | Advisory: consider removing the Autoscaling node (no findings, minimal L4 context) to provide density margin | Advisory |
+| 10 | code-security-specialist | Multiple (CR-002, CR-006, CR-009, CR-010, CR-012) | CWE IDs not in reference set used without noting they require manual verification | Add "not in reference set -- manual verification recommended" note per frameworks.md verification rules | Advisory |
+| 11 | privacy-specialist | Multiple (PA-001, PA-002, PA-003, PA-005, PA-010) | CWE IDs not in reference set used without noting they require manual verification | Add "not in reference set -- manual verification recommended" note per frameworks.md verification rules | Advisory |
 
 ---
 
-## 9. Corrections Log
+## 9. Findings Without Cross-Agent Coverage
 
-Severity legend: **critical** = must-fix before report; **advisory** = note for report-analyst / future runs.
+The following findings were identified by only one agent and have no cross-agent validation. These are not necessarily problematic -- they may represent domain-specific insights.
 
-| # | Responsible | Finding/Item | Issue | Recommended correction | Severity |
-|---|---|---|---|---|---|
-| 1 | security-architect (Phase 1) + code-review | Coverage-States tables | **Shorthand ids that do not match the 225 canonical taxonomy ids** (e.g. `assets.data-assets`→`assets.inventory`; `cryptography.in-transit`→`cryptography.data-in-transit`; `cloud-infrastructure.iam-least-privilege`→`cloud-infrastructure-security.iam-config`; `authentication.model`→`authentication-model.mechanisms`; whole families collapsed to one line). 18/28 Phase-1 ids and 11/13 code-review ids were non-canonical. | **Resolved by the validation-specialist during merge** — mapped each shorthand to canonical ids and expanded family summaries to all sub-items using recon/finding/diagram evidence. Future runs: agents should emit exact `coverage-taxonomy.json` ids. | advisory (merge-affecting) |
-| 2 | security-architect (Phase 6/8) | `threat-validation.*` meta-labels in Coverage-States (false-positive-check, existing-mitigation-check, confidence-assignment, deduplication, framework-id-verification) | **Not taxonomy ids** — no `threat-validation` section exists. | Excluded from the ledger; their substance is captured under `validation-evidence.review-coverage`/`.open-followup-tracking` (both set `present`) and in this report. | advisory |
-| 3 | compliance-specialist | ISO "Clause 6.1.2" (risk-assessment mapping) | Management-system clause, not Annex A. | None — GRC already self-flagged with `†`. | advisory (already handled) |
-| 4 | privacy-specialist | HIPAA 45 CFR §164.502 | Privacy-Rule cite outside the Security-Rule reference set. | Optional: drop §164.502, keep §164.312. Immaterial (HIPAA N/A). | advisory |
-| 5 | security-architect | TM-023 CWE-79 | Loose fit for a missing-headers finding that states no XSS sink exists. | Consider CWE-1021 / CWE-693; CWE-79 acceptable. | advisory |
-| 6 | compliance / privacy | Heading names (`Framework-Specific Findings`, `Positive Observations`) | Deviate from literal `## Findings` / `## Observations`. | Cosmetic; report-analyst parses by content. | advisory |
-
-**For the report-analyst (carry-forward):**
-1. **Do not double-count.** 49 finding-records → **~28 distinct underlying issues** (see §1 clusters C1–C13 + single-track items). Present one row per cluster with all source IDs and multi-lens severities; a "49 risks" headline would be wrong.
-2. **Preserve dual scores** on merged rows (OWASP L×I *and* CVSS *and* qualitative) — never converted. Use the highest severity for prioritization, show the range.
-3. **Frame GRC HIGHs as audit-readiness severity**, distinct from CVSS/OWASP live-exploit severity, so the same issue isn't weighted twice.
-4. **Privacy is conditional:** current-state LOW (no personal data, source-verified); the actionable signal is the conditional column that activates when auth/PII is added. Do not present PA findings as current HIGH risks.
-5. **`coverage.json` is merged and final** — 224/225 terminal; the single `unknown` (`risk-assessment.risk-acceptance-ownership`) is a justified Open Question (no risk-owner/appetite artifact exists in a demo repo), not a gap to fill.
-
----
-
-## Coverage Ledger Merge Summary
-
-Merged all Coverage-States sections (Phase 1, Phases 3–5, Phase 6, Phase 6+8, code-review, compliance, privacy) plus self-resolved diagram-metadata items (sections 8, 48–52) from the produced `.mmd` layers + visual-completeness checklist. Final `coverage.json` (`merged_by: validation-specialist`):
-
-| State | Count | Meaning |
-|---|---:|---|
-| present | 90 | Control/aspect substantially exists and is characterized. |
-| partial | 59 | Partially present or present-with-material-gaps. |
-| absent | 51 | Control does not exist (gap; captured in findings). |
-| not-applicable | 24 | Multi-tenancy (4), Privacy (5, confirmed), AI/ML (6), Physical/HW (5), + 4 context-N/A items (remote-access, file-handling, k8s-RBAC, support-data-access). |
-| unknown | 1 | `risk-assessment.risk-acceptance-ownership` — justified Open Question. |
-| **Total** | **225** | 224 terminal (99.6%). |
-
-**Merge conflicts reconciled (per the coverage-ledger principle: the ledger encodes assessment-coverage/control-posture; control *inadequacy* lives in `findings.json`, not as a ledger downgrade):**
-- `cloud-infrastructure-security.iam-config`, `cicd-supply-chain-security.pipeline-access`, `data-flows.protocol-transport`: recon marks these **present** (infrastructure characterized) while specialists flag the *control* as inadequate. Kept **present** with a note referencing the finding (TM-010/016, TM-012/016, TM-002) — the config exists and was assessed; the over-permissioning/plaintext is a finding, not an absence.
-- `cryptography.data-in-transit`: code-review said `absent` (public ALBs), Phase 1 said `partial`. Kept **partial** — backend hops *do* ride AWS-managed TLS; only the public plane is plaintext. Not downgraded to absent (per the partial-not-absent guard).
-- `compliance-governance.*` (4): seeded `not-applicable` under `has_regulatory=false`, but the compliance specialist performed an advisory SOC2/CIS assessment. Applied GRC's terminal states (partial/partial/absent/absent) with a note that no regime is legally mandated — coverage was actually produced, so `not-applicable` would understate it.
-- `privacy.*` (5): seeded `not-applicable`; privacy specialist independently **confirmed** with source evidence. Kept `not-applicable` (correct — no personal data).
+| Finding | Agent | Description | Assessment |
+|---------|-------|-------------|------------|
+| TM-007 | security-architect | No WAF or rate limiting | Valid standalone finding. GRC-006 covers WAF from compliance perspective but was clustered separately due to broader scope. |
+| TM-022 | security-architect | Unrestricted egress from ECS tasks | Valid standalone finding with concrete evidence. |
+| TM-024 | security-architect | No billing alarm / cost detection | Valid standalone finding. Unique to threat model perspective. |
+| TM-023 | security-architect | No branch protection on repository | Valid. CR-002 mentions branch protection in remediation but does not have a standalone finding for it. |
+| TM-025 | security-architect | npm install vs npm ci in Dockerfiles | Valid. CR-009 mentions lockfile integrity tangentially but as a separate finding about base images. |
+| TM-016 | security-architect | Swagger docs publicly exposed | Valid. PA-004 covers the same endpoint but focuses on developer PII exposure rather than API documentation exposure. |
+| TM-010 | security-architect | DynamoDB missing PITR and CMK | Valid. GRC-010 covers backup/recovery from compliance perspective. |
+| TM-020 | security-architect | SNS no subscribers / encryption | Valid standalone finding. |
+| PA-002 | privacy-specialist | Deceptive login form | Domain-specific privacy finding. Flagged as FP candidate in Section 2. |
+| PA-003 | privacy-specialist | No privacy notice | Domain-specific. No cross-agent equivalent expected. |
+| PA-004 | privacy-specialist | Developer PII in Swagger | Partially overlaps TM-016 but focuses on PII rather than information disclosure. |
+| PA-005 | privacy-specialist | No data subject rights infrastructure | Domain-specific. No cross-agent equivalent expected. |
+| PA-007 | privacy-specialist | CloudWatch logs contain personal data | Partially overlaps Cluster 12 (monitoring) but focuses on data minimization rather than detection capability. |
+| PA-008 | privacy-specialist | No DPA documentation | Domain-specific organizational finding. No cross-agent equivalent expected. |
+| GRC-005 | compliance-specialist | No encryption at rest configuration | Flagged as FP candidate in Section 2. |
+| GRC-008 | compliance-specialist | No incident response plan | Domain-specific organizational finding. No cross-agent equivalent expected. |
+| GRC-010 | compliance-specialist | No data backup or recovery | Partially overlaps TM-010 (DynamoDB PITR). |
+| GRC-013 | compliance-specialist | No information security policy | Domain-specific organizational finding. No cross-agent equivalent expected. |
+| CR-011 | code-security-specialist | ECS Task Role unnecessary s3:ListBucket | Specific IAM finding not covered by other agents. Valid -- the ECS task role should not need s3:ListBucket on wildcard. |
 
 ---
 
-## Execution Log
+## 10. Overall Assessment Quality Rating
 
-### Process Health
-| Metric | Value |
-|--------|-------|
-| Files Read | 27 (8 threat-model phases, findings.json, recon.json, coverage.json, 3 specialist reports, visual-completeness-checklist, coverage-taxonomy.json, frameworks.md, 9 compliance/privacy reference files, 4 source files for grounding, spot-checks of 10 .mmd + navigator JSON) |
-| Files Written | 2 (coverage.json merged; validation-report.md) |
-| Errors Encountered | 0 |
-| Items Skipped | 0 |
-| Self-Assessed Output Quality | HIGH |
+| Dimension | Rating | Notes |
+|-----------|--------|-------|
+| **Coverage** | Excellent | 26 threat model findings + 10 privacy + 18 compliance + 12 code review. All major risk areas identified by multiple agents. |
+| **Consistency** | Good | 14 cross-agent duplicate clusters show strong convergence. 5 severity conflicts identified, all explainable by scoring system differences and domain perspective. |
+| **Evidence Quality** | Excellent | All findings cite specific file paths, line numbers, and Terraform resource names. Attack scenarios include step-by-step exploitation paths. |
+| **Completeness** | Excellent | Visual completeness checklist 24/26 applicable categories verified. Kill chains cover CRITICAL and HIGH findings. No major gaps identified. |
+| **Framework ID Accuracy** | Good | Security-architect correctly flagged and remapped 6 CWEs not in reference during Phase 6. Code-security and privacy specialists used additional CWEs without noting they are outside the reference set (11 instances), but all cited CWEs are valid MITRE entries. |
+| **False Positive Rate** | Low | 2 candidates flagged (PA-002, GRC-005), both arguable rather than clear false positives. No findings appear fabricated or unsupported by evidence. |
+| **Actionability** | Excellent | Every finding includes specific, implementable remediation with Terraform code examples where applicable. Priority ordering is consistent across agents. |
 
-### What Went Well
-- **Zero fabricated framework IDs** across all four tracks — a strong integrity signal. Agents that wrote "N/A — no verified technique maps" (CR-001, CR-006) instead of forcing an ATT&CK id did exactly the right thing.
-- **GRC evidence grounded verbatim** in the source repo (present at project root), enabling real existence-checks rather than trusting citations — every sampled claim held.
-- **Cross-track convergence is genuine, not redundant** — the same issues seen through STRIDE/CVSS/qualitative/LINDDUN lenses; the merge clusters (§1) give the report-analyst a clean de-duplicated spine.
-- **Coverage taxonomy parity** confirmed (225 seed ids == 225 canonical ids) before merge, so the shorthand-id problem was a mapping task, not a data-integrity failure.
-
-### Issues Encountered
-- **Shorthand Coverage-States ids (the main issue).** Phase-1 and code-review Coverage-States tables used memorable shorthand (`cryptography.in-transit`, `authentication.model`, family-level summaries) that do not match the canonical taxonomy ids, and collapsed 4–6-item families to a single line. Handled by mapping each to canonical ids and expanding families to all sub-items using recon + finding + diagram evidence (I am the sole ledger writer, so this is expected validation work). Impact: none on the final ledger; flagged in §9 #1 for future-run hygiene. This matches the recurring pattern in my prior experience.
-- **Phase 6/8 `threat-validation.*` meta-labels** are not taxonomy ids; excluded from the ledger and mapped to `validation-evidence.*` (§9 #2).
-- **GRC line numbers approximate** (inherited from recon `:175/:306` vs actual `:287/:317`); claims correct, so no severity impact — recommended the report-analyst use CR-002's precise lines.
-
-### What Was Skipped or Incomplete
-- **No full re-audit of the source tree** — GRC/CR evidence was sampled (all HIGH/CRITICAL gaps + representative MEDIUMs), not exhaustively re-verified line-by-line. The sampled set was 100% accurate, so confidence in the remainder is high, but a small residual risk of an unsampled mis-citation remains.
-- **Diagram render verification was structural** (header validity, fence balance, legend/classDef/version-stamp presence, navigator-JSON parse), not a pixel-level render — consistent with a text-based validation pass; the diagram-specialist's own visual-completeness checklist reports full render.
-
-### Assumptions Made
-- Treated the **shorthand→canonical mapping** as unambiguous where a shorthand clearly denotes one taxonomy family member (e.g. `cryptography.in-transit`→`cryptography.data-in-transit`); where a shorthand summarized a whole family, resolved every sub-item from the underlying evidence rather than assigning the summary state blindly.
-- Applied the **coverage-ledger principle** (state = control-posture/assessment-coverage; inadequacy → findings, not a downgrade) to reconcile recon-present vs specialist-gap conflicts, per prior-experience guidance.
-- Honored the compliance specialist's **deliberate override** of the `has_regulatory=false` seed (advisory SOC2/CIS assessment was genuinely performed), and the privacy specialist's **confirmation** of `not-applicable` (no personal data, source-verified).
-- Assumed the source repo at `{project_root}/{Code,Infrastructure}` is the assessed target (paths and contents matched every cited evidence location).
+**Overall: HIGH QUALITY assessment suitable for stakeholder presentation. The report-analyst should apply the deduplication map from Section 1, preserve both OWASP and CVSS scores for merged clusters, and apply the confidence escalations from Section 6.**

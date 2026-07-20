@@ -1,23 +1,19 @@
 %%{init: {"theme": "base", "themeVariables": {"primaryColor": "#f5f5f5", "primaryTextColor": "#1a1a2e", "primaryBorderColor": "#555", "lineColor": "#4a4a6a", "secondaryColor": "#e8eaf6", "fontSize": "14px", "fontFamily": "'Segoe UI', 'Helvetica Neue', Arial, sans-serif", "edgeLabelBackground": "#ffffffee", "clusterBkg": "#f8f9fa", "clusterBorder": "#dee2e6"}, "flowchart": {"useMaxWidth": false, "htmlLabels": true, "curve": "basis", "padding": 20, "nodeSpacing": 40, "rankSpacing": 50}}}%%
 
-flowchart TB
+flowchart LR
     subgraph Skill["Skill: threat-model"]
         direction TB
         SKILL["<b>SKILL.md</b><br/>8 phases + orchestration"]
 
-        subgraph RefFiles["references/ — 16 .md + 3 .json + icons/"]
+        subgraph RefFiles["references/ — 11 files"]
             direction TB
             FW["<b>frameworks.md</b><br/>STRIDE-LM, PASTA, MITRE,<br/>CWE, OWASP lookups"]
             AOP["<b>agent-output-protocol.md</b><br/>Standardized finding format"]
             RT["<b>report-template.md</b><br/>Sections I-XIV structure"]
             AC["<b>analysis-checklists.md</b><br/>Per-phase completeness"]
             VCC["<b>visual-completeness-checklist.md</b><br/>26 diagram categories"]
-            AP["<b>agent-prompts.md</b><br/>Persona spawn prompts"]
-            COV["<b>coverage-taxonomy.md / .json</b><br/>Coverage-ledger taxonomy"]
-            PO["<b>pipeline-observability.md</b><br/>Run-event stream spec"]
-            FW ~~~ AOP ~~~ RT ~~~ AC ~~~ VCC ~~~ AP ~~~ COV ~~~ PO
 
-            subgraph MermaidRefs["Diagram and Visual System — 10 files"]
+            subgraph MermaidRefs["Mermaid Diagram System — 6 files"]
                 direction LR
                 MS["mermaid-spec.md<br/><i>Symbols, edges, classDefs</i>"]
                 ML["mermaid-layers.md<br/><i>4-layer separation</i>"]
@@ -25,24 +21,19 @@ flowchart TB
                 MT["mermaid-templates.md<br/><i>Starter patterns</i>"]
                 MRC["mermaid-review-checklist.md"]
                 MC["mermaid-config.json<br/><i>Rendering theme</i>"]
-                AV["analytical-visuals.md<br/><i>Product-grade charts</i>"]
             end
         end
     end
 
-    subgraph Agents["Agent Definitions — 9 (7 pipeline + 2 standalone)"]
+    subgraph Agents["Agent Definitions — ~/.claude/agents/"]
         direction TB
-        SA["<b>security-architect.md</b><br/>Type: security-architect<br/>Phases: 1, 3-5, and 6+8 <i>(fresh context)</i><br/>Skills: threat-model"]
-        DS["<b>diagram-specialist.md</b><br/>Type: diagram-specialist<br/>Phases: 2, 7<br/>Skills: threat-model"]
+        SA["<b>security-architect.md</b><br/>Type: security-architect<br/>Phases: 1, 3-6, 8s<br/>Skills: threat-model"]
+        DS["<b>diagram-specialist.md</b><br/>Type: security-architect<br/>Phases: 2, 7<br/>Skills: threat-model"]
         RA["<b>report-analyst.md</b><br/>Type: report-analyst<br/>Skills: docx, pdf, pptx, frontend-design"]
         CR["<b>code-review-agent.md</b><br/>Type: code-review-agent"]
         PA["<b>privacy-agent.md</b><br/>Type: privacy-agent"]
         GRC["<b>grc-agent.md</b><br/>Type: grc-agent"]
-        VS["<b>validation-specialist.md</b><br/>Type: validation-specialist<br/><i>Spawned by name</i><br/>Cross-validate + merge coverage.json"]
-        SR["<b>security-reviewer.md</b><br/>Type: security-reviewer<br/><i>Standalone companion — not in pipeline</i>"]
-        CQ["<b>code-quality-reviewer.md</b><br/><i>Standalone companion — not in pipeline</i>"]
-        %% invisible chain: unconnected nodes would otherwise pack side-by-side and squash the layout
-        SA ~~~ DS ~~~ RA ~~~ CR ~~~ PA ~~~ GRC ~~~ VS ~~~ SR ~~~ CQ
+        VS["<b>validation-specialist.md</b><br/><i>No built-in type</i><br/>Spawned as: general-purpose"]
     end
 
     subgraph Output["Output: threat-model-output/"]
@@ -50,8 +41,6 @@ flowchart TB
         P["<b>8 Phase Files</b><br/>01-reconnaissance.md<br/>through<br/>08-threat-model-report.md"]
         T["<b>Team Outputs</b><br/>privacy-assessment.md<br/>compliance-gap-analysis.md<br/>code-security-review.md<br/>validation-report.md"]
         R["<b>Report Deliverables</b><br/>report.html<br/>report.docx<br/>report.pdf<br/>executive-summary.pptx"]
-        OBS["<b>Observability and Coverage</b><br/>events.ndjson<br/>pipeline-summary.md<br/>coverage.json<br/>report-generation-log.md"]
-        P ~~~ T ~~~ R ~~~ OBS
     end
 
     SA -->|"writes 01, 03-06, 08"| P
@@ -79,9 +68,9 @@ flowchart TB
     classDef output fill:#f3e8ff,stroke:#a855f7,stroke-width:1.5px,color:#581c87
 
     class Skill skill
-    class RefFiles,FW,AOP,RT,AC,VCC,AP,COV,PO ref
-    class MermaidRefs,MS,ML,MD,MT,MRC,MC,AV mermaid
-    class SA,RA,CR,PA,GRC,SR,CQ agent
+    class RefFiles,FW,AOP,RT,AC,VCC ref
+    class MermaidRefs,MS,ML,MD,MT,MRC,MC mermaid
+    class SA,RA,CR,PA,GRC agent
     class DS diagram
     class VS special
-    class Output,P,T,R,OBS output
+    class Output,P,T,R output

@@ -5,5 +5,3 @@ skills/threat-model/evals/reliability/runs/
 skills/threat-model/evals/reliability/baselines/current/
 **/__pycache__/
 .DS_Store
-.claude/worktrees/
-.playwright-mcp/

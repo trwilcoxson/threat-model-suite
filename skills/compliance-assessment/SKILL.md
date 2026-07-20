@@ -186,10 +186,10 @@ For each gap identified in Phase 3, assess risk using likelihood x impact.
 **Risk rating = Likelihood x Impact:**
 | Rating | Score Range | Treatment Required |
 |--------|-----------|-------------------|
-| Critical | 17-25 | Immediate remediation, executive visibility |
-| High | 10-16 | Prioritized remediation within 30 days |
-| Medium | 5-9 | Planned remediation within 90 days |
-| Low | 1-4 | Accept or address during next review cycle |
+| Critical | 20-25 | Immediate remediation, executive visibility |
+| High | 12-19 | Prioritized remediation within 30 days |
+| Medium | 6-11 | Planned remediation within 90 days |
+| Low | 1-5 | Accept or address during next review cycle |
 
 **Risk treatment options:**
 - **Mitigate**: Implement controls to reduce likelihood or impact

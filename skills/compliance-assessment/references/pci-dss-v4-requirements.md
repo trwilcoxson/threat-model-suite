@@ -4,7 +4,7 @@
 
 ID format: `[Req].[Sub].[Detail]` (e.g., `8.3.6`). There are 12 principal requirements organized under 6 goals. When citing PCI-DSS requirements, use the exact numeric ID format shown below.
 
-PCI-DSS v4.0 was published in March 2022 and became mandatory on March 31, 2024, when the prior version (v3.2.1) was retired. A set of new ("future-dated") requirements were best practice until March 31, 2025, after which they too became mandatory. Note: v4.0.1 (published June 2024) is a limited revision that supersedes v4.0; the requirement numbering below is unchanged.
+PCI-DSS v4.0 was published March 2022, with mandatory compliance by March 31, 2025. Requirements marked **(FUTURE-DATED)** had an extended compliance deadline of March 31, 2025 for existing implementations.
 
 ## Goal 1: Build and Maintain a Secure Network and Systems
 

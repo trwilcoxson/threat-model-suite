@@ -38,11 +38,10 @@ skills/      the Claude Code skills
   threat-model/                SKILL.md + references/ + evals/   (the flagship)
   compliance-assessment/       compliance gap analysis (Team mode)
   privacy-impact-assessment/   DPIA / LINDDUN privacy analysis (Team mode)
-agents/      the 7 pipeline personas (security-architect, diagram-specialist,
-             privacy-agent, grc-agent, code-review-agent, validation-specialist,
-             report-analyst) + 2 standalone companions (security-reviewer,
-             code-quality-reviewer) invoked on their own, not by the pipeline
-docs/        ARCHITECTURE.md, VALIDATION-PATTERNS.md, STRUCTURED-OUTPUT-CONTRACT.md, examples/
+agents/      the specialist pipeline (security-architect, diagram-specialist,
+             validation-specialist, report-analyst, privacy-agent, grc-agent,
+             code-review-agent, security-reviewer, code-quality-reviewer)
+docs/        ARCHITECTURE.md, VALIDATION-PATTERNS.md, examples/
 ```
 
 ### threat-model — the flagship skill
@@ -54,28 +53,6 @@ docs/        ARCHITECTURE.md, VALIDATION-PATTERNS.md, STRUCTURED-OUTPUT-CONTRACT
 - A **coverage ledger** so the model attempts every production-grade item and records what it found,
   what's absent, and what it could not determine from the sources (gaps surfaced, not hidden).
 - Output formats: HTML, Word (.docx), PDF, Executive PPTX.
-- Opt-in **`dashboard.html`** — a single self-contained, offline analytics dashboard (no CDN/fonts): severity
-  donut, L×I risk matrix, coverage ledger, STRIDE-LM/kill-chain/ATT&CK/CWE breakdowns, and the run's **own
-  interactive structural diagram** (pan/zoom + click→cross-filter over the same threat model the report shows).
-  Every number traces to the run's manifests; absent data degrades to graceful empty states. Produced only when
-  `dashboard` is in the run plan; all other outputs are unchanged.
-- **Evidence traceability** — every finding carries direct, resolvable evidence (a findable reference plus the
-  proving excerpt), enforced across the agent flow each time (honest `no_direct_evidence` abstention is the only
-  out) and derived, embedded, and validated at every output: the dashboard finding drawer shows the cited code
-  snippet / document quote / diagram element with a jump to the related diagram node. Additive and back-compatible
-  — evidence-less committed manifests still validate.
-- Opt-in **portfolio meta-view (`portfolio.html`)** — the level *above* the single-product dashboard. It rolls up N
-  per-product runs into one self-contained, offline, byte-deterministic page that reuses the dashboard's own per-run
-  model and exact theme (same product family, not a re-implementation): aggregate posture (worst-of — any member
-  CRITICAL ⇒ portfolio CRITICAL), summed severity, an assessed-weighted coverage roll-up (a member with no coverage
-  ledger reads `unknown`, never green), a deterministic chain map of the products, a riskiest-product ranking, member
-  cards that **drill into each product's own `dashboard.html`**, and grounded cross-product analytics (shared
-  CWE / ATT&CK / STRIDE). Cross-product links are only ever **auto-derived taxonomy overlaps** (same global CWE/ATT&CK/
-  STRIDE id = same node, computed at build) or **declared structural edges** (shared component/datastore/dependency,
-  up/downstream trust, shared risk/kill-chain, common control) between real recon element ids — a dangling or
-  ungrounded endpoint is dropped and reported, never fabricated. Membership + declared edges persist to a
-  `portfolio.json` (`portfolio/v1`); a reference-free check asserts the aggregates reconcile to members and every link
-  is grounded. Inert unless a portfolio is present — single-product runs are unchanged.
 
 ### agents
 The pipeline the skill orchestrates. Each runs in a fresh context, writes a structured output file +
@@ -93,55 +70,15 @@ microservices+LLM app are committed under
 
 ## Install
 
-### As a plugin (recommended — ships the deterministic hard gate)
-
-The repo is a Claude Code plugin, so the skills, the specialist agents, and the **Manifest Validation
-Gate** hook all install together and the hook activates immediately — no `settings.json` edit:
-
-```text
-/plugin marketplace add trwilcoxson/threat-model-suite
-/plugin install threat-model-suite@threat-model-suite
-```
-
-(or, for a single-repo direct install: `/plugin install github:trwilcoxson/threat-model-suite`)
-
-Then: `Run a threat model on <target>`.
-
-**Step 0 — you pick the run.** Before anything spawns, the skill presents an explicit menu (MODE Solo/Team;
-TEAM = any subset of privacy/grc/code-review; OUTPUTS = any subset of the six formats, dashboard and
-analytical-visuals included) and **stops for your choice** — or you give a one-shot spec like
-`team=privacy+code-review, outputs=dashboard+pdf`. Your confirmed pick is written to
-`{output_dir}/run-plan.json`. The same `PreToolUse` hook enforces a **START gate**: the first pipeline spawn
-is **denied until `run-plan.json` exists, validates, and is confirmed** (the deny reason carries the menu), so
-there's no accidental full run. The rest of the run then spawns exactly the team and emits exactly the outputs
-you planned.
-
-Step 0 also asks one **opt-in chaining question** (`chain=<portfolio-id>, run-id=<id>`; default standalone, so
-nothing is chained by accident), recorded as an additive optional `chain` block on `run-plan.json`. When set, the
-completed run is upserted (idempotent, keyed by `run_id`) into that portfolio's `portfolio.json` as **membership
-only** — being in the chain and being *linked* to another product are two separate opt-ins. Rebuild the portfolio
-view over the members with `scripts/build_portfolio.py` to get `portfolio.html`.
-
-Before the report is generated, the same hook
-([`hooks/validate_gate.py`](hooks/validate_gate.py)) runs the deterministic validator over the emitted
-`recon.json`/`findings.json`/`coverage.json` and **blocks report generation until they pass**, feeding
-the specific defects back to the analysis agent to fix (the validate → retry-with-specific-feedback loop,
-enforced by the harness rather than the agent's goodwill). See
-[`docs/STRUCTURED-OUTPUT-CONTRACT.md`](docs/STRUCTURED-OUTPUT-CONTRACT.md).
-
-### Manual (skill only — soft gate)
-
 ```bash
 # Skills
 for s in threat-model compliance-assessment privacy-impact-assessment; do
   cp -r skills/$s ~/.claude/skills/$s
 done
-# Agents (flat .md files)
-mkdir -p ~/.claude/agents && cp agents/*.md ~/.claude/agents/
+# Agents
+mkdir -p ~/.claude/agents && cp agents/*/*.md ~/.claude/agents/
 ```
-Then restart Claude Code. Run a threat model with: `Run a threat model on <target>`. Without the plugin
-hook, the gate is the SKILL.md "Manifest Validation Gate" instruction (the parent runs `run.py validate`
-and re-spawns on failure) — the same check, enforced by the orchestrator instead of the harness.
+Then restart Claude Code. Run a threat model with: `Run a threat model on <target>`.
 
 ## License
 

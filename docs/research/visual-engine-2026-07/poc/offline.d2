@@ -1,7 +1,0 @@
-user: Anonymous User { shape: person; icon: ../../../../skills/threat-model/references/icons/external-actor.svg }
-ecs: ECS Service { icon: ../../../../skills/threat-model/references/icons/service.svg }
-db: DynamoDB { shape: cylinder; icon: ../../../../skills/threat-model/references/icons/datastore.svg }
-s3: S3 assets { shape: cylinder; icon: ../../../../skills/threat-model/references/icons/datastore.svg }
-user -> ecs: "HTTP [PUBLIC]"
-ecs -> db: "scan [INTERNAL]"
-ecs -> s3: "put [INTERNAL]"

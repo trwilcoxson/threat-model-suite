@@ -1,18 +1,8 @@
-# Diagram Review Checklist
+# Mermaid Diagram Review Checklist
 
-Pre-submission quality gates for all diagrams. Run this checklist before rendering and before including
-diagrams in the final report.
+Pre-submission quality gates for all Mermaid diagrams. Run this checklist before rendering to PNG and before including diagrams in the final report.
 
-**Engine-neutral.** The suite is mixed-engine: the structural, L4-overlay, and SBOM diagrams are authored
-in **D2** ([d2-spec.md](d2-spec.md)); sequence diagrams stay **Mermaid** ([mermaid-spec.md](mermaid-spec.md));
-Mermaid remains an accepted input throughout. These checks are **engine-agnostic** — they read the same
-normalized model (blocks, typed edges, boundary containers, node-type tokens, stamps) regardless of engine.
-Where a check names a Mermaid keyword below, its D2 equivalent is the parallel construct: `subgraph` ⇄
-container, `classDef`/`:::` ⇄ `classes`/`class:`, `%% Version:` ⇄ `# Version:`.
-
-**References**: [mermaid-spec.md](mermaid-spec.md) / [d2-spec.md](d2-spec.md) for rules,
-[node-type-icons.md](node-type-icons.md) for the node-type vocabulary,
-[mermaid-layers.md](mermaid-layers.md) for layer requirements.
+**References**: [mermaid-spec.md](mermaid-spec.md) for rules, [mermaid-layers.md](mermaid-layers.md) for layer requirements.
 
 ---
 
@@ -68,7 +58,7 @@ container, `classDef`/`:::` ⇄ `classes`/`class:`, `%% Version:` ⇄ `# Version
 - [ ] Enriched node labels follow format: `Name\nTech\n⚠ STRIDE · LxI=Score BAND\nCWE IDs`
 - [ ] STRIDE categories use single-letter abbreviations (S,T,R,I,D,E,LM)
 - [ ] LxI calculation is correct (Likelihood × Impact = Score)
-- [ ] BAND matches the score (CRITICAL 17-25, HIGH 10-16, MEDIUM 5-9, LOW 1-4)
+- [ ] BAND matches the score (CRITICAL 20-25, HIGH 12-19, MEDIUM 6-11, LOW 1-5)
 - [ ] CWE IDs are verified against `references/frameworks.md`
 - [ ] Ownership markers present where applicable (`[team:X]`, `[managed]`, `[vendor:X]`)
 - [ ] No `note right of` syntax used (invalid in flowchart mode)

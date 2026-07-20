@@ -20,14 +20,6 @@ The system transforms a codebase or architecture description into a comprehensiv
 | `report.docx` | Professional Word document with TOC, cover page, embedded diagram PNGs |
 | `report.pdf` | Print-ready PDF |
 | `executive-summary.pptx` | 9-11 slide executive presentation with severity charts and diagram embeds |
-| `dashboard.html` (opt-in) | Single self-contained offline analytics dashboard — severity/risk/coverage/STRIDE-LM/kill-chain/ATT&CK/CWE analytics plus the run's own interactive structural diagram (pan/zoom + click→cross-filter); derived entirely from the run's manifests. Produced only when `dashboard ∈ run-plan.outputs` |
-| `run-plan.json` | The confirmed run selection (`run-plan/v1`: mode, team[], outputs[], confirmed, source) written at Step 0 before any spawn; an additive optional `chain` block records opt-in portfolio membership |
-| `portfolio.html` (opt-in, portfolio-level) | Self-contained offline meta-view *above* the per-product dashboard: rolls up N member runs into aggregate posture (worst-of), summed severity, assessed-weighted coverage, a chain map, riskiest-product ranking, and grounded cross-product analytics; member cards drill into each product's own `dashboard.html`. Reuses `build_dashboard.model_for_run` + `dashboard_template.CSS`. Produced by `scripts/build_portfolio.py` over a `portfolio.json` |
-| `portfolio.json` | The persisted relationship model (`portfolio/v1`): membership (real run ids + path locators) and DECLARED typed edges between real recon element ids (`origin: "declared"` + provenance). Runs are upserted (idempotent, keyed by `run_id`) at pipeline end when Step 0 opted them in |
-| Product-grade + analytical visuals | 8 product-grade diagram additions plus analytical charts (severity distribution, risk heatmap) beyond the L1-L4 DFDs |
-| `coverage.json` + coverage profile | Completeness-coverage ledger: every applicable production-grade item resolved to present / partial / absent / not-applicable / unknown, with unknowns surfaced as open questions |
-| `events.ndjson` + `pipeline-summary.md` | Pipeline observability: a `tm.run-event/1` stream projected from each persona's Execution Log ("what agent is doing what") |
-| `report-generation-log.md` | Report-analyst QA + generation log |
 
 ### What It's Good For
 
@@ -43,7 +35,7 @@ The system transforms a codebase or architecture description into a comprehensiv
 
 ### Core Principle: Flat Orchestration
 
-All agents are spawned as **flat peers by the parent conversation** — a deliberate design choice (see §4.1), not a platform limit. The parent conversation reads the skill file (SKILL.md), which contains the orchestration logic, and uses its full tool access (the `Agent` spawn tool) to manage the pipeline, spawning each persona by its own `name`.
+All agents are spawned as **flat peers by the parent conversation**. No agent spawns other agents. The parent conversation reads the skill file (SKILL.md), which contains the orchestration logic, and uses its full tool access (Task, TaskOutput, etc.) to manage the pipeline.
 
 ```mermaid
 flowchart TB
@@ -130,23 +122,17 @@ flowchart TB
 
 ### Component Inventory
 
-Every persona below is a **custom subagent** the suite ships (the only *built-in* subagent types are `Explore`, `Plan`, `general-purpose`); each is spawned by its own `name`.
-
-| Component | Type | Location | Spawned as (`subagent_type`) | Purpose |
-|-----------|------|----------|------------------------------|---------|
-| `SKILL.md` | Skill | `skills/threat-model/SKILL.md` | N/A | 8-phase threat model methodology + orchestration guide |
-| `security-architect` | Custom agent | `agents/security-architect.md` | `security-architect` | Phase 1 (recon), Phases 3-5 (generative analysis), Phases 6+8 (fresh-context validation + summary) |
-| `diagram-specialist` | Custom agent | `agents/diagram-specialist.md` | `diagram-specialist` | Phase 2 (structural DFDs) and Phase 7 (risk overlay + analytical visuals) |
-| `privacy-agent` | Custom agent | `agents/privacy-agent.md` | `privacy-agent` | Privacy impact assessment |
-| `grc-agent` | Custom agent | `agents/grc-agent.md` | `grc-agent` | Compliance gap analysis |
-| `code-review-agent` | Custom agent | `agents/code-review-agent.md` | `code-review-agent` | Code-level vulnerability analysis |
-| `validation-specialist` | Custom agent | `agents/validation-specialist.md` | `validation-specialist` | Cross-agent validation, deduplication, coverage-ledger merge |
-| `report-analyst` | Custom agent | `agents/report-analyst.md` | `report-analyst` | QA review + 4-format report generation |
-| `security-reviewer` | Custom agent (standalone) | `agents/security-reviewer.md` | `security-reviewer` | **Standalone companion — not spawned by the pipeline.** On-demand code security review |
-| `code-quality-reviewer` | Custom agent (standalone) | `agents/code-quality-reviewer.md` | `code-quality-reviewer` | **Standalone companion — not spawned by the pipeline.** On-demand code-quality review |
-| 16 reference files | Reference | `references/*.md` + `references/*.json` | N/A | Frameworks, checklists, diagram + visual specs, coverage taxonomy, observability spec, report template (14 .md + 2 .json) |
-
-> **Pipeline vs. companions.** The spawned pipeline is **7 agents** (security-architect, diagram-specialist, privacy-agent, grc-agent, code-review-agent, validation-specialist, report-analyst). `security-reviewer` and `code-quality-reviewer` are standalone companion agents invoked on demand, **not** part of the spawned pipeline. The repo also carries dev infrastructure that is not a runtime component: a reference-free reliability evals harness (`skills/threat-model/evals/reliability/`) and spec-first design docs (`openspec/`).
+| Component | Type | Claude Code Primitive | Built-in Agent Type | Purpose |
+|-----------|------|----------------------|--------------------|---------|
+| `SKILL.md` | Skill | `~/.claude/skills/threat-model/SKILL.md` | N/A | 8-phase threat model methodology + orchestration guide |
+| `security-architect` | Agent | `~/.claude/agents/security-architect.md` | `security-architect` | Executes Phase 1 (recon), Phases 3-6 (analysis), Phase 8 (summary) |
+| `diagram-specialist` | Agent | `~/.claude/agents/diagram-specialist.md` | `security-architect` | Executes Phase 2 (structural DFDs) and Phase 7 (risk overlay) |
+| `privacy-agent` | Agent | `~/.claude/agents/privacy-agent.md` | `privacy-agent` | Privacy impact assessment |
+| `grc-agent` | Agent | `~/.claude/agents/grc-agent.md` | `grc-agent` | Compliance gap analysis |
+| `code-review-agent` | Agent | `~/.claude/agents/code-review-agent.md` | `code-review-agent` | Code-level vulnerability analysis |
+| `validation-specialist` | Agent | `~/.claude/agents/validation-specialist.md` | None (spawned as `general-purpose`) | Cross-agent validation and deduplication |
+| `report-analyst` | Agent | `~/.claude/agents/report-analyst.md` | `report-analyst` | QA review + 4-format report generation |
+| 11 reference files | Reference | `references/*.md` + `mermaid-config.json` | N/A | Frameworks, checklists, diagram specs, report template |
 
 ### Two Execution Modes
 
@@ -191,19 +177,18 @@ User: "Run a threat model on this project"
 
 ### 3.2 Agent Spawning
 
-Each agent is spawned via the `Agent` tool (the older `Task` name still works as an alias) with specific parameters:
+Each agent is spawned via the `Task` tool with specific parameters:
 
 ```
-Agent(
-  subagent_type: "security-architect",    // the custom agent's own name
-  name: "threat-modeler-recon",           // display name for this spawn
-  prompt: "Execute Phase 1...",           // instructions + paths
-  run_in_background: false                // blocking (or true for the parallel specialist wave)
+Task(
+  subagent_type: "security-architect",    // built-in agent type
+  name: "threat-modeler",                 // display name
+  prompt: "Execute all 8 phases...",      // instructions + paths
+  run_in_background: false                // blocking (or true for parallel)
 )
 ```
 
-The custom agent's `.md` file (in `agents/`, or the plugin's `agents/`) supplies the persona's
-instructions, model, tools, and preloaded skills; it is loaded automatically on a by-name spawn.
+The agent's `.md` file (in `~/.claude/agents/`) customizes the built-in type with domain-specific instructions, personality, model selection, and skill access.
 
 ### 3.3 Inter-Agent Communication
 
@@ -240,7 +225,7 @@ Key elements:
 
 ### 3.5 The Reference File System
 
-The skill carries 16 reference files (14 `.md` + 2 `.json`) that provide deterministic, verifiable foundations:
+The skill carries 11 reference files that provide deterministic, verifiable foundations:
 
 | File | Role |
 |------|------|
@@ -255,10 +240,6 @@ The skill carries 16 reference files (14 `.md` + 2 `.json`) that provide determi
 | `visual-completeness-checklist.md` | 26-category coverage tracker for diagram completeness |
 | `report-template.md` | Canonical report structure (sections I-XIV) |
 | `agent-output-protocol.md` | Standardized finding format for all agents |
-| `agent-prompts.md` | Canonical per-persona spawn prompts |
-| `analytical-visuals.md` | Product-grade analytical charts (severity distribution, risk heatmap) |
-| `coverage-taxonomy.md` / `coverage-taxonomy.json` | Completeness-coverage taxonomy — the items agents attempt and the ledger keys off |
-| `pipeline-observability.md` | `tm.run-event/1` stream spec + `tm-observe` renderer |
 
 These files serve as the system's **institutional knowledge** — they prevent hallucination of framework IDs, enforce consistent diagram conventions, and ensure report structure is deterministic across runs.
 
@@ -290,133 +271,23 @@ Step 3: Multi-Format Generation
   PPTX:  python-pptx executive presentation with severity charts + diagram embeds
 ```
 
-### 3.7 The Dashboard Generator (opt-in `dashboard.html`)
-
-When `dashboard ∈ run-plan.outputs`, the report-analyst (Phase 8) runs one pure-Python, offline,
-deterministic generator — no new binary, no CDN or fonts, byte-identical for the same manifests:
-
-```
-skills/threat-model/scripts/build_dashboard.py <run_dir> <out.html>
-  Read only the canonical manifests: recon.json / findings.json / coverage.json
-    (+ any *attack-navigator-layer.json)
-  Derive a model → also written to <out>.model.json
-  Render skills/threat-model/references/dashboard_template.py (inline CSS/JS)
-```
-
-Two properties define it:
-
-- **Single source of truth.** The dashboard **embeds the run's own structural diagram** — the same threat
-  model the report shows. Nodes are recon element ids (`C1/D1/E1/X1/R0…`, so they link to findings
-  natively); edges are the run's **real** dataflows (from `recon.dataflows[]` if present, else parsed from
-  the run's `structural-diagram.mmd`), grouped by the run's real trust zones. It does **not** invent a bespoke
-  node map and does **not** synthesize edges from finding co-reference. Pan/zoom and click→cross-filter are
-  layered over the inline SVG. With no dataflows/diagram, nodes render ungrouped with no invented edges.
-- **Grounding over fabrication.** Every headline number traces to a manifest field; absent fields render as
-  graceful empty states (templated-with-blanks), never fabricated. Analytics sections — severity donut, L×I
-  risk matrix, coverage ledger + taxonomy grid, STRIDE-LM bars, kill-chain step-flows, MITRE ATT&CK chips, CWE
-  bars, component/data-store risk, supply-chain deps, findings accordion — sit alongside permanently-present
-  empty slots (Threat→Control, CVSS, MITRE ATLAS, Data-Flow) that degrade gracefully.
-
-A reference-free eval (`evals/reliability/dashboard_checks.py`) verifies grounding (headline numbers recount
-the manifests), non-fabrication (no diagram node/edge/finding-id that isn't real), diagram consistency (edges ⊆
-the run's real dataflows/diagram, never synthesized), link-grounding, cross-output consistency (dashboard
-severity == `findings.summary_counts`, coverage % from `coverage.json`), and offline operation. It is wired
-into `run.py check`/`validate` **only when `dashboard.html` is present** — inert otherwise.
-
-### 3.8 Upfront Run-Selection (Step 0 + `run-plan.json`)
-
-Before any pipeline agent spawns, the skill presents an explicit menu (MODE Solo/Team; TEAM = any subset of
-privacy/grc/code-review; OUTPUTS = any subset of the six formats, dashboard and analytical-visuals included)
-and **stops for the user's pick** — or parses a one-shot spec (`team=privacy+code-review,
-outputs=dashboard+pdf`). The confirmed pick is written to `{output_dir}/run-plan.json`:
-
-```json
-{"schema": "run-plan/v1", "mode": "...", "team": [], "outputs": [], "confirmed": true, "source": "..."}
-```
-
-The schema is `evals/reliability/schema/run-plan.schema.json` (additive; registered in `schema_checks.py`);
-`team` MUST be `[]` when `mode="solo"`. Three enforcement layers, all reusing existing repo mechanisms, make
-the run match the plan:
-
-- **Layer A — hard START gate** (`hooks/validate_gate.py`, `PreToolUse` on `Task`). DENIES the first pipeline
-  spawn (the `security-architect` / `threat-modeler-recon` Phase-1 spawn) unless `run-plan.json` exists,
-  validates, and has `confirmed: true`; the deny reason carries the menu. `Write` is not gated, so the model
-  writes the plan after the user picks, then spawns — no accidental full run, no deadlock. Scoped precisely to
-  the recon spawn (every other internal `Task` falls through), and fail-open on infra errors. The existing
-  report-analyst manifest gate is preserved and additionally inherits run-plan drift blocking.
-- **Layer B — conditional workflow** (SKILL.md). Specialists spawn iff in `team[]`; the report-analyst emits
-  exactly `outputs[]`. Solo/Team survive as named presets.
-- **Layer C — reference-free `run_plan_checks.py`**. Verifies the run produced EXACTLY the planned team +
-  outputs — a MISSING planned artifact AND an EXTRA un-planned one are both defects. Two stages: `gate` (skips
-  planned-but-not-yet-generated outputs to avoid deadlock at the report gate) and `post` (full). Inert without
-  `run-plan.json`.
-
-**Back-compat.** Every new file/branch is inert on runs lacking `run-plan.json`/`dashboard.html`, so the
-archived flagship and all sample-runs stay green.
-
-### 3.9 The Portfolio / Chain Meta-View (opt-in `portfolio.html`)
-
-The dashboard is the per-product altitude; the **portfolio** is the layer above it — one meta-view that rolls
-up N per-product runs into a single self-contained, offline, byte-deterministic page:
-
-```
-skills/threat-model/scripts/build_portfolio.py <portfolio.json> <out.html>
-  Load membership from portfolio.json (real run ids + path locators)
-  Reuse build_dashboard.model_for_run(<member run_dir>) per member  ← same per-run model
-  Roll up: worst-of posture · summed severity · assessed-weighted coverage · chain map
-           · riskiest-product ranking · cross-product CWE/ATT&CK/STRIDE tables
-  Render skills/threat-model/references/portfolio_template.py in dashboard_template.CSS  ← same theme
-```
-
-**One source of truth, two altitudes.** The portfolio is *not* a re-implementation. It embeds each member via
-the dashboard's own `build_dashboard.model_for_run`, renders in the dashboard's exact `dashboard_template.CSS`,
-and its member cards **drill down into each product's own `dashboard.html`** — same product family, one model,
-viewed at two altitudes. A member with no coverage ledger rolls up as `unknown`, never green.
-
-**Determinism boundary (no fabricated edges).** Cross-product links come in exactly two kinds, each with its own
-grounding rule:
-
-- **Auto-derived taxonomy overlaps** — shared CWE / ATT&CK / STRIDE: same global id = same node, computed at
-  build time by controlled-vocabulary **set-equality**, never stored. This is structure over emitted facts,
-  same as every other eval: the ids are the members' own, the overlap is set intersection, no inference.
-- **Declared structural edges** — `shared_component` / `shared_datastore` / `shared_dependency` /
-  `upstream_trust` / `downstream_trust` / `shared_risk` / `shared_killchain` / `common_control` between real
-  recon element ids, persisted in `portfolio.json` with `origin: "declared"` + provenance. Each endpoint is
-  **validated to resolve** to a real element in a member run; a dangling or ungrounded endpoint is **dropped and
-  reported**, never fabricated.
-
-**Two-level opt-in.** Membership and linkage are separate consents. Step 0 gains an opt-in chaining question
-(`chain=<portfolio-id>, run-id=<id>`, default standalone), recorded as an additive optional `chain` block on
-`run-plan.json`; on pipeline completion the run is upserted (idempotent, keyed by `run_id`) into `portfolio.json`
-as **membership only**. A declared edge is a second, explicit act. A reference-free check (`portfolio_checks.py`,
-wired into `run.py`, inert unless a `portfolio.json` is present) asserts the aggregates reconcile to the members
-and every link is grounded. Schema: `evals/reliability/schema/portfolio.schema.json` (`portfolio/v1`).
-
 ---
 
 ## 4. Design Decisions and Justifications
 
-### 4.1 Why Flat Orchestration (a deliberate choice)
+### 4.1 Why Flat Orchestration (Not Nested Agent Spawning)
 
-**Decision**: The parent conversation spawns all agents as flat peers. No spawned agent hides
-orchestration inside itself.
+**Decision**: The parent conversation spawns all agents. No agent spawns other agents.
 
-**This is a design choice, not a platform limitation.** Current Claude Code (verified July 2026)
-*does* allow a subagent to spawn its own subagents (to a fixed depth), and a custom agent's `tools:`
-list is an allowlist over *all* tools (omit it to inherit everything; add `Agent` to grant nested
-spawning). The pipeline keeps spawning flat anyway because flatness is the property we want: every
-agent is visible to the user, there is no hidden orchestration buried in a subagent, and the pipeline
-is transparent and debuggable. The orchestration logic lives in SKILL.md, which loads into the parent's
-context, so the parent — which has the full tool set — drives the whole sequence.
+**Constraint discovered**: Claude Code custom agents (defined in `~/.claude/agents/`) can customize description, model, color, memory, and skills for built-in agent types, but **cannot add tools** beyond the built-in type's set. The `tools:` frontmatter field only **restricts** — it never expands.
 
-**Each persona is a custom subagent, spawned by its own `name`.** A subagent's identity is its `name`
-frontmatter; `security-architect`, `diagram-specialist`, `privacy-agent`, `grc-agent`,
-`code-review-agent`, `validation-specialist`, and `report-analyst` are the suite's own custom agents
-(the only *built-in* subagent types are `Explore`, `Plan`, and `general-purpose`). Each is spawned as
-`subagent_type: "<name>"` with its declared `model`/`tools`/`memory`. Earlier versions of this document
-described a "built-in `security-architect` type," a "tools can't expand" rule, and a `general-purpose`
-workaround for the validation-specialist; those were mistaken readings of an earlier platform and have
-been removed — see §4.6.
+The built-in `security-architect` type has 6 tools: Bash, Read, Write, Edit, Grep, Glob. Listing Task, TeamCreate, or SendMessage in its frontmatter was silently ignored. The agent literally could not spawn subagents.
+
+**Additional constraint**: The `validation-specialist` has no built-in agent type counterpart. It cannot be spawned as `subagent_type: "validation-specialist"` — it must be spawned as `general-purpose` with custom instructions pointing to its `.md` file.
+
+**Resolution**: Move all orchestration logic to SKILL.md, which runs in the parent conversation. The parent has access to all tools. Every agent becomes a focused specialist that reads inputs, does its work, and writes outputs.
+
+**Benefit**: This architecture is actually cleaner than nested spawning. Every agent is visible to the user. There's no hidden orchestration happening inside an agent. The pipeline is transparent and debuggable.
 
 ### 4.2 Why a Skill (Not Just an Agent)
 
@@ -426,7 +297,7 @@ been removed — see §4.6.
 - **Separation of concerns**: The methodology (8 phases, reference files, checklists) is distinct from the agent's personality and capabilities. The skill defines *what* to do; the agent defines *who* does it.
 - **Reusability**: The skill could theoretically be attached to different agents or invoked in different contexts.
 - **Context injection**: Skills are loaded into the parent conversation's context, giving the parent access to the orchestration logic and reference file paths. An agent's instructions only affect that agent — they can't guide the parent.
-- **Reference file co-location**: The skill carries 16 reference files in its `references/` directory. These are domain knowledge (framework definitions, diagram specs, report templates) that multiple agents need. Co-locating them with the skill keeps the knowledge graph coherent.
+- **Reference file co-location**: The skill carries 11 reference files in its `references/` directory. These are domain knowledge (framework definitions, diagram specs, report templates) that multiple agents need. Co-locating them with the skill keeps the knowledge graph coherent.
 
 ### 4.3 Why Filesystem-Based Communication (Not Message Passing)
 
@@ -458,20 +329,17 @@ been removed — see §4.6.
 - **Severity consistency**: Different agents may rate the same issue differently. The validation step detects and documents these conflicts so the report-analyst can resolve them.
 - **Quality gate**: The validation-specialist is the "QA before QA" — it catches issues that would otherwise require the report-analyst to do detective work during consolidation.
 
-### 4.6 The validation-specialist is spawned by name
+### 4.6 Why `general-purpose` for the Validation Specialist
 
-**Decision**: The validation-specialist is spawned as `subagent_type: "validation-specialist"`, like
-every other persona.
+**Decision**: The validation-specialist is spawned as `subagent_type: "general-purpose"` rather than a custom agent type.
 
-Earlier versions spawned it as `general-purpose` with a prompt that pointed at a copied `.md` file, in
-the belief that only built-in `subagent_type`s were spawnable. That belief was wrong: any custom agent
-is spawnable by its `name`, and `validation-specialist.md` carries `name: validation-specialist`.
-Spawning it by name is strictly better — it runs with its own declared least-privilege `tools` (the
-`general-purpose` workaround silently granted it the full tool set) and its routing `description`
-reaches the delegation router. The `/tmp` copy of its definition is gone; the agent definition loads
-automatically on a by-name spawn.
+**Constraint**: Claude Code only allows spawning agents whose `subagent_type` matches a built-in agent type. There is no built-in `validation-specialist` type. Attempting to spawn it as its custom type silently fails.
 
-### 4.7 Why 16 Reference Files (Not Inline Instructions)
+**Resolution**: Spawn as `general-purpose` (which has access to all tools) and pass custom instructions in the prompt that point to the agent's `.md` file: "Read your full instructions from `/path/to/validation-specialist.md`".
+
+**Trade-off**: The agent doesn't get automatic loading of its `.md` file — it must explicitly read it. But it gains access to all tools, which is more than adequate for validation work (Read, Write, Grep, Glob, Bash).
+
+### 4.7 Why 11 Reference Files (Not Inline Instructions)
 
 **Decision**: Domain knowledge lives in standalone reference files, not embedded in agent instructions or the skill file.
 
@@ -479,7 +347,7 @@ automatically on a by-name spawn.
 - **Token efficiency**: Reference files are loaded on demand. An agent only reads the files it needs. Embedding everything in instructions would bloat every agent's context.
 - **Single source of truth**: Framework definitions, diagram conventions, and report structure are defined once and referenced by all agents. Changes propagate automatically.
 - **Verifiability**: Framework IDs can be checked against the reference tables. If `frameworks.md` says CWE-89 is SQL Injection, and an agent cites CWE-89 for an XSS finding, the validation-specialist can catch the misattribution.
-- **Modularity**: The Mermaid diagram system is split into 6 files (spec, layers, diagrams, templates, review checklist, and the rendering config) because each serves a different purpose at a different phase. The spec defines *what* to draw. The layers define *when* to draw it. The templates provide *starting points*. The review checklist validates *correctness*. (`analytical-visuals.md` adds product-grade charts on top of these, giving the 7-file diagram-and-visual group shown in the component map.)
+- **Modularity**: The Mermaid diagram system is split into 5 files (spec, layers, diagrams, templates, review checklist) because each serves a different purpose at a different phase. The spec defines *what* to draw. The layers define *when* to draw it. The templates provide *starting points*. The review checklist validates *correctness*.
 
 ### 4.8 Why Four Report Formats
 
@@ -503,18 +371,15 @@ flowchart LR
         direction TB
         SKILL["<b>SKILL.md</b><br/>8 phases + orchestration"]
 
-        subgraph RefFiles["references/ — 16 files (14 .md + 2 .json)"]
+        subgraph RefFiles["references/ — 11 files"]
             direction TB
             FW["<b>frameworks.md</b><br/>STRIDE-LM, PASTA, MITRE,<br/>CWE, OWASP lookups"]
             AOP["<b>agent-output-protocol.md</b><br/>Standardized finding format"]
             RT["<b>report-template.md</b><br/>Sections I-XIV structure"]
             AC["<b>analysis-checklists.md</b><br/>Per-phase completeness"]
             VCC["<b>visual-completeness-checklist.md</b><br/>26 diagram categories"]
-            AP["<b>agent-prompts.md</b><br/>Persona spawn prompts"]
-            COV["<b>coverage-taxonomy.md / .json</b><br/>Coverage-ledger taxonomy"]
-            PO["<b>pipeline-observability.md</b><br/>Run-event stream spec"]
 
-            subgraph MermaidRefs["Diagram and Visual System — 7 files"]
+            subgraph MermaidRefs["Mermaid Diagram System — 6 files"]
                 direction LR
                 MS["mermaid-spec.md<br/><i>Symbols, edges, classDefs</i>"]
                 ML["mermaid-layers.md<br/><i>4-layer separation</i>"]
@@ -522,22 +387,19 @@ flowchart LR
                 MT["mermaid-templates.md<br/><i>Starter patterns</i>"]
                 MRC["mermaid-review-checklist.md"]
                 MC["mermaid-config.json<br/><i>Rendering theme</i>"]
-                AV["analytical-visuals.md<br/><i>Product-grade charts</i>"]
             end
         end
     end
 
-    subgraph Agents["Agent Definitions — 9 (7 pipeline + 2 standalone)"]
+    subgraph Agents["Agent Definitions — ~/.claude/agents/"]
         direction TB
         SA["<b>security-architect.md</b><br/>Type: security-architect<br/>Phases: 1, 3-6, 8s<br/>Skills: threat-model"]
-        DS["<b>diagram-specialist.md</b><br/>Type: diagram-specialist<br/>Phases: 2, 7<br/>Skills: threat-model"]
+        DS["<b>diagram-specialist.md</b><br/>Type: security-architect<br/>Phases: 2, 7<br/>Skills: threat-model"]
         RA["<b>report-analyst.md</b><br/>Type: report-analyst<br/>Skills: docx, pdf, pptx, frontend-design"]
         CR["<b>code-review-agent.md</b><br/>Type: code-review-agent"]
         PA["<b>privacy-agent.md</b><br/>Type: privacy-agent"]
         GRC["<b>grc-agent.md</b><br/>Type: grc-agent"]
-        VS["<b>validation-specialist.md</b><br/>Type: validation-specialist<br/>Phases: 6t (team merge)"]
-        SR["<b>security-reviewer.md</b><br/>Type: security-reviewer<br/><i>Standalone companion — not in pipeline</i>"]
-        CQ["<b>code-quality-reviewer.md</b><br/><i>Standalone companion — not in pipeline</i>"]
+        VS["<b>validation-specialist.md</b><br/><i>No built-in type</i><br/>Spawned as: general-purpose"]
     end
 
     subgraph Output["Output: threat-model-output/"]
@@ -545,7 +407,6 @@ flowchart LR
         P["<b>8 Phase Files</b><br/>01-reconnaissance.md<br/>through<br/>08-threat-model-report.md"]
         T["<b>Team Outputs</b><br/>privacy-assessment.md<br/>compliance-gap-analysis.md<br/>code-security-review.md<br/>validation-report.md"]
         R["<b>Report Deliverables</b><br/>report.html<br/>report.docx<br/>report.pdf<br/>executive-summary.pptx"]
-        OBS["<b>Observability and Coverage</b><br/>events.ndjson<br/>pipeline-summary.md<br/>coverage.json<br/>report-generation-log.md"]
     end
 
     SA -->|"writes 01, 03-06, 08"| P
@@ -573,12 +434,12 @@ flowchart LR
     classDef output fill:#f3e8ff,stroke:#a855f7,stroke-width:1.5px,color:#581c87
 
     class Skill skill
-    class RefFiles,FW,AOP,RT,AC,VCC,AP,COV,PO ref
-    class MermaidRefs,MS,ML,MD,MT,MRC,MC,AV mermaid
-    class SA,RA,CR,PA,GRC,SR,CQ agent
+    class RefFiles,FW,AOP,RT,AC,VCC ref
+    class MermaidRefs,MS,ML,MD,MT,MRC,MC mermaid
+    class SA,RA,CR,PA,GRC agent
     class DS diagram
     class VS special
-    class Output,P,T,R,OBS output
+    class Output,P,T,R output
 ```
 
 <details>
@@ -598,9 +459,8 @@ flowchart LR
 │   ├── code-review-agent.md         # Code-level vulnerability analysis
 │   ├── privacy-agent.md             # Privacy impact assessment
 │   ├── grc-agent.md                 # Governance, risk & compliance
-│   ├── validation-specialist.md     # Cross-agent validation (spawned by name)
-│   ├── security-reviewer.md         # Standalone companion (not in pipeline): code security review
-│   └── code-quality-reviewer.md     # Standalone companion (not in pipeline): code-quality review
+│   ├── validation-specialist.md     # Cross-agent validation (spawned as general-purpose)
+│   └── security-reviewer.md         # Standalone code security review
 │
 └── skills/
     └── threat-model/
@@ -616,12 +476,7 @@ flowchart LR
             ├── mermaid-templates.md     # Starter templates for common architectures
             ├── mermaid-review-checklist.md  # Diagram quality gates
             ├── mermaid-config.json      # Rendering config (fonts, spacing, curves)
-            ├── visual-completeness-checklist.md  # 26-category diagram coverage tracker
-            ├── analytical-visuals.md    # Product-grade analytical charts
-            ├── agent-prompts.md         # Per-persona spawn prompts
-            ├── coverage-taxonomy.md     # Completeness-coverage taxonomy
-            ├── coverage-taxonomy.json   # Machine-readable coverage taxonomy
-            └── pipeline-observability.md # tm.run-event/1 stream spec + tm-observe renderer
+            └── visual-completeness-checklist.md  # 26-category diagram coverage tracker
 ```
 
 ---
@@ -654,11 +509,11 @@ flowchart TD
     Fork --> GRC["<b>grc-agent</b><br/><i>background</i>"]
     Fork --> CR["<b>code-review-agent</b><br/><i>background</i>"]
 
-    PA -->|"privacy-assessment.md"| Join["Parent waits for all 3<br/><i>on completion notifications</i>"]
+    PA -->|"privacy-assessment.md"| Join["Parent waits for all 3<br/><i>TaskOutput, block=true</i>"]
     GRC -->|"compliance-gap-analysis.md"| Join
     CR -->|"code-security-review.md"| Join
 
-    Join --> VS["<b>validation-specialist</b><br/><i>blocking</i><br/>Dedup, verify IDs,<br/>severity consistency"]
+    Join --> VS["<b>validation-specialist</b><br/><i>blocking, as general-purpose</i><br/>Dedup, verify IDs,<br/>severity consistency"]
 
     VS -->|"validation-report.md"| Team_RA["<b>report-analyst</b><br/><i>blocking</i><br/>QA + Consolidate +<br/>Generate 4 formats"]
 
@@ -708,16 +563,14 @@ The scaling rules are defined in SKILL.md § "Scaling Guidelines" and enforced t
 
 ### Claude Code Platform Constraints
 
-| Constraint | Impact | Mitigation / note |
+| Constraint | Impact | Mitigation |
 |-----------|--------|------------|
-| Agent context windows are independent | Each agent starts fresh — no shared memory | Filesystem-based communication via output files (a feature: durable, auditable hand-offs) |
-| Flat orchestration is a *choice*, not a limit | Subagents *can* nest and `tools:` *can* expand in current Claude Code — the pipeline stays flat for transparency/debuggability | Orchestration lives in SKILL.md; personas are spawned by `name` (see §4.1/§4.6) |
+| Custom agents cannot add tools beyond built-in set | No nested agent spawning | Flat orchestration in SKILL.md |
+| Custom-only agents (no built-in type) can't be spawned by name | validation-specialist requires workaround | Spawn as `general-purpose` with custom prompt |
+| `tools:` frontmatter only restricts, never expands | Listed tools silently ignored if not in built-in set | Only list tools that exist in the built-in type |
+| Agent context windows are independent | Each agent starts fresh — no shared memory | Filesystem-based communication via output files |
 | Mermaid rendering requires Node.js | `npx @mermaid-js/mermaid-cli` must be available | Documented as prerequisite |
 | macOS managed Python (PEP 668) | `pip install` fails outside venv | All Python usage wrapped in `python3 -m venv` |
-
-> The first three rows of this table in earlier versions ("custom agents cannot add tools", "custom-only
-> agents can't be spawned by name", "`tools:` only restricts") described an earlier platform and were
-> mistaken; current Claude Code is more capable, so the workarounds they motivated have been removed.
 
 ### Methodology Limitations
 
@@ -746,8 +599,7 @@ This system analyzes security — it should also be secure in its operation:
 | v1 | Monolithic security-architect with embedded team orchestration | Initial design — agent does everything |
 | v2 | Added validation-specialist, agent-output-protocol, reference files | Quality problems: duplicate findings, hallucinated IDs, inconsistent severity |
 | v3 | Split Mermaid conventions into 5 modular files | Single file was too large and mixed concerns (what vs when vs how) |
-| v4 | **Flat orchestration restructure** — moved team coordination from agent to SKILL.md | Kept orchestration in the parent for a transparent, debuggable pipeline. (Earlier notes attributed this to a since-disproven 'agents can't spawn agents' platform limit; flat orchestration is retained as an intentional choice.) |
+| v4 | **Flat orchestration restructure** — moved team coordination from agent to SKILL.md | Discovered custom agents cannot add tools beyond built-in set. Entire team orchestration was silently broken. |
 | v5 | **Diagram-specialist extraction** — split Phases 2,7 into diagram-specialist; slimmed Phase 8 to summary-only | Context rot: security-architect accumulated ~137K tokens by Phase 7-8. Extracting diagrams removes ~38K tokens of Mermaid refs, reducing peak context to ~80-90K. |
-| v6 | **Product-grade visuals, observability, coverage ledger, structured-output gate, orchestration modernization** — 8 product-grade diagram additions + analytical charts; a `tm.run-event/1` observability stream (`events.ndjson`) projected from Execution Logs; a completeness-coverage ledger (`coverage.json`); a reference-free reliability evals harness that gates structure; spec-first `openspec/` design | Move from "passing runs" to *verifiable* runs — measure diagram/coverage/observability reliability reference-free, and surface what each persona actually did and left unknown. |
 
-The current architecture (v6) adds product-grade visuals, pipeline observability, a completeness-coverage ledger, and a reference-free reliability evals harness on top of v5. The v5 change extracted diagram production into a dedicated agent, reducing the security-architect's context window by ~35-42%. The flat orchestration model from v4 made this split trivial — no agent-to-agent communication changes were needed, only new spawn points in SKILL.md.
+The current architecture (v5) extracts diagram production into a dedicated agent, reducing the security-architect's context window by ~35-42%. The flat orchestration model from v4 made this split trivial — no agent-to-agent communication changes were needed, only new spawn points in SKILL.md.

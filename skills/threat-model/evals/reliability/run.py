@@ -7,9 +7,8 @@ this scores each run's manifests against checks derived from the target itself,
 folds in the agent-judged layers (quality, adversarial recall, recon completeness),
 measures cross-run stability, and renders one reliability report.
 
-  check    --run <dir> --repo <path>                deterministic checks on one run
-  validate --run <dir> [--repo <path>]              production gate: manifest contract, exit 1 on defects
-  report   --runs-root <dir> --repo <path> ...      score all runs + agents + stability -> HTML
+  check  --run <dir> --repo <path>                 deterministic checks on one run
+  report --runs-root <dir> --repo <path> ...        score all runs + agents + stability -> HTML
 """
 from __future__ import annotations
 
@@ -36,26 +35,8 @@ def _run_dirs(root: Path) -> list[Path]:
     return sorted(p for p in root.iterdir() if p.is_dir() and (p / "findings.json").exists())
 
 
-def _optional_defects(run_dir: Path, stage: str = "post") -> list[dict]:
-    """Defects from the opt-in artifacts — inert unless the artifact is present, so runs that never
-    produced a dashboard / run-plan are wholly unaffected (back-compat). `stage` is "gate" when called
-    from the report-spawn validation gate (outputs not generated yet) and "post" for post-hoc scoring."""
-    extra: list[dict] = []
-    if (run_dir / "dashboard.html").exists():
-        import dashboard_checks
-        extra += dashboard_checks.check(run_dir)["defects"]
-    if (run_dir / "run-plan.json").exists():
-        import run_plan_checks
-        extra += run_plan_checks.check(run_dir, stage=stage)["defects"]
-    if (run_dir / "portfolio.json").exists():
-        import portfolio_checks
-        extra += portfolio_checks.check(run_dir)["defects"]
-    return extra
-
-
 def cmd_check(a) -> None:
     res = checks.run_checks(Path(a.run), Path(a.repo))
-    res["defects"] += _optional_defects(Path(a.run), stage="post")
     (Path(a.run) / "scored.json").write_text(json.dumps(res, indent=2))
     s = res["scores"]
     print(f"structure={'pass' if s['structure_pass'] else 'FAIL'} "
@@ -67,39 +48,7 @@ def cmd_check(a) -> None:
 
 
 def _load(p: Path):
-    # Guarded: a judge/agent file that is absent or malformed must not crash report generation.
-    if not p.exists():
-        return None
-    try:
-        return json.loads(p.read_text())
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
-# Required keys per agent-judged layer (from prompts/*.md output contracts). An absent file is a
-# legitimate deterministic-only run; a present-but-malformed/incomplete file is a silent cap we
-# refuse — it gets recorded and surfaced rather than degrading the layer to a quiet "not recorded".
-JUDGE_KEYS = {
-    "quality": ["mean_soundness", "proportionality"],
-    "recall": ["confirmed_gaps"],
-    "recon_audit": ["missed_subsystems"],
-}
-
-
-def _load_judge(path: Path, required_keys: list[str], issues: list[dict]):
-    if not path.exists():
-        return None  # absent — judging simply wasn't run for this layer; not an error
-    try:
-        obj = json.loads(path.read_text())
-    except json.JSONDecodeError as e:
-        issues.append({"code": "judge-malformed",
-                       "detail": f"{path.name} is not valid JSON ({e}) — judge layer dropped"})
-        return None
-    missing = [k for k in required_keys if k not in obj]
-    if missing:
-        issues.append({"code": "judge-incomplete",
-                       "detail": f"{path.name} missing required key(s) {missing} — judge layer unreliable"})
-    return obj
+    return json.loads(p.read_text()) if p.exists() else None
 
 
 def cmd_report(a) -> None:
@@ -114,15 +63,10 @@ def cmd_report(a) -> None:
         (rd / "scored.json").write_text(json.dumps(r, indent=2))
 
     agents_dir = Path(a.agents) if a.agents else Path(a.runs_root) / "agents"
-    judge_issues: list[dict] = []
     agents = {
-        # judge-integrity guard on the three verdict-relevant judges (absent != malformed != incomplete)
-        "quality": _load_judge(agents_dir / "quality.json", JUDGE_KEYS["quality"], judge_issues),
-        "recall": _load_judge(agents_dir / "recall.json", JUDGE_KEYS["recall"], judge_issues),
-        "recon_audit": _load_judge(agents_dir / "recon-audit.json", JUDGE_KEYS["recon_audit"], judge_issues),
-        # presentation-only judges — rendered when present, guarded against malformed payloads
-        "diagram_judge": _load(agents_dir / "diagram-judge.json"),
-        "coverage_judge": _load(agents_dir / "coverage-judge.json"),
+        "quality": _load(agents_dir / "quality.json"),
+        "recall": _load(agents_dir / "recall.json"),
+        "recon_audit": _load(agents_dir / "recon-audit.json"),
     }
     stab = None
     if len(rdirs) > 1:
@@ -136,10 +80,8 @@ def cmd_report(a) -> None:
             stab = stability_mod.analyze(rdirs)  # heuristic fallback (under-reports)
     target = {"id": a.target, "source": a.source}
     out = Path(a.out)
-    out.write_text(report_mod.render(target, runs, agents, stab, _now(), judge_issues))
+    out.write_text(report_mod.render(target, runs, agents, stab, _now()))
     print(f"wrote {out}")
-    for ji in judge_issues:
-        print(f"  judge: {ji['code']}: {ji['detail']}")
     for i, r in enumerate(runs):
         s = r["scores"]
         cl = r.get("coverage_ledger", {}).get("scores", {})
@@ -152,51 +94,6 @@ def cmd_report(a) -> None:
     if stab:
         print(f"  stability: stable core {stab['stable_core_count']}/{stab['total_distinct_core']} "
               f"(jaccard {stab['mean_pairwise_jaccard']})")
-
-
-def cmd_validate(a) -> None:
-    """Production validation gate: the parent orchestrator runs this over the emitted manifests
-    after the analysis agent finishes, and re-spawns that agent with the printed defects if it
-    fails (the file-based form of the validate -> retry-with-specific-feedback loop).
-
-    Gates on the manifest CONTRACT — structure (schema: ids, 1-5 bounds, enums, additionalProperties),
-    consistency (severity == band(L x I), counts, kill-chain refs), and coverage-ledger structure.
-    Grounding is included only when --repo is given. report.md / diagram defects have their own gates,
-    so they print as advisory notes rather than blocking the manifest gate.
-    """
-    run_dir = Path(a.run)
-    repo = Path(a.repo) if a.repo else run_dir
-    res = checks.run_checks(run_dir, repo)
-    cov_res = coverage_checks.check(_load(run_dir / "coverage.json"), repo)
-    defects = res["defects"] + cov_res["defects"] + _optional_defects(run_dir, stage="gate")
-
-    # "dashboard"/"run-plan" join the gate ONLY via defects that _optional_defects emits, which it
-    # emits only when the artifact exists — so a run without them can never be blocked on them.
-    GATE = {"structure", "consistency", "coverage", "dashboard", "run-plan", "portfolio"}
-    if a.repo:
-        GATE.add("grounding")
-    # report.md is the eval-executor's artifact; in the production flow it does not exist yet at
-    # gate time (report.html is generated by the report-analyst AFTER this gate). Never block the
-    # manifest gate on report-text-derived defects — they have their own gate downstream. Without
-    # this the gate FAILs every real run on missing-report and the plugin hook permanently denies
-    # report generation.
-    REPORT_CODES = {"missing-report", "missing-section", "report-manifest-drift"}
-    # without a repo, grounding can't be judged — never block on it
-    skip_codes = REPORT_CODES | (set() if a.repo else {"present-ungrounded"})
-    blocking = [d for d in defects if d["layer"] in GATE and d["code"] not in skip_codes]
-    advisory = [d for d in defects if d not in blocking]
-
-    for d in blocking:
-        print(f"DEFECT [{d['layer']}] {d['code']}: {d['detail']}")
-    for d in advisory:
-        print(f"note   [{d['layer']}] {d['code']}: {d['detail']}")
-    if blocking:
-        print(f"\nFAIL: {len(blocking)} manifest-contract defect(s). Re-spawn the analysis agent with the\n"
-              "DEFECT lines above as specific feedback. For a defect that reflects MISSING information in\n"
-              "the source (a surface with genuinely no issue, a taxonomy item the repo doesn't reveal), do\n"
-              "NOT retry — record it as no_issue_surface / coverage 'unknown' / an Open Question instead.")
-        raise SystemExit(1)
-    print("PASS: manifests satisfy the structure + consistency + coverage contract.")
 
 
 def cmd_observe(a) -> None:
@@ -214,8 +111,6 @@ def main() -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
     pc = sub.add_parser("check"); pc.add_argument("--run", required=True); pc.add_argument("--repo", required=True)
     pc.set_defaults(func=cmd_check)
-    pv = sub.add_parser("validate"); pv.add_argument("--run", required=True); pv.add_argument("--repo", default=None)
-    pv.set_defaults(func=cmd_validate)
     pr = sub.add_parser("report")
     pr.add_argument("--runs-root", required=True); pr.add_argument("--repo", required=True)
     pr.add_argument("--target", required=True); pr.add_argument("--source", default="")

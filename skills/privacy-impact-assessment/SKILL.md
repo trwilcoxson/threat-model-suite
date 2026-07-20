@@ -333,10 +333,10 @@ Consider: data sensitivity, number of affected individuals, reversibility, vulne
 ### 6.3 Severity Calculation
 
 Severity = Likelihood x Impact. Apply bands:
-- **Critical** (17-25): Immediate remediation required
-- **High** (10-16): Remediation within 30 days
-- **Medium** (5-9): Remediation within 90 days
-- **Low** (1-4): Accept or remediate at next opportunity
+- **Critical** (20-25): Immediate remediation required
+- **High** (12-19): Remediation within 30 days
+- **Medium** (6-11): Remediation within 90 days
+- **Low** (1-5): Accept or remediate at next opportunity
 
 ### 6.4 Risk Register
 
@@ -449,7 +449,7 @@ Before writing the final output, verify:
 - [ ] Every data classification level matches [references/data-classification-taxonomy.md](references/data-classification-taxonomy.md)
 - [ ] Every Privacy by Design principle matches [references/privacy-by-design-patterns.md](references/privacy-by-design-patterns.md)
 - [ ] All finding IDs use PA- prefix and are sequential
-- [ ] All severity scores follow OWASP Risk Rating bands (Critical 17-25, High 10-16, Medium 5-9, Low 1-4)
+- [ ] All severity scores follow OWASP Risk Rating bands (Critical 20-25, High 12-19, Medium 6-11, Low 1-5)
 
 If any citation cannot be verified against reference files, mark it with: "**[UNVERIFIED]** — not in reference files, independently verify."
 

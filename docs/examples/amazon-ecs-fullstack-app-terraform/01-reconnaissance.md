@@ -1,218 +1,430 @@
-# Security Architect — Phase 1 Reconnaissance
+# Security Architect -- Phase 1 Reconnaissance
 
 ## Metadata
 | Field | Value |
 |-------|-------|
 | Agent | security-architect |
-| Date | 2026-07-11 |
-| Target System | AWS ECS Fullstack App (Terraform Demo) |
-| Scope | `Infrastructure/` (Terraform IaC), `Code/server` (Node.js API), `Code/client` (Vue.js SPA), `Infrastructure/Templates` (buildspec/appspec/taskdef), `Documentation_assets/` (architecture diagrams) |
-| Methodology | Observational reconnaissance (no threat scoring); feeds STRIDE-LM + PASTA in Phases 3-4 |
-| Scoring System | N/A (Phase 1 is inventory only) |
-| Machine-readable manifests | `recon.json` (attack surface), `coverage.json` (225-item ledger seed) |
+| Date | 2026-02-18 |
+| Target System | Amazon ECS Fullstack App (Terraform Demo) |
+| Scope | Full system: Terraform IaC (14 modules), Node.js backend, Vue.js frontend, AWS CI/CD pipeline, networking, IAM, data stores |
+| Methodology | STRIDE-LM + PASTA (reconnaissance phase) |
+| Scoring System | OWASP Risk Rating (scoring deferred to Phase 4) |
 
 ## Summary
-- **System**: An MIT-0 AWS reference sample. A Vue.js SPA (client) and a Node.js/Express API (server) run as two independent ECS Fargate services, each behind its own **internet-facing** Application Load Balancer in a single VPC, all provisioned by Terraform. A GitHub-triggered CodePipeline (CodeBuild + CodeDeploy blue/green) builds Docker images to ECR and deploys to ECS. The API returns a product catalog from DynamoDB; images are served from S3.
-- **Pattern**: `web-app` (fullstack) delivered as cloud IaC. Medium system — 13 components, 6 data stores, 5 external entry points.
-- **Defining characteristics for the assessment**: (1) **No authentication or authorization anywhere** — the login screen is an explicit non-functional stub; every endpoint is anonymous. (2) **Both ALBs, including the backend/API ALB, are public and HTTP-only** — no TLS listener is created. (3) The system processes **no personal data** (product catalog: id/path/title). (4) Heavy reliance on an **unpinned, unscanned supply chain** (GitHub PAT, `:latest` base images, no SCA).
-- **Gaps flagged**: No image/dependency scanning, no WAF/rate limiting, no ALB/VPC access logging, broad IAM wildcards, GitHub PAT stored in local Terraform state. Detailed as observations below — not yet scored.
+- **System type**: AWS ECS Fargate-based fullstack web application with CI/CD pipeline, deployed via Terraform
+- **Architecture complexity**: Medium (~18 components, ~25 data flows) -- full 4-layer diagram warranted
+- **Key risk areas identified**: No TLS on ALBs (HTTP only), no authentication/authorization, overly broad IAM policies (iam:PassRole on *), mutable ECR image tags, GitHub OAuth token in pipeline state, buildspec sourced from repository, CORS wide open, no WAF, no encryption configuration for data stores
+- **Compliance posture**: No compliance controls observed. This is explicitly a demo/reference architecture with security shortcuts noted in the README
+- **Business context**: AWS demo/reference architecture intended to demonstrate ECS + DevOps patterns. Not designed for production use, but organizations may fork it as a starting point
 
 ---
 
-## 1.1 Visual Comprehension (provided architecture diagrams)
+## 1.1 Visual Comprehension
 
-Two PNGs in `Documentation_assets/` were examined.
+Two architecture diagrams were provided in `Documentation_assets/`:
 
-**`Infrastructure_architecture.png`** — Runtime topology:
-- `Users` (Internet) → **Application Load Balancer Front-end** → ECS Cluster "Service Front-end" (AWS Fargate) spread across **AZ1/AZ2**, each in a **Private subnet (Front-end)**.
-- Front-end → **Application Load Balancer Back-end** → ECS Cluster "Service Back-end" (Fargate) in **Private subnet (Back-end)**, AZ1/AZ2.
-- Autoscaling policies attached to both services.
-- A single **IAM Role** node fans out from the back-end tasks to **Amazon DynamoDB** and **Amazon S3**.
-- Enclosing boundaries drawn: **Region** → **VPC** → per-AZ subnet groups.
-- **Reconciliation with Terraform**: tasks are indeed in private subnets (`private_subnets_server` / `private_subnets_client`), but **both ALBs are `internal = false`** (public subnets, SG `0.0.0.0/0:80`). The diagram's "front→back ALB" arrow understates that the browser reaches the **server ALB directly** (`RestServices.js` calls `http://<SERVER_ALB_URL>/api/getAllProducts`). The back-end ALB is Internet-exposed, not internal.
+### Infrastructure Architecture Diagram
+- Shows Users accessing the system through a VPC containing two tiers
+- **Frontend tier**: Application Load Balancer (Frontend) distributes to ECS Cluster with Fargate tasks across two Availability Zones (Private subnet A and B for Front-end), with Autoscaling policies
+- **Backend tier**: Application Load Balancer (Backend) distributes to ECS Cluster with Fargate tasks across two Availability Zones (Private subnet A and B for Back-end), with Autoscaling policies
+- Both tiers share a single IAM Role
+- Backend connects to Amazon DynamoDB and Amazon S3 (outside VPC)
+- All within a single Region
 
-**`CICD_architecture.png`** — Pipeline topology:
-- **CodePipeline** wraps: **GitHub repository** → **CodeBuild** → **CodeDeploy** → **Amazon ECS**; CodeBuild also pushes to **Amazon ECR**; **Amazon SNS** receives deployment notifications. All inside the Region boundary.
+### CI/CD Architecture Diagram
+- AWS CodePipeline orchestrates the pipeline
+- Source: GitHub repository
+- Build: AWS CodeBuild (pushes images to Amazon ECR)
+- Deploy: AWS CodeDeploy (deploys to Amazon ECS)
+- Amazon SNS for deployment notifications
 
-## 1.2 Documentation Review (`README.md`, `CONTRIBUTING.md`)
-- Self-described **demo** to showcase ECS + DevOps + Terraform. Explicitly states corners are cut "due to demo proposals."
-- **Terraform state is stored locally** on the operator machine (README §Infrastructure) — no remote backend, no state encryption/locking by default. The `github_token` (a `sensitive` variable) lands in that plaintext local state.
-- Deploy requires an AWS profile with broad create permissions plus a **GitHub Personal Access Token** granting repo access.
-- Server exposes exactly 3 routes: `/status` (health), `/api/getAllProducts` (DynamoDB scan), `/api/docs` (Swagger UI). Swagger endpoint is published in the Terraform output.
-- No stated security requirements, threat model, data-classification policy, or compliance scope. **No embedded prompt-injection / instruction-channel content** was found in any reviewed file (checked README, code comments, configs) — nothing attempted to redirect the analysis.
+**Observations from diagrams**:
+- No WAF or Shield shown in front of ALBs
+- No HTTPS/TLS indicators on any connection
+- Single NAT Gateway visible (single AZ)
+- No VPC endpoints shown for AWS service access
+- IAM Role appears shared between frontend and backend tasks
+
+---
+
+## 1.2 Documentation Review
+
+### README Analysis
+- Explicitly states this is a **demo** project: "intended to be used to run a demo"
+- Notes "Infrastructure considerations due to demo proposals" -- hardcoded memory/CPU values in task definitions
+- Terraform state stored **locally** (no remote backend configured)
+- Requires a **GitHub personal access token** passed as a Terraform variable
+- Login component explicitly notes: "*No auth was implemented, just a Vue.js demo component*"
+- Swagger endpoint exposed at `{server_alb}/api/docs`
+- Application serves product catalog data from DynamoDB with images from S3
+
+### Stated Constraints
+- Terraform v0.13+ required (versions.tf pins AWS provider ~> 3.38, which is significantly outdated)
+- AWS credentials expected in `~/.aws/credentials` file
+- GitHub token required for CodePipeline integration
+
+### Security Requirements
+- None stated. README references `CONTRIBUTING.md` for security issue notifications but does not define security requirements for the application itself
+
+---
 
 ## 1.3 Code Scanning
-- **Entry points**: `Code/server/src/app.js` (`/status`, `/api/getAllProducts`, `/api/docs`), Swagger router (`swagger.js`). Client routes in `router/index.js` (`/`, `/main`, `/about`, `/search`→`EasterEgg.vue`, `*`→`/`).
-- **AuthN/AuthZ**: **None.** `Login.vue` renders username/password fields but `onSubmit()` discards them and routes to `/main` (`<h5>*No auth was implemented, just a Vue.js demo component</h5>`). No middleware, guards, tokens, or session logic on the server. Every API call is anonymous.
-- **Configuration / secrets management**: No app secrets. `app.js` reads a hardcoded placeholder `AB3_TABLE = "DYNAMODB_TABLE"` that CodeBuild `sed`-replaces at build (`buildspec.yml:20`). No Secrets Manager / SSM / KMS usage; `taskdef.json` `secretOptions: null`. CodeBuild injects 12 plaintext `environment_variable`s (region, account id, table name, roles, ALB DNS) — none are credentials.
-- **IaC**: Terraform (`Infrastructure/`) with 15 modules. `versions.tf` present. No remote backend block (local state).
-- **CI/CD & supply chain**: `Infrastructure/Templates/buildspec.yml` (ECR login, `sed` templating, `docker build/push`), `appspec.yaml`, `taskdef.json`. CodePipeline `PollForSourceChanges = true` on branch `main` → any merge to `main` auto-builds and deploys. CodeBuild `privileged_mode = true` (Docker-in-Docker), image `aws/codebuild/standard:4.0`.
-- **Data schemas**: DynamoDB table — `hash_key = id (N)`, plus app-level `path (S)`, `title (S)` (README). No migrations/ORM; server does a raw `DocumentClient.scan`.
-- **External integrations**: `aws-sdk` v2 (DynamoDB), `axios` (client→server), `cors` (open), GitHub source, public ECR base images.
-- **Secrets & sensitive-artifact sweep (whole-tree grep, per Phase 1.3)**: **No committed private keys, certs, `.pem`/`.key`/`id_rsa`, `AKIA…` access keys, or hardcoded passwords/tokens.** `.gitignore` excludes `.env*.local`, `node_modules`, `terraform.tfstate*`. The only credential in the design is the GitHub PAT, passed as a `sensitive` Terraform variable (not committed) but persisted to **local** state and the CodePipeline source config. `Login.vue` "password" field is inert. **Result: clean tree; the PAT-in-local-state is the sole credential-handling concern and is a design observation, not a committed secret.**
 
-## 1.4 Asset Inventory
-| ID | Asset | State | Sensitivity | Notes |
-|----|-------|-------|-------------|-------|
-| D1 | DynamoDB product catalog (id/path/title) | At rest | INTERNAL | Non-personal reference data; default (AWS-owned) encryption, no explicit SSE-KMS, no PITR, no deletion protection |
-| D2 | S3 assets bucket (product images) | At rest | INTERNAL/PUBLIC | `acl=private`, `force_destroy=true`; no SSE block, no public-access-block, no versioning, no access logging. Image URLs embedded in client. |
-| D3 | S3 CodePipeline artifact bucket | At rest | CONFIDENTIAL | Holds source + build artifacts (app source in transit through the pipeline); same S3 hardening gaps as D2 |
-| D4 | ECR repositories (server + client images) | At rest | CONFIDENTIAL | `MUTABLE` tags, no scan-on-push; a `:latest` push can silently replace a running image |
-| D5 | CloudWatch Logs (ECS task + CodeBuild) | At rest / processing | INTERNAL | `awslogs` driver, 30-day retention; error handler logs `err` to stderr → logs |
-| D6 | Terraform state (local) | At rest | RESTRICTED | Contains the plaintext GitHub PAT and full resource inventory; local file, unencrypted, no locking |
-| — | GitHub PAT | In transit / at rest | RESTRICTED | Repo access token; single supply-chain trust anchor |
-| — | API responses (`/api/getAllProducts`) | In transit | INTERNAL | Served over **HTTP** (no TLS) from the public server ALB |
+### Entry Points
 
-## 1.5 Actor Enumeration
-**Human actors**
-- **Anonymous Internet user** (R0) — the only application principal; reaches both ALBs and Swagger with no credential.
-- **Terraform operator / deployer** (R5) — human with broad AWS credentials + GitHub PAT; runs `terraform apply` from a workstation holding local state.
-- **Developer with `main` push access** — merging to `main` auto-triggers build+deploy (no manual approval gate).
+| # | Entry Point | Location | Protocol | Handler |
+|---|-------------|----------|----------|---------|
+| 1 | GET /status | `Code/server/src/app.js:28` | HTTP | Health check endpoint |
+| 2 | GET /api/getAllProducts | `Code/server/src/app.js:47` | HTTP | DynamoDB scan, returns all products |
+| 3 | GET /api/docs | `Code/server/src/app.js:13` | HTTP | Swagger UI documentation |
+| 4 | GET /api/docs/json | `Code/server/src/swagger/swagger.js:37` | HTTP | Raw Swagger spec JSON |
+| 5 | Vue.js SPA routes (/, /main, /about, /search) | `Code/client/src/router/index.js` | HTTP | Client-side routing |
+| 6 | Client ALB (port 80) | Terraform `module.alb_client` | HTTP | Public-facing frontend load balancer |
+| 7 | Server ALB (port 80) | Terraform `module.alb_server` | HTTP | Public-facing backend load balancer |
 
-**System actors / principals** (IAM roles — see `recon.json roles[]`)
-- **ECS task execution role** (R1, `ECS-task-excecution-Role`) — `AmazonECSTaskExecutionRolePolicy` (ECR pull, log write).
-- **ECS task role** (R2, `ECS-task-Role`) — app runtime identity: DynamoDB read (`Describe*`/`List*`/`Get`/`Query`/`Scan`) on the table, S3 `GetObject`/`ListBucket` on assets, **and `iam:PassRole` on `*`**.
-- **DevOps role** (R3) — assumed by CodeBuild/CodeDeploy/CodePipeline; broad `s3:*`/`ecs:*`/`codedeploy:*`/`iam:PassRole` on `*`.
-- **CodeDeploy role** (R4) — `AWSCodeDeployRoleForECS` managed policy.
-- **CodePipeline / CodeBuild / CodeDeploy services**, **SNS**, **Autoscaling/CloudWatch** — AWS-managed system actors.
+### Authentication and Authorization
+- **No authentication implemented.** The Login.vue component is purely cosmetic -- it accepts any username/password and navigates to `/main` via client-side routing without any server validation
+- **No authorization checks** on any API endpoint
+- **No API keys, tokens, or session management** of any kind
+- Express CORS middleware used with `app.use(cors())` -- no options specified, which **allows all origins**
 
-## 1.6 Threat Actor Profiles (feed PASTA likelihood in Phase 4)
-| ID | Actor | Motivation | Capability (1-5) | Access | Relevance |
-|----|-------|-----------|:---:|--------|-----------|
-| TA1 | Opportunistic unauthenticated Internet attacker | Data scraping, defacement, resource abuse | 2 | Public HTTP ALBs, Swagger, no auth | **High** — every endpoint is anonymous and plaintext |
-| TA2 | Automated bot / botnet (DoS, scanners) | Disruption, enumeration | 2 | Public endpoints; no WAF/rate limit; autoscaling capped at 4 tasks | **High** — cost/availability pressure, no L7 protection |
-| TA3 | Malicious insider / compromised developer | Sabotage, backdoor, data theft | 4 | `main` push → auto-deploy; broad DevOps IAM; local TF state | **High** — no deploy approval gate; PAT + state on workstation |
-| TA4 | Compromised upstream dependency / base image | Supply-chain implant | 3 | npm installs + `:latest` base images pulled at build; privileged CodeBuild | **Medium-High** — no pinning, no SCA, no image scan |
-| TA5 | Post-exploitation attacker inside an ECS task | Lateral movement, privilege escalation, cloud pivot | 4 | Server container → IMDS + task role (`iam:PassRole *`) | **Medium** — depends on an initial app foothold; broad role amplifies blast radius |
+### Configuration
+- **Environment variables in CodeBuild**: AWS_REGION, AWS_ACCOUNT_ID, REPO_URL, IMAGE_TAG (hardcoded "latest"), DYNAMODB_TABLE, TASK_DEFINITION_FAMILY, CONTAINER_NAME, SERVICE_PORT, FOLDER_PATH, ECS_ROLE, ECS_TASK_ROLE, SERVER_ALB_URL
+- **Terraform variables**: aws_profile, aws_region, environment_name, github_token (sensitive), port_app_server (3001), port_app_client (80), buildspec_path, folder paths, container names, IAM role names, repository_owner, repository_name, repository_branch (default: main)
+- **No secrets management service** (no AWS Secrets Manager, SSM Parameter Store, or HashiCorp Vault)
+- GitHub token passed as plaintext Terraform variable (marked sensitive but stored in state)
 
-## 1.7 Attack Surface Catalog
-| ID | Entry point | Location | Protocol | Auth | Exposure | Input types |
-|----|-------------|----------|----------|------|----------|-------------|
-| E1 | Client ALB | `main.tf:100` SG `0.0.0.0/0:80`; `ALB/main.tf:38` | **HTTP** :80 | None | **Internet** | HTTP GET (static SPA) |
-| E2 | Server/API ALB | `main.tf:90` SG `0.0.0.0/0:80`; `app.js:47` | **HTTP** :80 | None | **Internet** | HTTP GET `/api/getAllProducts`, `/status` |
-| E3 | Swagger UI `/api/docs` | `swagger.js:42`; published in `outputs.tf:9` | **HTTP** | None | **Internet** | HTTP GET; serves API spec/UI |
-| E4 | GitHub source trigger | `CodePipeline/main.tf:20,33` | GitHub v1 poll | PAT | SaaS→pipeline | Source commits on `main` |
-| E5 | ALB → task health check | `main.tf:46`; `ALB/main.tf:65` | HTTP | None | Intra-VPC | GET `/status`, `/` |
-| — | Egress | NAT → `0.0.0.0/0`; SG egress `-1` to `0.0.0.0/0` | any | — | outbound | Task egress unrestricted |
+### Infrastructure as Code (Terraform)
 
-## 1.8 Security Control Inventory (authoritative for Phase 6)
-**Present**
-- Network segmentation: tasks in **private subnets**, reachable only from their ALB SG (`security_groups = [alb_sg]`); ALBs in public subnets. NAT for egress.
-- Multi-AZ (2 AZs) for ALBs and tasks; autoscaling (CPU/mem target-tracking, min 1 / max 4) + CloudWatch alarms.
-- IAM role separation (execution vs task vs devops vs codedeploy); DynamoDB and S3 task-role actions scoped to specific resource ARNs.
-- CodeDeploy **blue/green** with auto-rollback on `DEPLOYMENT_FAILURE`; SNS deploy notifications.
-- Fargate (no host/EC2 to patch); `awsvpc` networking.
-- DynamoDB `PAY_PER_REQUEST` (no provisioned-capacity exhaustion). S3 `acl=private`. GitHub token marked `sensitive`; `ignore_changes` keeps it out of plan drift.
-- CloudWatch Logs for tasks (30-day retention).
+**Modules analyzed (14 total)**:
+1. **Networking** -- VPC (10.120.0.0/16), 2 public subnets, 2 private client subnets, 2 private server subnets, IGW, single NAT GW, route tables
+2. **ALB** -- Application Load Balancers with HTTP listeners (port 80), HTTPS listener defined but `enable_https` defaults to false
+3. **SecurityGroup** -- SGs for ALBs (ingress 0.0.0.0/0 on port 80) and ECS tasks (ingress from ALB SG only)
+4. **ECR** -- Docker image repositories with `image_tag_mutability = "MUTABLE"`
+5. **ECS/Cluster** -- Single ECS cluster, no container insights enabled
+6. **ECS/Service** -- Fargate services with CODE_DEPLOY deployment controller, no `assign_public_ip` (defaults to false -- good)
+7. **ECS/TaskDefinition** -- Task definitions with CloudWatch Logs, no resource limits beyond CPU/memory, no `readonlyRootFilesystem`, no `user` specified
+8. **ECS/Autoscaling** -- Target tracking on CPU and memory (50% threshold), min 1 / max 4
+9. **IAM** -- Four roles (ECS execution, ECS task, DevOps, CodeDeploy) with associated policies
+10. **S3** -- Two buckets (codepipeline artifacts, assets), ACL "private", force_destroy=true, no encryption config, no versioning, no public_access_block
+11. **DynamoDB** -- Single table, PAY_PER_REQUEST billing, no encryption config (defaults to AWS-owned key), no PITR
+12. **SNS** -- Notification topic for deployments, no encryption
+13. **CodeBuild** -- Build projects with privileged Docker mode, buildspec sourced from repository
+14. **CodePipeline** -- GitHub v1 source with OAuth token, PollForSourceChanges=true
+15. **CodeDeploy** -- Blue/Green deployment with auto-rollback on failure
 
-**Absent / weak (observational — not scored)**
-- **No TLS**: only an HTTP:80 listener is created; `enable_https` variable defaults `false` and `main.tf` never sets it. Client uses `http://`; Swagger `schemes: ['http']`. No ACM cert, no HTTP→HTTPS redirect.
-- **No authentication/authorization** on any endpoint (app-level).
-- **No WAF, no rate limiting, no bot control** in front of the public ALBs.
-- **CORS wide open**: `app.use(cors())` (reflects any origin).
-- **No ALB access logs, no VPC flow logs**; no GuardDuty/Config/CloudTrail declared in IaC.
-- **ECR**: `MUTABLE` tags, no `scan_on_push`. **Base images unpinned** (`node:latest`, `nginx:latest`); no digest pinning, no SBOM/SCA in the pipeline.
-- **IAM over-permissioning**: DevOps policy uses `s3:*`/`ecs:*`/`codedeploy:*`/`logs:*`/`iam:PassRole` on `resources = ["*"]`; the **ECS task role has `iam:PassRole` on `*`** (unusual and broad for an app runtime role).
-- **CodeBuild `privileged_mode = true`** (Docker-in-Docker); managed image `standard:4.0` (dated).
-- **S3**: no server-side-encryption block, no public-access-block, no versioning, no bucket logging; `force_destroy = true` on both buckets.
-- **DynamoDB**: no explicit encryption/KMS, no point-in-time recovery, no deletion protection.
-- **Error handling leaks detail**: `app.js` error handler returns `{code, description: err.message}` to the client and `console.error`s the raw error; AWS SDK errors have no `.status`, so `res.status(error.code)` can throw (undefined status). `AB3_TABLE` is assigned without `var/let/const` (implicit global).
-- **Terraform state local + unencrypted** with the PAT inside; no state locking.
-- **No secrets manager**: build-time `sed` templating instead of runtime secret injection (acceptable here since no real secrets, but no path for future ones).
+### Data Schemas
+- **DynamoDB table structure**: `id` (N, hash key), `path` (S -- S3 object URL), `title` (S)
+- **API response format**: `{ products: [{ id, path, title }] }`
+- No input validation schemas defined
+- Swagger spec documents endpoints but no request validation
 
-## 1.9 Visual Completeness Applicability (summary — full checklist in `visual-completeness-checklist.md`)
-- **Applicable (18)**: External Entities, Processes, Data Stores, Trust Boundaries, Data Flow Labels, Risk Color Coding, Threat Annotations, Component Metadata, Identity Elements (IAM roles), Control/Data Plane, Attack Paths, Control Indicators, Encryption State, Network Zones, Deployment Pipeline, External Dependency Markers, Typed Edges, Ownership Markers, Machine-Parseable Annotations, Version Stamp, Density Compliance — plus **Companion Diagrams** (attack tree for kill chains; **no auth sequence** since there is no AuthN/AuthZ).
-- **Not applicable**: Secrets/Key Mgmt (no vault/HSM/KMS in design — mark with note), Data Classification zones (single INTERNAL tier, optional), Tenant Boundaries (single-tenant), Region Boundaries (single region). Justifications recorded per-category in the checklist file.
-
-## 1.10 Reconnaissance Summary
-**Components (13)**: Client SPA, Server API, Swagger endpoint, Client ALB, Server ALB, ECS Cluster, ECS client service, ECS server service, CodePipeline, CodeBuild, CodeDeploy, Autoscaling+CloudWatch, SNS. *(recon.json C1-C13)*
-**Data stores (6)**: DynamoDB, S3 assets, S3 artifacts, ECR, CloudWatch Logs, local Terraform state. *(D1-D6)*
-**Entry points (5)**: Client ALB HTTP, Server ALB HTTP, Swagger, GitHub trigger, health check. *(E1-E5)*
-**Trust boundaries (6)**: Internet→public ALBs, public→private subnet, ECS task→AWS services via IAM, CI/CD supply chain, AWS account/region, VPC perimeter (IGW/NAT). *(TB1-TB6)*
-**Roles (6)**: anonymous, task-execution, task, devops, codedeploy, terraform-operator. *(R0-R5)*
-**External deps (5)**: GitHub+PAT, server npm, client npm, Docker base images (`:latest`), CodeBuild managed image. *(X1-X5)*
-
-**Technology stack**: Vue.js 2 (bootstrap-vue, axios) on Nginx · Node.js/Express 4 + aws-sdk v2 · Docker · AWS ECS Fargate · ALB · DynamoDB · S3 · ECR · CodePipeline/CodeBuild/CodeDeploy · SNS · CloudWatch · IAM · VPC (2 AZ, public+private subnets, IGW, single NAT) · Terraform (≥0.13, local state).
-
-**Gaps & explicit assumptions**
-- **Single NAT gateway** (one AZ) — availability single-point; noted, not scored.
-- No `.tfvars`/secrets committed, so concrete region/account/env values are unknown — assumed a single region, single environment as the README implies.
-- DynamoDB `path`/`title` attributes are app-level (README), not declared in `attributes` (only `id`) — assumed the documented schema.
-- **has_personal_data = false**: the login form is inert and the catalog is non-personal; if a real deployment wires auth or stores user data, re-flag privacy scope.
-- **has_regulatory = false**: no stated compliance obligation; the compliance specialist still assesses general posture (encryption/logging/access-control hygiene).
-- End-user data-lifecycle diagram deemed low-value (no personal data) — omitted.
+### External Integrations
+- **GitHub** -- Source repository via CodePipeline (OAuth v1 token)
+- **AWS DynamoDB** -- Product catalog data store
+- **AWS S3** -- Asset storage (images referenced by URL in DynamoDB records)
+- **AWS ECR** -- Docker image registry
+- **AWS CloudWatch Logs** -- Container and build logging
+- **AWS SNS** -- Deployment notifications (no subscribers configured)
 
 ---
 
-## Coverage States (Phase 1 domain — merged into `coverage.json` by the validation-specialist)
-Phase 1 resolves the observational/context items; threat-enumeration, risk, mitigation, and specialist-domain items (privacy, compliance, deep code) remain `unknown` in the seed for their owning phase. States below use taxonomy ids from `coverage-taxonomy.json`.
+## 1.4 Asset Inventory
 
-| Item id | State | Detail / Note | Source |
-|---------|-------|---------------|--------|
-| document-metadata.identity-version | absent | No threat-model doc exists pre-assessment; this run is version 1, dated 2026-07-11. | README.md |
-| document-metadata.ownership | partial | Repo authored by AWS sample (author "Marina Burkhardt"); no TM owner assigned. | Code/server/package.json, swagger.js |
-| system-context.deployment-environment | present | AWS ECS Fargate, single VPC (2 AZ), public ALBs, private task subnets, IaC via Terraform local state. | Infrastructure/main.tf, README.md |
-| system-context.external-dependencies | present | GitHub, npm (server+client), public ECR base images, CodeBuild managed image. | recon.json external_deps |
-| system-context.assumptions-constraints | present | Demo scope; no auth/TLS by design; local TF state; corners cut "due to demo proposals." | README.md |
-| assets.data-assets | present | Catalog (DynamoDB), images (S3), artifacts (S3), images (ECR), logs, TF state incl. PAT. | recon.json data_stores |
-| data-classification.scheme | partial | No formal scheme; classified INTERNAL/CONFIDENTIAL/RESTRICTED here from observation. | §1.4 |
-| actors.human-actors | present | Anonymous user, TF operator, `main`-push developer. | §1.5 |
-| actors.system-actors | present | 4 IAM roles + AWS-managed CI/CD/SNS/autoscaling principals. | Infrastructure/Modules/IAM/main.tf |
-| trust-boundaries.enumeration | present | 6 boundaries enumerated (TB1-TB6). | recon.json trust_boundaries |
-| architecture.diagrams | present | Two provided PNGs reviewed; DFD to be produced in Phase 2. | Documentation_assets/ |
-| component-inventory.components | present | 13 components inventoried. | recon.json components |
-| data-stores.inventory | present | 6 data stores with tech + hardening gaps. | §1.4 |
-| entry-points.enumeration | present | 5 entry points cataloged. | recon.json entry_points |
-| authentication.model | absent | No authentication implemented (login is a demo stub). | Code/client/src/components/Login.vue:28 |
-| authorization.model | absent | No authorization; all endpoints anonymous. | Code/server/src/app.js |
-| network-architecture.segmentation | present | Public ALB subnets vs private task subnets; SG chaining; single NAT egress. | Infrastructure/Modules/Networking/main.tf |
-| cryptography.in-transit | partial | Only HTTP:80 listener created; no TLS; `enable_https` defaults false. | Infrastructure/Modules/ALB/main.tf:38, variables.tf:27 |
-| cryptography.at-rest | partial | Default AWS-managed encryption only; no explicit SSE/KMS on S3/DynamoDB/ECR. | Infrastructure/Modules/S3/main.tf, Dynamodb/main.tf |
-| secrets-management.storage | partial | No secrets manager; GitHub PAT in local TF state + pipeline config; taskdef secretOptions null. | Infrastructure/Modules/CodePipeline/main.tf:29, README.md:37 |
-| api-security.authentication | absent | Public API with no client authentication. | Code/server/src/app.js:47 |
-| client-side-security.spa | partial | Vue 2 SPA, no CSP/security headers configured (Nginx default), open CORS on API. | Code/client/, Code/server/src/app.js:10 |
-| cloud-infrastructure.iam-least-privilege | partial | Resource-scoped DynamoDB/S3, but wildcard `s3:*`/`ecs:*`/`iam:PassRole *` in devops + task roles. | Infrastructure/Modules/IAM/main.tf:175,306 |
-| container-security.image-provenance | partial | Unpinned `:latest` base images, MUTABLE ECR tags, no scan-on-push, privileged CodeBuild. | Code/*/Dockerfile, Infrastructure/Modules/ECR/main.tf |
-| cicd-supply-chain.pipeline-trust | present | GitHub poll → auto-deploy to `main`, no manual approval; artifact bucket; PAT anchor. | Infrastructure/Modules/CodePipeline/main.tf |
-| third-party-vendor.dependencies | partial | npm + base images enumerated; no SCA/SBOM; aws-sdk v2 + Vue 2 are EOL/maintenance. | package.json (server+client) |
-| logging-monitoring.coverage | partial | CloudWatch task/build logs only; no ALB access logs, VPC flow logs, CloudTrail in IaC. | Infrastructure/Modules/ECS/TaskDefinition/main.tf:45 |
-| availability-resilience.redundancy | present | Multi-AZ, autoscaling, blue/green rollback; single NAT is the redundancy gap. | Infrastructure/main.tf:242, Networking/main.tf:91 |
+### Data Assets
 
-*(Tier-2 items gated off by context — multi_tenant, has_personal_data, has_regulatory, has_ai_ml, has_hardware — are seeded `not-applicable` in `coverage.json` with reasons. All other applicable items remain `unknown` pending their owning phase/specialist.)*
+| # | Asset | Location | Sensitivity | At Rest | In Transit | In Processing |
+|---|-------|----------|-------------|---------|------------|---------------|
+| 1 | Product catalog data (id, title, path) | DynamoDB table | PUBLIC | AWS-owned encryption (default) | HTTP (plaintext) | In server memory |
+| 2 | S3 asset URLs (image paths) | DynamoDB records + S3 bucket | INTERNAL | AWS-owned encryption (default) | HTTP (plaintext) | In client browser |
+| 3 | Product images | S3 assets bucket | PUBLIC | Default S3 encryption | HTTP (via S3 URL) | In client browser |
+| 4 | CI/CD artifacts | S3 codepipeline bucket | INTERNAL | No explicit encryption | Within AWS | In CodeBuild/Deploy |
+| 5 | Docker images | ECR repositories | INTERNAL | ECR default encryption | Within AWS | In Fargate tasks |
+| 6 | GitHub OAuth token | Terraform state, CodePipeline config | RESTRICTED | Plaintext in TF state | Via Terraform CLI | In CodePipeline |
+| 7 | Application logs | CloudWatch Log Groups | INTERNAL | CloudWatch default encryption | Within AWS | CloudWatch |
+| 8 | Terraform state file | Local filesystem | RESTRICTED | No encryption | Not transmitted (local) | Local |
+| 9 | AWS credentials | ~/.aws/credentials | RESTRICTED | Plaintext on deployer machine | Via AWS API (HTTPS) | In Terraform |
+| 10 | Swagger API documentation | /api/docs endpoint | PUBLIC | N/A (generated) | HTTP (plaintext) | In server memory |
+| 11 | Server error messages | Error handler response | INTERNAL | N/A | HTTP (plaintext) | In server memory |
 
-## Cross-References
-- Machine-readable attack surface: `recon.json` (component/store/entry/boundary/dep ids C*/D*/E*/TB*/X*, roles R0-R5).
-- Coverage ledger seed: `coverage.json` (context flags + 225 items).
-- Downstream: diagram-specialist (Phase 2) builds L1-L3 DFD from these ids; privacy-, compliance-, and code-review specialists read this file + Phase 2 node ids; security-architect Phases 3-6 score threats against §1.6-1.8.
+---
+
+## 1.5 Actor Enumeration
+
+### Human Actors
+| Actor | Role | Access Level | Description |
+|-------|------|-------------|-------------|
+| End User | Browser user | Unauthenticated | Accesses Vue.js SPA via client ALB, views product catalog |
+| DevOps Engineer | Infrastructure operator | AWS account, GitHub repo | Runs Terraform, manages infrastructure |
+| Developer | Code contributor | GitHub repository | Pushes code changes that trigger CI/CD pipeline |
+| AWS Account Admin | Account owner | Full AWS account | Manages IAM, billing, account-level settings |
+
+### System Actors
+| Actor | Role | Access Level | Description |
+|-------|------|-------------|-------------|
+| CodePipeline | CI/CD orchestrator | DevOps IAM role | Triggers builds and deployments on GitHub changes |
+| CodeBuild | Build agent | DevOps IAM role (privileged Docker) | Builds Docker images, pushes to ECR |
+| CodeDeploy | Deployment agent | CodeDeploy IAM role | Executes Blue/Green deployments to ECS |
+| ECS Fargate (Server) | Backend compute | ECS task role | Runs Node.js server, accesses DynamoDB and S3 |
+| ECS Fargate (Client) | Frontend compute | ECS execution role | Runs Nginx serving Vue.js SPA |
+| ALB (Server) | Load balancer | Public network | Routes HTTP traffic to server ECS tasks |
+| ALB (Client) | Load balancer | Public network | Routes HTTP traffic to client ECS tasks |
+| GitHub (External) | Source provider | OAuth token | Provides source code to CodePipeline |
+| CloudWatch | Monitoring | AWS-managed | Receives logs and autoscaling metrics |
+| SNS | Notification | AWS-managed | Sends deployment status notifications |
+
+---
+
+## 1.6 Threat Actor Profiles
+
+### TA-1: Opportunistic Attacker / Script Kiddie
+| Attribute | Value |
+|-----------|-------|
+| Type | External |
+| Motivation | Curiosity, notoriety, easy financial gain |
+| Capability | 2/5 |
+| Access Level | Unauthenticated external (internet) |
+| Relevance | HIGH -- Both ALBs are public-facing on HTTP without authentication. Swagger docs expose full API surface. No WAF or rate limiting. This is the most likely threat actor. |
+
+### TA-2: Malicious Insider / Compromised Developer
+| Attribute | Value |
+|-----------|-------|
+| Type | Internal |
+| Motivation | Revenge, financial gain, or account compromised by external actor |
+| Capability | 3/5 |
+| Access Level | GitHub repository write access, potential AWS console access |
+| Relevance | HIGH -- Buildspec is sourced from the repository, so any developer with push access can execute arbitrary commands with the DevOps IAM role. No branch protection or approval gates in the pipeline. |
+
+### TA-3: Supply Chain Attacker
+| Attribute | Value |
+|-----------|-------|
+| Type | External (indirect) |
+| Motivation | Varies (financial gain, espionage) |
+| Capability | 4/5 |
+| Access Level | Indirect via compromised npm packages or Docker base images |
+| Relevance | MEDIUM -- Dockerfiles use `npm install` (not `npm ci`), pull from public ECR base images (`public.ecr.aws/bitnami/node`, `public.ecr.aws/nginx/nginx`), and ECR tags are mutable. Dependencies include outdated packages (aws-sdk 2.x, express 4.16.x). |
+
+### TA-4: Network-Position Attacker (Man-in-the-Middle)
+| Attribute | Value |
+|-----------|-------|
+| Type | External |
+| Motivation | Data interception, session hijacking |
+| Capability | 3/5 |
+| Access Level | Network position between user and ALB, or between services |
+| Relevance | HIGH -- All traffic is HTTP (no TLS). Client-to-server ALB communication is HTTP. User-to-ALB is HTTP. MITM is trivial on any network segment. |
+
+### TA-5: Negligent Insider
+| Attribute | Value |
+|-----------|-------|
+| Type | Internal |
+| Motivation | Unintentional |
+| Capability | 1/5 (inadvertent) |
+| Access Level | Developer or DevOps access |
+| Relevance | MEDIUM -- Terraform state with secrets stored locally, no remote backend with encryption. GitHub token could be accidentally committed. No Terraform plan review gates. |
+
+---
+
+## 1.7 Attack Surface Catalog
+
+| # | Entry Point | Location | Protocol | Authentication | Exposure | Input Types |
+|---|-------------|----------|----------|---------------|----------|-------------|
+| 1 | Client ALB | Public subnet, port 80 | HTTP | None | Internet (0.0.0.0/0) | HTTP requests |
+| 2 | Server ALB | Public subnet, port 80 | HTTP | None | Internet (0.0.0.0/0) | HTTP requests |
+| 3 | GET /status | Server app, port 3001 | HTTP | None | Via server ALB | None (no input) |
+| 4 | GET /api/getAllProducts | Server app, port 3001 | HTTP | None | Via server ALB | None (no user input) |
+| 5 | GET /api/docs | Server app, port 3001 | HTTP | None | Via server ALB | None (serves Swagger UI) |
+| 6 | GET /api/docs/json | Server app, port 3001 | HTTP | None | Via server ALB | None (serves Swagger spec) |
+| 7 | GitHub webhook/poll | CodePipeline source stage | HTTPS (GitHub API) | OAuth token (v1) | AWS-to-GitHub | Git repository content |
+| 8 | CodeBuild buildspec | Repository-sourced | N/A | GitHub commit access | Pipeline-internal | Buildspec YAML (arbitrary commands) |
+| 9 | S3 asset URLs | Referenced in DynamoDB data | HTTP(S) | S3 bucket policy | Public via URL in DynamoDB | S3 object requests |
+| 10 | Terraform CLI | Deployer workstation | AWS API (HTTPS) | AWS credentials | Local | Terraform configuration |
+| 11 | ECS task metadata endpoint | Fargate task network | HTTP | None (task-local) | Container-internal | IMDS queries |
+
+---
+
+## 1.8 Security Control Inventory
+
+| # | Control | Implementation | Coverage | Strength | Notes |
+|---|---------|---------------|----------|----------|-------|
+| 1 | Private subnets for ECS tasks | Networking module: separate private subnets for client and server tasks | Full | GOOD | Tasks not directly exposed to internet |
+| 2 | Security group segmentation | SecurityGroup module: ALB SGs allow 0.0.0.0/0:80; ECS task SGs allow ingress only from respective ALB SG | Full | MODERATE | Good east-west restriction, but no egress restrictions beyond default allow-all |
+| 3 | NAT Gateway for outbound | Networking module: NAT GW in public subnet | Full | MODERATE | Single NAT GW (single AZ -- availability risk but not security critical) |
+| 4 | ECS Fargate isolation | ECS Service module: launch_type = "FARGATE" | Full | GOOD | AWS-managed infrastructure, no host-level access |
+| 5 | CloudWatch logging | TaskDefinition module: awslogs log driver | Full | MODERATE | 30-day retention, but no alerting configured beyond autoscaling metrics |
+| 6 | Blue/Green deployments | CodeDeploy module: deployment_type = "BLUE_GREEN" with auto-rollback | Full | GOOD | Reduces deployment risk, enables quick rollback on failure |
+| 7 | S3 bucket ACL | S3 module: acl = "private" | Partial | WEAK | No public_access_block, no bucket policy, no versioning, no encryption config |
+| 8 | Terraform sensitive variable | Variables: github_token marked `sensitive = true` | Partial | WEAK | Prevents display in plan output but token still in state file |
+| 9 | GitHub token lifecycle ignore | CodePipeline module: `ignore_changes = [stage[0].action[0].configuration]` | Partial | WEAK | Prevents token updates from causing diffs but does not protect the token |
+| 10 | Autoscaling | ECS Autoscaling module: CPU and memory target tracking (50%), min 1 / max 4 | Full | MODERATE | Provides basic DoS resilience via scaling, but max 4 limits capacity |
+| 11 | Network mode awsvpc | TaskDefinition module: `network_mode = "awsvpc"` | Full | GOOD | Each task gets its own ENI, enabling SG-level isolation |
+
+### Notable Missing Controls
+| # | Missing Control | Expected Location | Impact |
+|---|----------------|-------------------|--------|
+| 1 | TLS/HTTPS on ALBs | ALB module (enable_https=false) | All traffic in plaintext -- data interception |
+| 2 | Authentication/Authorization | Application layer | Complete open access to all endpoints |
+| 3 | WAF | In front of ALBs | No L7 filtering, rate limiting, or bot protection |
+| 4 | S3 public_access_block | S3 module | Buckets could be made public by misconfiguration |
+| 5 | S3 encryption configuration | S3 module | No explicit server-side encryption |
+| 6 | S3 versioning | S3 module | No recovery from accidental deletion or corruption |
+| 7 | DynamoDB PITR | DynamoDB module | No point-in-time recovery |
+| 8 | DynamoDB CMK encryption | DynamoDB module | Uses AWS-owned key, no customer control |
+| 9 | ECR image scanning | ECR module | No vulnerability scanning on push |
+| 10 | ECR immutable tags | ECR module (MUTABLE) | Image tag overwrite risk |
+| 11 | VPC Flow Logs | Networking module | No network traffic auditing |
+| 12 | VPC endpoints | Networking module | Traffic to DynamoDB/S3/ECR traverses NAT GW (internet) |
+| 13 | ECS container hardening | TaskDefinition module | No readonlyRootFilesystem, no non-root user |
+| 14 | Pipeline approval gates | CodePipeline module | No manual approval between stages |
+| 15 | Branch protection | GitHub (external) | Not enforced by Terraform |
+| 16 | Remote Terraform backend | Root infrastructure | Local state with secrets |
+| 17 | Billing alarm / cost controls | Not present | No spending limit or anomaly detection |
+| 18 | SNS subscription | SNS module | Topic created but no subscribers |
+| 19 | Container Insights | ECS Cluster module | No enhanced monitoring |
+| 20 | Input validation | Server application | No request validation middleware |
+
+---
+
+## 1.9 Visual Completeness Assessment
+
+See `visual-completeness-checklist.md` for the full checklist. Summary of applicability:
+
+| Category | Applicable? | Justification |
+|----------|------------|---------------|
+| 1. External Entities | YES | Users, GitHub, AWS services (DynamoDB, S3) |
+| 2. Processes | YES | ECS Fargate tasks (client, server), CodeBuild, CodeDeploy, CodePipeline |
+| 3. Data Stores | YES | DynamoDB, S3 (x2), ECR (x2) |
+| 4. Trust Boundaries | YES | Public internet, VPC, private subnets, AWS managed services |
+| 5. Data Flow Labels | YES | Multiple protocols and data types across components |
+| 6. Risk Color Coding | YES | Risk overlay phase |
+| 7. Threat Annotations | YES | Risk overlay phase |
+| 8. Component Metadata | YES | Multiple technologies (Node.js, Nginx, Terraform, Docker) |
+| 9. Identity Elements | YES | 4 IAM roles, ECS execution/task roles |
+| 10. Secrets/Key Mgmt | YES | GitHub OAuth token, AWS credentials (no KMS, but absence is notable) |
+| 11. Control/Data Plane | YES | CI/CD is control plane, user traffic is data plane |
+| 12. Attack Paths | YES | Risk overlay phase |
+| 13. Control Indicators | YES | Security groups, private subnets, autoscaling (and many missing) |
+| 14. Data Classification | YES | PUBLIC (products), INTERNAL (artifacts), RESTRICTED (tokens, creds) |
+| 15. Encryption State | YES | Mostly PLAIN -- significant finding |
+| 16. Network Zones | YES | VPC with public/private subnets across AZs |
+| 17. Deployment Pipeline | YES | Full CI/CD with CodePipeline, CodeBuild, CodeDeploy |
+| 18. External Dependencies | YES | GitHub, public ECR base images, npm registry |
+| 19. Tenant Boundaries | NO | Single-tenant demo application |
+| 20. Region Boundaries | NO | Single-region deployment |
+| 21. Typed Edges | YES | Multiple edge types needed |
+| 22. Ownership Markers | YES | AWS-managed vs self-managed vs vendor components |
+| 23. Machine-Parseable Annotations | YES | Risk overlay phase |
+| 24. Version Stamp | YES | Always applicable |
+| 25. Density Compliance | YES | Always applicable |
+| 26. Companion Diagrams | YES | Attack trees and auth sequence applicable |
+
+**Applicable**: 24/26
+**Not Applicable**: 2/26 (Tenant Boundaries, Region Boundaries)
+
+---
+
+## 1.10 Reconnaissance Summary
+
+### Components Discovered (18)
+
+| # | Component | Type | Technology | Location |
+|---|-----------|------|-----------|----------|
+| 1 | Client ALB | Load Balancer | AWS ALB | Public subnets |
+| 2 | Server ALB | Load Balancer | AWS ALB | Public subnets |
+| 3 | Client ECS Service | Compute | AWS Fargate + Nginx | Private client subnets |
+| 4 | Server ECS Service | Compute | AWS Fargate + Node.js/Express | Private server subnets |
+| 5 | ECS Cluster | Container Orchestration | AWS ECS | VPC |
+| 6 | DynamoDB Table | Data Store | AWS DynamoDB | AWS Managed |
+| 7 | S3 Assets Bucket | Data Store | AWS S3 | AWS Managed |
+| 8 | S3 CodePipeline Bucket | Data Store | AWS S3 | AWS Managed |
+| 9 | ECR Server Repo | Container Registry | AWS ECR | AWS Managed |
+| 10 | ECR Client Repo | Container Registry | AWS ECR | AWS Managed |
+| 11 | CodePipeline | CI/CD Orchestrator | AWS CodePipeline | AWS Managed |
+| 12 | CodeBuild (Server) | Build Service | AWS CodeBuild | AWS Managed |
+| 13 | CodeBuild (Client) | Build Service | AWS CodeBuild | AWS Managed |
+| 14 | CodeDeploy (Server) | Deployment Service | AWS CodeDeploy | AWS Managed |
+| 15 | CodeDeploy (Client) | Deployment Service | AWS CodeDeploy | AWS Managed |
+| 16 | SNS Topic | Notification | AWS SNS | AWS Managed |
+| 17 | VPC + Networking | Network Infrastructure | AWS VPC | Single Region |
+| 18 | CloudWatch Log Groups | Monitoring | AWS CloudWatch | AWS Managed |
+
+### Trust Boundaries Identified
+
+| # | Boundary | Components Inside | Components Outside | Crossing Points |
+|---|----------|-------------------|-------------------|-----------------|
+| 1 | Internet / Public Network | End Users, External Attackers | Everything in AWS | Client ALB, Server ALB |
+| 2 | VPC Perimeter | ALBs, ECS Tasks, NAT GW | AWS Managed Services, Internet | IGW, NAT GW, implicit VPC endpoints |
+| 3 | Public Subnets | ALBs, NAT GW | ECS Tasks | Security Groups (ALB -> ECS Task) |
+| 4 | Private Client Subnets | Client ECS Tasks | Server ECS Tasks, ALBs | Security Group ingress from Client ALB SG |
+| 5 | Private Server Subnets | Server ECS Tasks | Client ECS Tasks, ALBs | Security Group ingress from Server ALB SG |
+| 6 | AWS Managed Service Boundary | DynamoDB, S3, ECR, CloudWatch, SNS | VPC components | IAM policies, VPC routing (via NAT) |
+| 7 | CI/CD Pipeline Boundary | CodePipeline, CodeBuild, CodeDeploy | Application runtime | Build artifacts, ECR images, ECS task definitions |
+| 8 | External Service Boundary | GitHub | AWS Account | OAuth token, HTTPS API |
+
+### Technology Stack
+
+| Layer | Technology | Version (where specified) |
+|-------|-----------|--------------------------|
+| Frontend Framework | Vue.js | 2.6.11 |
+| Frontend Build | Vue CLI | 4.4.x |
+| Frontend Runtime | Nginx | latest (from public.ecr.aws) |
+| Backend Framework | Express.js | 4.16.4 |
+| Backend Runtime | Node.js | latest (from public.ecr.aws/bitnami) |
+| API Documentation | swagger-jsdoc + swagger-ui-express | 6.0.0 / 4.1.6 |
+| HTTP Client | Axios | 0.21.2 |
+| AWS SDK | aws-sdk (v2) | 2.876.0 (server), 2.885.0 (client) |
+| UI Components | Bootstrap-Vue | 2.15.0 |
+| IaC | Terraform | >= 0.13 |
+| AWS Provider | hashicorp/aws | ~> 3.38 |
+| Container Build | Docker | Standard (Dockerfile) |
+| CI/CD | AWS CodePipeline + CodeBuild + CodeDeploy | V1 actions |
+
+### Key Gaps / Information Missing
+
+1. **No Terraform remote backend configuration** -- state stored locally with secrets
+2. **No `.env` files found** -- configuration is entirely via Terraform variables and CodeBuild environment variables
+3. **No test suites** beyond Artillery stress tests -- no security tests
+4. **No HTTPS certificate** configuration -- ACM not referenced anywhere
+5. **Outdated dependencies** -- AWS provider 3.38 (current is 5.x+), Node.js and package versions are significantly behind
+6. **No error monitoring or alerting** -- CloudWatch alarms only for autoscaling, no application error alerting
+
+### Assumptions
+
+1. **Assumed single AWS account deployment** -- no cross-account references found
+2. **Assumed single region** -- only one region variable, no multi-region configuration
+3. **Assumed default VPC settings** where not explicitly configured (e.g., default NACL rules)
+4. **Assumed no additional AWS services** configured outside this Terraform code (no pre-existing WAF, GuardDuty, Config, etc.)
+5. **Assumed the DynamoDB table contains non-sensitive product catalog data** (titles, image URLs) based on the schema and README
+6. **Assumed Fargate platform version LATEST** is used (specified in appspec.yaml)
+7. **Assumed no GitHub branch protection rules** are in place since they are not managed by Terraform and the README does not mention them
+8. **Assumed the `aws-sdk` inclusion in the client package.json is unnecessary** (the frontend is a static SPA served by Nginx; aws-sdk is likely a leftover dependency)
+
+---
 
 ## Execution Log
 
 ### Process Health
 | Metric | Value |
 |--------|-------|
-| Files Read | 34 (README, all Terraform root+modules+templates, server app/swagger/Dockerfile/package.json, client Vue components/router/services/config/Dockerfile, 2 architecture PNGs, skill + 3 reference/schema files) |
-| Files Written | 4 (recon.json, coverage.json, 01-reconnaissance.md, visual-completeness-checklist.md) |
-| Errors Encountered | 1 (recoverable) |
+| Files Read | 42 |
+| Files Written | 2 |
+| Errors Encountered | 0 |
 | Items Skipped | 0 |
 | Self-Assessed Output Quality | HIGH |
 
 ### What Went Well
-- Small, well-structured repo (85 files) — full coverage of IaC + app code was feasible without sampling.
-- Provided architecture diagrams corroborated the code and surfaced the key nuance (backend ALB is public, not internal).
-- Secrets sweep was clean; the single credential (GitHub PAT) traces cleanly to local state + pipeline config.
-- Both manifests validated against their JSON schemas (`jsonschema`) with all recon evidence paths resolving in the repo and all 225 taxonomy ids present in the ledger.
+- Complete project was readable -- all 14 Terraform modules, both application codebases, all templates, Dockerfiles, and configuration files were accessible
+- Architecture diagrams (PNG) provided visual confirmation of the infrastructure layout
+- Code is well-organized with clear separation between Infrastructure and Code directories
+- Demo nature of the project is well-documented, making it clear which security shortcuts were intentional
 
 ### Issues Encountered
-- Initial secrets-sweep `grep` failed under zsh due to unquoted `--include=*.js` globbing (no matches error). Re-ran with quoted globs; sweep completed and confirmed no committed secrets. No impact on output.
-- This agent context was interrupted after writing the two JSON manifests and resumed to produce the markdown; recon.json/coverage.json were reused as the source of truth, so the markdown, ledger, and manifest are mutually consistent.
+- None. All files were readable and the project structure was straightforward.
 
 ### What Was Skipped or Incomplete
-- Deep dependency-tree analysis (transitive npm CVEs) deferred to the code-review specialist — Phase 1 records the manifests and EOL/maintenance status (aws-sdk v2, Vue 2) as `partial` coverage, not a full SCA.
-- No `.tfvars` present, so concrete region/account/environment values are unknown; recorded as an assumption rather than guessed.
-- End-user data-lifecycle companion diagram intentionally omitted (no personal data).
+- **npm audit analysis** -- did not run `npm audit` against package-lock.json files. The code review agent should perform dependency vulnerability scanning.
+- **Terraform plan analysis** -- did not execute `terraform plan` or `terraform validate`. Assessment is based on static code review only.
+- **Docker image vulnerability scan** -- base images (`public.ecr.aws/bitnami/node:latest`, `public.ecr.aws/nginx/nginx:latest`) were not scanned for vulnerabilities. The code review agent should flag these.
 
 ### Assumptions Made
-- Default ports assumed from `variables.tf` (server 3001 in container / :80 via ALB, client :80). Container `EXPOSE 3001` (server) confirms.
-- DynamoDB `path`/`title` attributes assumed per README (only `id` is declared in `attributes`).
-- Single region / single environment assumed (README implies one env; no multi-region resources in IaC).
-- `has_personal_data`/`has_regulatory` set false based on observed non-personal data and absent compliance scope; flagged for re-evaluation if a real deployment adds auth or user data.
+- All assumptions are documented in the "Assumptions" section above (items 1-8)
+- The assessment treats this as a system that could be forked for production use, since that is the most security-relevant context for a threat model. Findings will note where something is "expected for a demo but unacceptable for production."

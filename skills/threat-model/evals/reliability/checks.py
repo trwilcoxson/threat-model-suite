@@ -6,7 +6,6 @@ model or it flags a concrete defect.
 """
 from __future__ import annotations
 
-import difflib
 import json
 import re
 import subprocess
@@ -14,7 +13,6 @@ from pathlib import Path
 from typing import Any
 
 import diagram_checks
-import schema_checks
 
 STRIDE_LM = {"S", "T", "R", "I", "D", "E", "LM"}
 SEVERITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
@@ -31,44 +29,6 @@ def band(score: int) -> str:
     if score <= 16:
         return "HIGH"
     return "CRITICAL"
-
-
-# CVSS v3.1 exploitability sub-score = 8.22 * AV * AC * PR * UI (FIRST.org v3.1 spec). Frozen metric
-# weights; PR uses the Scope-Unchanged column because the suite does not adopt CVSS Scope. These weights,
-# the normalizer, and the exploitability->1-5 thresholds are published as one table in
-# references/frameworks.md — this is the single implementation of that table, no second scheme.
-_CVSS_AV = {"N": 0.85, "A": 0.62, "L": 0.55, "P": 0.20}
-_CVSS_AC = {"L": 0.77, "H": 0.44}
-_CVSS_PR = {"N": 0.85, "L": 0.62, "H": 0.27}  # Scope-Unchanged
-_CVSS_UI = {"N": 0.85, "R": 0.62}
-EXPLOIT_MAX = 3.887043  # 8.22 * 0.85 * 0.77 * 0.85 * 0.85 — the fixed maximum sub-score
-_CVSS_VECTOR_RE = re.compile(r"^AV:([NALP])/AC:([LH])/PR:([NLH])/UI:([NR])$")
-# Control id + normalized framework-ref shapes. Format-only (the offline eval never asserts a control
-# is the *right* one — that is agent-verified against frameworks.md). NIST-800-53 (AC-3, SC-7(5)) or
-# D3FEND (D3-NTA); a framework_ref that is present but unshaped is flagged, mirroring malformed-cwe.
-_CTL_ID_RE = re.compile(r"^CTL-[0-9]{3}$")
-_FRAMEWORK_REF_RE = re.compile(r"^([A-Z]{2}-[0-9]+(\([0-9]+\))?|D3-[A-Z]+)$")
-# OWASP-LLM Top-10 id vocabulary (LLM01:2025 .. LLM10:2025). The loose shape captures an authored id in
-# the checklist table (the DECLARED framework field); the strict shape validates it. The distinctive LLM
-# prefix cannot collide with ATT&CK T#### / ATLAS AML.T#### ids, so the guardrail is keyed on the
-# framework unambiguously — a bare `T3` OWASP-Agentic token is never read as an ATT&CK technique.
-_OWASP_LLM_LOOSE = re.compile(r"LLM\d+(?::\d+)?")
-_OWASP_LLM_STRICT = re.compile(r"LLM(0[1-9]|10):2025")
-
-
-def exploitability_band(vector: str) -> int:
-    """Map a CVSS v3.1 exploitability vector to a 1-5 Likelihood band via normalized quintiles.
-    Raises ValueError on an unparseable vector.
-    # ponytail: v1 uniform quintile split; upgrade path = recalibrate the five thresholds HERE (the
-    # weights + EXPLOIT_MAX + this split are hardcoded in checks.py, the single implementation;
-    # frameworks.md is hand-synced docs) from a corpus of scored runs — a CODE change, re-locked by
-    # the worked-example self-check."""
-    m = _CVSS_VECTOR_RE.match((vector or "").strip())
-    if not m:
-        raise ValueError(f"unparseable CVSS exploitability vector {vector!r}")
-    av, ac, pr, ui = m.groups()
-    sub = 8.22 * _CVSS_AV[av] * _CVSS_AC[ac] * _CVSS_PR[pr] * _CVSS_UI[ui]
-    return min(5, int(sub / EXPLOIT_MAX * 5) + 1)
 
 
 class Defects:
@@ -105,24 +65,16 @@ def _require(obj: dict, keys: list[str], d: Defects, where: str) -> bool:
 # -- grounding against the real repo ----------------------------------------
 
 def _resolves_in_repo(repo: Path, evidence: str) -> bool:
-    ev = (evidence or "").strip()
-    # Reject up front: empty/whitespace (`repo / ""` is the repo dir → always "exists") and absolute
-    # paths (`repo / "/etc/passwd"` escapes the repo to `/etc/passwd`). Neither is repo-relative evidence.
-    if not ev or Path(ev).is_absolute():
-        return False
-    # A `path:line` / `path:line:col` reference grounds via its path — try with a trailing :NN(:NN) stripped.
-    stripped = re.sub(r":\d+(?::\d+)?$", "", ev)
-    # 1. FULL relative path or glob must resolve (no bare-basename fallback — a common basename like
-    #    `package.json` must not ground an invented path such as `made/up/package.json`).
-    for cand in [ev] if stripped == ev else [ev, stripped]:
-        if (repo / cand).exists():
+    ev = evidence.strip()
+    # 1. direct path or glob
+    if (repo / ev).exists():
+        return True
+    try:
+        if any(repo.glob(ev)):
             return True
-        try:
-            if any(repo.glob(cand)):
-                return True
-        except (ValueError, OSError):
-            pass
-    # 2. literal source string present somewhere in the tree (cheap grep, skip .git)
+    except (ValueError, OSError):
+        pass
+    # 2. literal string present somewhere in the tree (cheap grep, skip .git)
     try:
         r = subprocess.run(
             ["grep", "-rqIF", "--exclude-dir=.git", ev, str(repo)],
@@ -132,67 +84,15 @@ def _resolves_in_repo(repo: Path, evidence: str) -> bool:
             return True
     except (subprocess.TimeoutExpired, OSError):
         pass
+    # 3. basename of a path-looking evidence string
+    base = ev.split("/")[-1]
+    if base and base != ev:
+        try:
+            if any(repo.rglob(base)):
+                return True
+        except (ValueError, OSError):
+            pass
     return False
-
-
-# -- recon semantic-source checks (the "simpler than regex" evidence) -------
-# Reference-free JSON checks over recon.json's OPTIONAL semantic fields (dataflows[], element.type)
-# added by the semantic-source spike (docs/research/visual-engine-2026-07/SEMANTIC-SOURCE-SPIKE.md).
-# These are the JSON reference/membership FORM of checks that used to be regex over diagram TEXT — a
-# structured source is harder to fool than a scrape of the rendered picture:
-#   dataflow-endpoint-integrity  REPLACES diagram_checks' "boundary-crossing edge endpoint(s) do not
-#                                map to recon ids" (endpoints regex-parsed out of the diagram) with a
-#                                direct id set-membership over the manifest.
-#   recon-node-type-unknown      REPLACES diagram_checks._node_type_checks' "node-type-unknown-token"
-#                                (type tokens scraped from :::class / class: in the diagram) with a
-#                                membership check over recon.components[].type (same fuzzy suggestion).
-#   dataflow-ungrounded          is the edge analog of the per-element evidence grounding check.
-def recon_semantic_checks(recon: dict | None) -> list[dict[str, str]]:
-    """Additive + back-compat: each sub-check ABSTAINS when its field is absent, so every committed
-    recon (no dataflows, no component.type) yields zero defects and the production gate is unchanged.
-    Only endpoint integrity is gated (consistency); node-type + grounding-shape are advisory (recon)."""
-    out: list[dict[str, str]] = []
-    if not isinstance(recon, dict):
-        return out
-
-    # id universe = every declared element AND role (a dataflow endpoint legitimately names a role).
-    ids: set[str] = set()
-    for bucket in ("components", "data_stores", "entry_points", "trust_boundaries", "external_deps", "roles"):
-        for el in recon.get(bucket) or []:
-            if isinstance(el, dict) and "id" in el:
-                ids.add(el["id"])
-
-    for df in recon.get("dataflows") or []:
-        if not isinstance(df, dict):
-            continue
-        fid = df.get("id", "?")
-        # (1) endpoint integrity — HARD (consistency): source/destination must be declared ids.
-        for role in ("source", "destination"):
-            ref = df.get(role)
-            if ref is not None and ref not in ids:
-                out.append({"layer": "consistency", "code": "dataflow-endpoint-integrity",
-                            "detail": f"dataflow {fid}: {role} '{ref}' is not a declared recon element/role id"})
-        # (3) grounding shape — ADVISORY: a flow asserted without any evidence[] is ungrounded.
-        if not (df.get("evidence") or []):
-            out.append({"layer": "recon", "code": "dataflow-ungrounded",
-                        "detail": f"dataflow {fid}: no evidence[] grounding the flow (advisory)"})
-
-    # (2) node-type membership — ADVISORY (recon): component.type in the controlled vocabulary, fuzzy
-    # suggestion on a miss. Abstains entirely when no component carries a type token (back-compat).
-    typed = [(c.get("id", "?"), c["type"]) for c in (recon.get("components") or [])
-             if isinstance(c, dict) and (c.get("type") or "").strip()]
-    if typed:
-        # NODE-TYPE members only (styling classes like highRisk/outOfScope excluded) — a component.type
-        # is a node type, not a diagram styling class, so a styling token must NOT pass here.
-        _all, _icons, members = diagram_checks._load_vocab()
-        for cid, tok in typed:
-            if tok.lower() in members:
-                continue
-            sugg = difflib.get_close_matches(tok.lower(), sorted(members), n=1)
-            hint = f" (did you mean '{sugg[0]}'?)" if sugg else ""
-            out.append({"layer": "recon", "code": "recon-node-type-unknown",
-                        "detail": f"component {cid}: type '{tok}' is not in the node-type vocabulary{hint}"})
-    return out
 
 
 def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
@@ -200,21 +100,6 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
     recon = _load_json(run_dir / "recon.json", d, "recon manifest")
     findings_doc = _load_json(run_dir / "findings.json", d, "findings manifest")
     report = run_dir / "report.md"
-
-    # ---- structure: validate each manifest against its JSON-Schema contract (schema/*.json).
-    # This is the file-based analog of a strict tool schema — enforced post-hoc because the agent
-    # writes the manifests as files (no constrained decoding). Structure only; the consistency,
-    # grounding, and coverage checks below are the semantic layer over the validated structure.
-    for doc, schema_name, label in (
-        (recon, "recon.schema.json", "recon"),
-        (findings_doc, "findings.schema.json", "findings"),
-    ):
-        if doc is not None:
-            try:
-                for v in schema_checks.violations(schema_checks.load_schema(schema_name), doc):
-                    d.add("structure", "schema-violation", f"{label}.json: {v}")
-            except (OSError, ValueError) as e:
-                d.add("structure", "schema-load-error", f"could not apply {schema_name}: {e}")
 
     # ---- structure: report.md present + has the expected sections
     raw_report = ""
@@ -248,32 +133,15 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                     d.add("grounding", "ungrounded-element",
                           f"recon {el['id']} '{el['name']}' — no evidence resolves in repo: {evs}")
 
-    # conditional requirement the schema can't express (validated in app code, not the schema): an
-    # 'other' detected_pattern must carry a detail, mirroring coverage's present->source rule.
-    if recon and recon.get("detected_pattern") == "other" and not (recon.get("detected_pattern_detail") or "").strip():
-        d.add("structure", "detected-pattern-other-without-detail",
-              "recon.detected_pattern is 'other' but detected_pattern_detail is empty")
-
-    # recon semantic-source checks (dataflow endpoint integrity, node-type membership, grounding shape).
-    # INERT on every committed recon (no dataflows/type) — see recon_semantic_checks docstring.
-    d.items.extend(recon_semantic_checks(recon))
-
     # ---- findings: consistency + grounding refs
     covered: set[str] = set()
     counts = {s: 0 for s in SEVERITIES}
     n_findings = 0
-    cwe_total = mitre_total = atlas_total = 0
-    control_classes = {"mitigated": 0, "accepted-risk": 0, "none": 0, "uncovered": 0}
-    controls_total = 0
-    ev_classes = {"grounded": 0, "abstained": 0, "missing": 0, "unresolved": 0}
-    ev_refs_total = 0
-    fids: set[str] = set()
+    cwe_total = mitre_total = 0
     if findings_doc and _require(findings_doc, ["findings", "summary_counts", "no_issue_surface"], d, "findings"):
         for f in findings_doc["findings"]:
             n_findings += 1
             fid = f.get("id", "?")
-            if "id" in f:
-                fids.add(f["id"])
             if not _require(f, ["id", "stride_lm", "likelihood", "impact", "severity", "asset_refs", "surface_refs"], d, fid):
                 continue
             # value domains
@@ -284,40 +152,14 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
                 counts[f["severity"]] += 1
             else:
                 d.add("structure", "bad-severity", f"{fid}: severity '{f['severity']}'")
-            # consistency: severity must equal band(L x I). Guard the domain first so an
-            # out-of-range score (schema also flags it) can't be silently rubber-stamped as
-            # self-consistent — band() has no domain guard of its own.
+            # consistency: severity must equal band(L x I)
             try:
-                L, I = int(f["likelihood"]), int(f["impact"])
-                if not (1 <= L <= 5 and 1 <= I <= 5):
-                    d.add("structure", "out-of-range-LxI", f"{fid}: likelihood/impact must be 1-5, got L{L} I{I}")
-                else:
-                    expect = band(L * I)
-                    if f["severity"] != expect:
-                        d.add("consistency", "severity-formula",
-                              f"{fid}: severity {f['severity']} != band(L{L} x I{I})={expect}")
+                expect = band(int(f["likelihood"]) * int(f["impact"]))
+                if f["severity"] != expect:
+                    d.add("consistency", "severity-formula",
+                          f"{fid}: severity {f['severity']} != band(L{f['likelihood']} x I{f['impact']})={expect}")
             except (ValueError, TypeError):
                 d.add("structure", "bad-LxI", f"{fid}: non-integer likelihood/impact")
-            # consistency: an optional CVSS exploitability vector must band to the finding's OWN
-            # likelihood. Reference-free — recompute 8.22*AV*AC*PR*UI over the finding's own vector
-            # and compare the derived band to its own stated likelihood (same recompute-over-emitted-
-            # facts family as severity-formula). Fires only when the field is present; an unparseable
-            # vector that slipped past the schema is a structure defect, never a silent pass.
-            vec = f.get("cvss_vector")
-            if vec:
-                try:
-                    derived = exploitability_band(vec)
-                except ValueError:
-                    d.add("structure", "bad-cvss-vector",
-                          f"{fid}: cvss_vector {vec!r} is not a legal AV:_/AC:_/PR:_/UI:_ vector")
-                else:
-                    try:
-                        stated = int(f["likelihood"])
-                    except (ValueError, TypeError):
-                        stated = None  # a non-integer likelihood is already flagged as bad-LxI above
-                    if stated is not None and stated != derived:
-                        d.add("consistency", "cvss-likelihood",
-                              f"{fid}: stated likelihood {stated} != derived band {derived} from cvss_vector {vec}")
             # grounding: refs must resolve to recon ids
             for ref in f.get("asset_refs", []) + f.get("surface_refs", []):
                 if recon_ids and ref not in recon_ids:
@@ -325,109 +167,14 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
             covered.update(s for s in f.get("surface_refs", []) if s in surface_ids)
             covered.update(a for a in f.get("asset_refs", []) if a in surface_ids)
             # id well-formedness (fabrication is only partially checkable offline)
-            for c in (f.get("cwe") or []):
+            for c in f.get("cwe", []):
                 cwe_total += 1
                 if not re.fullmatch(r"CWE-\d+", c):
                     d.add("consistency", "malformed-cwe", f"{fid}: '{c}'")
-            for m in (f.get("mitre") or []):
+            for m in f.get("mitre", []):
                 mitre_total += 1
                 if not re.fullmatch(r"T\d{4}(\.\d{3})?", m):
                     d.add("consistency", "malformed-mitre", f"{fid}: '{m}'")
-            # AI/ML controlled-vocabulary guardrail — keyed on the DECLARED framework field (the
-            # atlas[] field -> the ATLAS regex), never guessed from the bare token, so an AML.T####
-            # id is never run through the ATT&CK T\d{4} regex. Shape-only, mirroring malformed-mitre;
-            # a missing/null atlas[] is never flagged. Broader ATLAS namespace than the schema's
-            # technique-only field: tactics TA, techniques T, mitigations M, case-studies CS.
-            for a in (f.get("atlas") or []):
-                atlas_total += 1
-                if not re.fullmatch(r"AML\.(TA\d{4}|T\d{4}(\.\d{3})?|M\d{4}|CS\d{4})", a):
-                    d.add("consistency", "malformed-atlas", f"{fid}: '{a}'")
-
-            # control coverage (the defensive dual of surface coverage) — reference-free over the
-            # finding's OWN emitted facts. A `control` defect layer, NEVER in the production gate:
-            # zero-control is a FLAG, not an auto-fail, and honest abstention passes. The eval never
-            # asserts a control is the *correct* remediation — that is the agent/coverage-judge's job.
-            controls = f.get("controls") or []
-            controls_total += len(controls)
-            disp = f.get("control_disposition")
-            note = (f.get("disposition_note") or "").strip()
-            has_ctl = len(controls) >= 1
-            # well-formedness (format only; mapping correctness is agent-verified in Phase 6)
-            for c in controls:
-                cid = c.get("id", "") if isinstance(c, dict) else ""
-                if not _CTL_ID_RE.fullmatch(cid):
-                    d.add("control", "malformed-control-id", f"{fid}: control id '{cid}'")
-                fr = c.get("framework_ref") if isinstance(c, dict) else None
-                if fr and not _FRAMEWORK_REF_RE.fullmatch(fr):
-                    d.add("control", "malformed-framework-ref", f"{fid}: framework_ref '{fr}'")
-            # internal consistency + honest abstention + zero-control flag; classify for the profile
-            if has_ctl:
-                cls = "mitigated"
-            elif disp == "accepted-risk":
-                cls = "accepted-risk"
-            elif disp == "none":
-                cls = "none"
-            else:
-                cls = "uncovered"
-            control_classes[cls] += 1
-            if disp is not None:
-                # `mitigated` iff >=1 control (both agent-emitted; recompute one from the other)
-                if (disp == "mitigated") != has_ctl:
-                    d.add("control", "control-disposition-mismatch",
-                          f"{fid}: control_disposition '{disp}' disagrees with {len(controls)} control(s)")
-                # accepted-risk / none are honest abstentions only WITH a note (unknown-needs-a-note rule)
-                if disp in ("accepted-risk", "none") and not note:
-                    d.add("control", "disposition-without-note",
-                          f"{fid}: control_disposition '{disp}' but no disposition_note (why the risk is accepted / no control applies)")
-            elif not has_ctl:
-                # neither controlled nor explicitly dispositioned — a coverage gap, surfaced as a flag
-                d.add("control", "uncovered-control",
-                      f"{fid}: no controls and no control_disposition — control coverage unknown (flag, not a failure)")
-
-            # -- per-finding evidence traceability (the finding's OWN grounded proof). Extends the recon
-            # grounding check: every finding must cite >=1 RESOLVABLE evidence reference (or an honest
-            # `no_direct_evidence` abstention). Additive/back-compat: a manifest with NO evidence[] is a
-            # non-gating `evidence`-layer flag (committed evidence-less manifests stay green); a present
-            # ref that resolves NOWHERE is a `grounding` defect (gated only with --repo, like recon
-            # grounding). Determinism boundary: assert the reference resolves, never dictate its content.
-            ev_list = f.get("evidence") if isinstance(f.get("evidence"), list) else []
-            if not ev_list:
-                ev_classes["missing"] += 1
-                d.add("evidence", "finding-evidence-missing",
-                      f"{fid}: no evidence[] — every finding must cite resolvable proof (path:line / doc / "
-                      "diagram node id) or declare no_direct_evidence + justification (flag, not a failure)")
-            else:
-                has_ok = False
-                for item in ev_list:
-                    if not isinstance(item, dict):
-                        d.add("evidence", "malformed-evidence", f"{fid}: evidence item is not an object")
-                        continue
-                    if item.get("no_direct_evidence"):
-                        if (item.get("justification") or "").strip():
-                            has_ok = True  # honest abstention satisfies the per-finding requirement
-                        else:
-                            d.add("evidence", "no-direct-evidence-without-justification",
-                                  f"{fid}: no_direct_evidence declared but no justification (why no direct evidence exists)")
-                        continue
-                    ref = (item.get("ref") or "").strip()
-                    if not ref:
-                        d.add("evidence", "evidence-without-ref",
-                              f"{fid}: an evidence item is neither a resolvable ref nor an honest no_direct_evidence abstention")
-                        continue
-                    ev_refs_total += 1
-                    # resolvable: a recon/diagram node id, or a path/glob/string that grounds in the repo
-                    if ref in recon_ids or _resolves_in_repo(repo, ref):
-                        has_ok = True
-                    else:
-                        d.add("grounding", "finding-evidence-ungrounded",
-                              f"{fid}: evidence ref '{ref}' resolves nowhere in the source (not a recon id, path, glob, or literal)")
-                if has_ok:
-                    ev_classes["grounded" if any(not (isinstance(i, dict) and i.get("no_direct_evidence"))
-                                                 for i in ev_list) else "abstained"] += 1
-                else:
-                    ev_classes["unresolved"] += 1
-                    d.add("evidence", "finding-evidence-unresolved",
-                          f"{fid}: evidence[] present but no reference resolves and no honest no_direct_evidence abstention")
 
         # summary counts must match reality
         for s in SEVERITIES:
@@ -448,54 +195,12 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
         for s in sorted(uncovered):
             d.add("coverage", "uncovered-surface", f"surface '{s}' has no finding and is not marked no-issue")
 
-        # kill_chains: each declared step must reference a finding that exists (referential
-        # integrity). The id FORMATS (^KC^, ^TM-NNN$) are enforced structurally by the schema;
-        # this is the cross-field semantic check the schema cannot express.
-        for kc in findings_doc.get("kill_chains", []) or []:
-            kid = kc.get("id", "?")
-            for step in kc.get("steps", []) or []:
-                if step not in fids:
-                    d.add("consistency", "killchain-dangling-step",
-                          f"{kid}: step '{step}' is not a finding id in findings.json")
-
-    # AI/ML controlled-vocabulary guardrail (OWASP-LLM) — keyed on the DECLARED framework field: the
-    # OWASP-LLM Top-10 checklist table, identified by an "OWASP-LLM" header cell (never any table that
-    # merely mentions an LLM class in prose, so a finding's OWASP-category cell is not mis-read). Every
-    # LLM-prefixed id in that checklist is validated against the fixed vocabulary, shape only, mirroring
-    # malformed-mitre/atlas. Never requires a particular class to be present.
-    if raw_report:
-        for tbl in diagram_checks._md_tables(raw_report):
-            if not any(re.search(r"owasp[-\s]?llm", c, re.I) for c in tbl["header"]):
-                continue
-            for row in tbl["rows"]:
-                for cell in row:
-                    for tok in _OWASP_LLM_LOOSE.findall(cell):
-                        if not _OWASP_LLM_STRICT.fullmatch(tok):
-                            d.add("consistency", "malformed-owasp-llm", f"OWASP-LLM checklist id '{tok}'")
-
-    # diagram verification (its own defect layer). Coverage carries the has_ai_ml gate for the ATLAS
-    # layer block; loaded softly (coverage has its own checker in coverage_checks) so an absent
-    # coverage.json never adds a defect here.
-    cov_path = run_dir / "coverage.json"
-    try:
-        coverage = json.loads(cov_path.read_text()) if cov_path.exists() else None
-    except (OSError, ValueError):
-        coverage = None
-    diag = diagram_checks.check(raw_report, recon, findings_doc, coverage)
+    # diagram verification (its own defect layer)
+    diag = diagram_checks.check(raw_report, recon, findings_doc)
     d.items.extend(diag["defects"])
 
     scores = _scores(d, grounded, ungrounded, surface_ids, covered, findings_doc)
     scores.update(diag["scores"])
-    # control-coverage profile: counts by class + covered fraction (mitigated / n). A profile signal,
-    # not a gate — uncovered findings are flagged, not failed (same as the coverage-ledger profile).
-    covered_frac = round(control_classes["mitigated"] / n_findings, 3) if n_findings else None
-    scores["control_coverage"] = {"by_class": control_classes, "covered_frac": covered_frac}
-    # evidence-traceability profile: findings whose OWN evidence resolves (grounded) or is an honest
-    # abstention, over all findings — a profile signal (missing evidence is a flag, not a gate).
-    ev_ok = ev_classes["grounded"] + ev_classes["abstained"]
-    scores["evidence_traceability"] = {
-        "by_class": ev_classes, "refs": ev_refs_total,
-        "traceable_frac": round(ev_ok / n_findings, 3) if n_findings else None}
     return {
         "defects": d.items,
         "stats": {
@@ -508,10 +213,6 @@ def run_checks(run_dir: Path, repo: Path) -> dict[str, Any]:
             "ungrounded": ungrounded,
             "cwe_ids": cwe_total,
             "mitre_ids": mitre_total,
-            "atlas_ids": atlas_total,
-            "controls": controls_total,
-            "control_coverage": control_classes,
-            "evidence": {"refs": ev_refs_total, "by_class": ev_classes},
             "diagram": diag["stats"],
         },
         "scores": scores,

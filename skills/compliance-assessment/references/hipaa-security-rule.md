@@ -1,6 +1,6 @@
 # HIPAA Security Rule — Verified Reference
 
-> **Purpose**: This file contains verified HIPAA Security Rule citations (45 CFR Part 164 Subpart C), plus the most-cited Breach Notification Rule duties (Subpart D, §164.400–414), for agent use during compliance assessments. Agents MUST cross-reference findings against this table to prevent hallucinated control IDs.
+> **Purpose**: This file contains verified HIPAA Security Rule citations (45 CFR Part 164 Subpart C) for agent use during compliance assessments. Agents MUST cross-reference findings against this table to prevent hallucinated control IDs.
 
 ## Required vs Addressable
 
@@ -104,25 +104,20 @@ Format: `§164.[section]([subsection])([detail])`. Example: `§164.312(a)(2)(iv)
 | §164.316(b)(2)(ii) | Availability | R | Make documentation available to those persons responsible for implementing the procedures |
 | §164.316(b)(2)(iii) | Updates | R | Review documentation periodically and update as needed in response to environmental or operational changes |
 
-## §164.404–164.408 — Breach Notification Rule (Subpart D)
-
-> Breach notification (§164.400–414) is 45 CFR Part 164 **Subpart D**, separate from the Security Rule (Subpart C) above. The most-cited notification duties follow.
+## §164.408 — Breach Notification
 
 | Citation | Standard | R/A | Description |
 |----------|---------|-----|-------------|
-| §164.404(a) | Notification to Individuals | R | Notify each individual whose unsecured PHI has been, or is reasonably believed to have been, accessed, acquired, used, or disclosed as a result of a breach |
-| §164.404(b) | Timeliness of Notification | R | Notification without unreasonable delay and in no case later than 60 calendar days from the date of discovery |
-| §164.404(c) | Content of Notification | R | Must include: description of breach, types of information involved, steps individuals should take, what the entity is doing, and contact procedures |
-| §164.406 | Notification to the Media | R | For a breach affecting more than 500 residents of a State or jurisdiction, notify prominent media outlets serving that area, without unreasonable delay and no later than 60 calendar days from discovery |
-| §164.408(a)–(b) | Notification to the Secretary — 500 or more individuals | R | For breaches involving 500 or more individuals, notify the HHS Secretary contemporaneously with individual notice (no later than 60 calendar days from discovery) |
-| §164.408(c) | Notification to the Secretary — fewer than 500 individuals | R | For breaches involving fewer than 500 individuals, maintain a log and submit it to the HHS Secretary annually, no later than 60 days after the end of the calendar year |
+| §164.408(a) | Notification to Individuals | R | Notify each individual whose unsecured PHI has been, or is reasonably believed to have been, accessed, acquired, used, or disclosed as a result of a breach |
+| §164.408(b) | Timeliness of Notification | R | Notification without unreasonable delay and in no case later than 60 calendar days from the date of discovery |
+| §164.408(c) | Content of Notification | R | Must include: description of breach, types of information involved, steps individuals should take, what the entity is doing, and contact procedures |
 
 ## Quick Reference: Safeguard Counts
 
 | Safeguard Category | Citation Root | Standards | Required Impl Specs | Addressable Impl Specs |
 |--------------------|-------------|-----------|---------------------|----------------------|
-| Administrative | §164.308 | 9 | 10 | 11 |
-| Physical | §164.310 | 4 | 2 | 6 |
-| Technical | §164.312 | 5 | 2 | 5 |
-| Organizational | §164.314 | 2 | 3 | 0 |
-| Policies & Documentation | §164.316 | 2 | 3 | 0 |
+| Administrative | §164.308 | 9 | 14 | 9 |
+| Physical | §164.310 | 4 | 5 | 5 |
+| Technical | §164.312 | 5 | 4 | 5 |
+| Organizational | §164.314 | 2 | 4 | 0 |
+| Policies & Documentation | §164.316 | 2 | 4 | 0 |

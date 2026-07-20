@@ -2,14 +2,7 @@
 
 Defines diagram types that complement the primary DFD layers: attack trees, authentication sequences, and data lifecycle diagrams. Each has a specific producing phase, consuming phases, and output filename convention.
 
-**Engine-neutral.** The primary DFD (structural / L4 / SBOM) is authored in **D2** ([d2-spec.md](d2-spec.md));
-the node-type taxonomy is the controlled vocabulary in [node-type-icons.md](node-type-icons.md). Companion
-diagrams pick the engine that fits: **attack trees / SBOM** can be D2 or Mermaid `flowchart`; **auth
-sequences** stay Mermaid `sequenceDiagram` (it has the `alt`/`opt` fragments D2 lacks). The deterministic
-checks are engine-agnostic — they read the same normalized model on either engine.
-
-**Prerequisite**: Read [mermaid-spec.md](mermaid-spec.md) / [d2-spec.md](d2-spec.md) for symbol taxonomy
-and the classDef/`classes` reference.
+**Prerequisite**: Read [mermaid-spec.md](mermaid-spec.md) for symbol taxonomy (§3) and classDef reference (§8).
 
 ---
 
@@ -201,14 +194,6 @@ flowchart LR
 Declare one `kill_chains[]` entry in `findings.json` (`{id, goal, steps:[TM-ids]}`) per chain so
 verification can require one attack tree and one attack flow per declared chain.
 
-**Verification stamp (what the eval matches).** The deterministic diagram check
-(`evals/reliability/diagram_checks.py`) identifies a companion/analytical diagram by a `Type:` token,
-case-insensitively, tolerating a hyphen **or** a space between words. It accepts the token in either
-form: the documented `%% Version: ... | Type: Attack Flow | Chain: KC1` stamp (the `Type:` field after
-a `|` separator) **or** a bare `%% type: attack-flow` comment line. So `Type: Attack Flow`,
-`Type: Attack Tree`, and `Type: SBOM` on the Version stamp are sufficient — you do not also need a
-separate `%% type:` line. Recognized kinds: `attack-tree`, `attack-flow`/`kill-chain`, and `sbom`.
-
 ---
 
 ## §6 Phase Integration
@@ -224,14 +209,14 @@ This table maps each companion diagram type to the phases that produce and consu
 
 ### Rendering Companion Diagrams
 
-All companion diagrams render through the **render seam**, not a hand-rolled CLI call. The seam
-dispatches by extension (`.mmd`→mermaid-cli with the same `-w 3000 --scale 2 -b white -c mermaid-config.json`
-args as the primary DFD layers; `.d2`→the offline D2 toolchain), renders every diagram artifact in the
-output dir, and fails loud on a missing renderer / unknown extension / blank raster:
+All companion diagrams are rendered to PNG using the same CLI command and config as the primary DFD layers (see mermaid-spec.md §2):
 
 ```bash
-bash /path/to/scripts/render_diagrams.sh {output_dir} /path/to/references
+npx -y @mermaid-js/mermaid-cli \
+  -i {file}.mmd \
+  -o {file}.png \
+  -c /path/to/references/mermaid-config.json \
+  -w 3000 -b white --scale 2
 ```
 
-Companion diagram PNGs (and, for `.d2` sources, inline offline SVGs) are embedded in the consolidated
-report alongside the primary layer artifacts. See `d2-spec.md §1` for the D2 render command the seam runs.
+Companion diagram PNGs are embedded in the consolidated report alongside the primary layer PNGs.
